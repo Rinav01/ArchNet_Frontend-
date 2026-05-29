@@ -16,6 +16,9 @@ export interface NodeConfig {
 
   // Dense specific
   units?: number;
+
+  // Private parameters tracking flag
+  _exploded?: boolean;
 }
 
 export interface CanvasNode {
@@ -55,3 +58,108 @@ export interface Project {
   updatedAt: string;
   notes?: string;
 }
+
+export interface ValidationError {
+  nodeId?: string; // Undefined if global graph-level error (e.g. cycles)
+  type: 'error' | 'warning';
+  category: 'rank' | 'broadcast' | 'reshape' | 'attention' | 'cycle' | 'disconnected' | 'compatibility' | 'compilation';
+  message: string;
+  stackTrace?: string; // python stack trace or detail
+}
+
+export interface CompilationResult {
+  success: boolean;
+  generatedCode: string;
+  executionLogs: string;
+  semanticErrors: string[];
+  compatibilityErrors: string[];
+  compilationErrors: string[];
+}
+
+export interface GraphOperation {
+  id: string;
+  type: 'ADD_NODE' | 'REMOVE_NODE' | 'UPDATE_CONFIG' | 'UPDATE_NAME' | 'ADD_EDGE' | 'REMOVE_EDGE' | 'MOVE_NODE';
+  payload: {
+    nodeId?: string;
+    node?: CanvasNode;
+    edges?: CanvasEdge[];
+    edge?: CanvasEdge;
+    oldConfig?: NodeConfig;
+    newConfig?: NodeConfig;
+    oldName?: string;
+    newName?: string;
+    oldX?: number;
+    oldY?: number;
+    newX?: number;
+    newY?: number;
+    batchNodes?: { id: string; oldX: number; oldY: number; newX: number; newY: number }[];
+  };
+}
+
+export interface Collaborator {
+  clientId: string;
+  userId: string;
+  username: string;
+  color: string;
+  cursor: { x: number; y: number } | null;
+  selection: string | null;
+}
+
+export interface TrainingJob {
+  id: string;
+  projectId: string;
+  datasetId: string | null;
+  status: 'IDLE' | 'PENDING' | 'RUNNING' | 'PAUSED' | 'STOPPED' | 'COMPLETED' | 'FAILED';
+  epochs: number;
+  currentEpoch: number;
+  lossHistory: number[];
+  accuracyHistory: number[];
+  metricsMetadata: {
+    provider?: 'local' | 'vertex' | string;
+    machine_type?: string;
+    accelerator?: string;
+    peak_memory_used_mb?: number;
+    training_duration_seconds?: number;
+    final_loss?: number;
+    final_accuracy?: number;
+    logs?: string;
+    error?: string;
+    [key: string]: any;
+  } | null;
+}
+
+export interface CanvasNodeGroup {
+  id: string;
+  name: string;
+  color: string;
+  nodeIds: string[];
+  isCollapsed?: boolean;
+}
+
+export interface ModelCheckpoint {
+  id: string;
+  name: string;
+  timestamp: string;
+  nodes: CanvasNode[];
+  edges: CanvasEdge[];
+  nodeGroups: CanvasNodeGroup[];
+}
+
+export interface AutoMLSuggestion {
+  id: string;
+  title: string;
+  category: 'anti-pattern' | 'optimization' | 'architecture';
+  description: string;
+  advice: string;
+  severity: 'high' | 'medium' | 'info';
+  score: number; // 0 to 10
+  nodeId?: string;
+  fixLabel: string;
+  applyFix: () => void;
+}
+
+
+
+
+
+

@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "dagre": "^0.8.5",
     "framer-motion": "^12.40.0",
     "konva": "^10.3.0",
     "lucide-react": "^1.16.0",
@@ -20,11 +21,13 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/dagre": "^0.7.54",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
+    "playwright": "^1.60.0",
     "tailwindcss": "^4",
     "typescript": "^5"
   },

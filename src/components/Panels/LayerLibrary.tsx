@@ -1,39 +1,73 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useCanvasStore } from '@/store/canvasStore';
+import { useProjectStore } from '@/store/projectStore';
 import { NodeType } from '@/types/canvas';
-import { Layers, Move, Sparkles } from 'lucide-react';
+import { Layers, Move, Sparkles, Lock, ChevronLeft, ChevronRight } from 'lucide-react';
 
 export default function LayerLibrary() {
+  const [isOpen, setIsOpen] = useState(true);
   const addNode = useCanvasStore((state) => state.addNode);
+  const userRole = useProjectStore((state) => state.userRole);
 
   const blockTypes: { type: NodeType; desc: string; color: string }[] = [
-    { type: 'Input', desc: 'Starting tensor shape', color: 'bg-emerald-500 shadow-emerald-500/30' },
-    { type: 'Conv2D', desc: 'Spatial convolution layer', color: 'bg-purple-500 shadow-purple-500/30' },
-    { type: 'MaxPool2D', desc: 'Spatial downsampling grid', color: 'bg-blue-500 shadow-blue-500/30' },
-    { type: 'Flatten', desc: 'Reshape spatial to vector', color: 'bg-pink-500 shadow-pink-500/30' },
-    { type: 'Dense', desc: 'Fully connected projection', color: 'bg-amber-500 shadow-amber-500/30' },
+    { type: 'Input', desc: 'Starting tensor shape', color: 'bg-[#81c784]' },
+    { type: 'Conv2D', desc: 'Spatial convolution layer', color: 'bg-[#8ab4f8]' },
+    { type: 'MaxPool2D', desc: 'Spatial downsampling grid', color: 'bg-[#80cbc4]' },
+    { type: 'Flatten', desc: 'Reshape spatial to vector', color: 'bg-[#c5a3ff]' },
+    { type: 'Dense', desc: 'Fully connected projection', color: 'bg-[#ffe082]' },
   ];
 
   const handleBlockClick = (type: NodeType) => {
-    // Add node at random centered coordinates in Konva viewport
+    if (userRole === 'Viewer') return;
     const x = 200 + Math.floor(Math.random() * 100);
     const y = 150 + Math.floor(Math.random() * 100);
     addNode(type, x, y);
   };
 
+  if (!isOpen) {
+    return (
+      <button
+        onClick={() => setIsOpen(true)}
+        className="absolute top-1/2 left-0 -translate-y-1/2 bg-[#2b2d31] border-r border-y border-[#3f4046] hover:bg-[#313338] text-white p-2 rounded-r-2xl z-40 shadow-xl transition-all cursor-pointer"
+        title="Open Layer Library"
+      >
+        <ChevronRight size={18} className="animate-pulse text-[#8ab4f8]" />
+      </button>
+    );
+  }
+
   return (
-    <div className="w-80 border-r border-white/5 bg-[#090a0f] flex flex-col h-full select-none z-15 relative">
+    <div className="w-80 border-r border-[#3f4046] bg-[#1e1f22] flex flex-col h-full select-none z-15 relative transition-all duration-300">
+      {/* Collapse Toggle Handle */}
+      <button
+        onClick={() => setIsOpen(false)}
+        className="absolute top-1/2 -right-3.5 -translate-y-1/2 bg-[#1e1f22] border border-[#3f4046] hover:bg-[#2b2d31] text-[#9aa0a6] hover:text-white p-0.5 rounded-full z-30 shadow-md transition-all cursor-pointer"
+      >
+        <ChevronLeft size={14} />
+      </button>
+      {/* Glass lock overlay for Viewers */}
+      {userRole === 'Viewer' && (
+        <div className="absolute inset-0 bg-[#1e1f22]/80 backdrop-blur-[3px] z-50 flex flex-col items-center justify-center p-6 text-center select-none animate-in fade-in duration-200">
+          <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-full mb-3 text-red-400 shadow-lg shadow-black/10">
+            <Lock size={24} className="animate-pulse" />
+          </div>
+          <h4 className="text-sm font-bold text-white tracking-wide">Editing Restricted</h4>
+          <p className="text-[11px] text-[#9aa0a6] mt-2 max-w-[200px] leading-relaxed font-semibold">
+            Read-only Viewer Mode is active. Library actions are locked.
+          </p>
+        </div>
+      )}
       
       {/* Title block */}
-      <div className="p-6 border-b border-white/5">
-        <span className="text-[10px] font-extrabold uppercase tracking-widest text-gray-500 block">ML Blocks</span>
+      <div className="p-6 border-b border-[#3f4046]">
+        <span className="text-[10px] font-extrabold uppercase tracking-widest text-[#9aa0a6] block">ML Blocks</span>
         <h3 className="text-xl font-black text-white mt-1 flex items-center gap-2">
-          <Layers size={18} className="text-purple-400" />
+          <Layers size={18} className="text-[#8ab4f8]" />
           <span>Layer Library</span>
         </h3>
-        <p className="text-xs text-gray-500 mt-2 font-medium">Click any visual blocks to add them to your model topology.</p>
+        <p className="text-xs text-[#9aa0a6] mt-2 font-semibold">Click any visual blocks to add them to your model topology.</p>
       </div>
 
       {/* Layer Options List */}
@@ -42,24 +76,21 @@ export default function LayerLibrary() {
           <div
             key={block.type}
             onClick={() => handleBlockClick(block.type)}
-            className="group px-4 py-3 bg-[#11121d] border border-white/5 hover:border-purple-500/25 rounded-2xl cursor-pointer transition-all duration-200 flex items-center justify-between shadow-lg shadow-black/10 hover:shadow-purple-500/5 hover:-translate-y-[1px]"
+            className="group px-4 py-3 bg-[#2b2d31] border border-[#3f4046] hover:border-[#8ab4f8]/30 rounded-2xl cursor-pointer transition-all duration-200 flex items-center justify-between shadow-md hover:shadow-lg hover:-translate-y-[1px]"
           >
             <div className="flex items-center gap-3">
-              {/* Left Color Dot */}
-              <div className={`w-3 h-3 rounded-full ${block.color} shadow-lg shadow-offset`}></div>
-              
+              <div className={`w-2.5 h-2.5 rounded-full ${block.color}`}></div>
               <div>
-                <span className="text-sm font-bold text-gray-200 tracking-wide block group-hover:text-white transition-colors">
+                <span className="text-sm font-bold text-[#e3e3e3] tracking-wide block group-hover:text-[#8ab4f8] transition-colors">
                   {block.type}
                 </span>
-                <span className="text-[10px] text-gray-500 font-medium">
+                <span className="text-[10px] text-[#9aa0a6] font-semibold">
                   {block.desc}
                 </span>
               </div>
             </div>
 
-            {/* Quick action button */}
-            <div className="p-1.5 bg-white/5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity text-purple-400">
+            <div className="p-1.5 bg-white/5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity text-[#8ab4f8]">
               <Sparkles size={12} />
             </div>
           </div>
@@ -67,9 +98,9 @@ export default function LayerLibrary() {
       </div>
 
       {/* Footer Info */}
-      <div className="p-4 border-t border-white/5 bg-black/10">
-        <div className="flex items-center gap-2 text-xs text-gray-500 font-medium">
-          <Move size={14} className="text-gray-600" />
+      <div className="p-4 border-t border-[#3f4046] bg-black/10">
+        <div className="flex items-center gap-2 text-xs text-[#9aa0a6] font-semibold">
+          <Move size={14} className="text-[#5f6368]" />
           <span>Drag nodes on canvas to reposition.</span>
         </div>
       </div>

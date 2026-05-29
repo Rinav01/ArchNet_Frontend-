@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import MainLayout from '@/components/Layout/MainLayout';
-import { BookOpen, Play, CheckCircle2, AlertCircle, FileCode } from 'lucide-react';
+import { BookOpen, Play, FileCode } from 'lucide-react';
 
 export default function NotebookPage() {
   const [codeCell, setCodeCell] = useState(
@@ -41,36 +41,36 @@ print("Output tensor shape:", output.shape)`
         {/* Title */}
         <div>
           <h1 className="text-4xl font-extrabold tracking-tight text-white flex items-center gap-3">
-            <BookOpen className="text-purple-500" size={32} />
+            <BookOpen className="text-[#8ab4f8]" size={32} />
             <span>Interactive Notebook</span>
           </h1>
-          <p className="text-gray-400 mt-2 text-sm font-medium">
+          <p className="text-[#9aa0a6] mt-2 text-sm font-semibold">
             Execute experimental training loops, script activations, and debug model parameters in real-time.
           </p>
         </div>
 
         {/* Notebook layout */}
-        <div className="glass-panel border border-white/5 rounded-2xl flex flex-col overflow-hidden">
+        <div className="bg-[#2b2d31] border border-[#3f4046] rounded-2xl flex flex-col overflow-hidden shadow-xl">
           
           {/* Notebook Header */}
-          <div className="flex items-center justify-between px-6 py-3 border-b border-white/5 bg-black/10">
+          <div className="flex items-center justify-between px-6 py-3 border-b border-[#3f4046] bg-black/10">
             <div className="flex items-center gap-2">
-              <FileCode size={16} className="text-purple-400" />
-              <span className="text-xs font-bold text-gray-400 font-mono">sandbox_experiment.ipynb</span>
+              <FileCode size={16} className="text-[#8ab4f8]" />
+              <span className="text-xs font-bold text-[#9aa0a6] font-mono">sandbox_experiment.ipynb</span>
             </div>
 
             <button
               onClick={handleRunCell}
               disabled={isRunning}
-              className="flex items-center gap-1.5 px-4 py-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-extrabold border border-purple-500/25 transition-all shadow-lg shadow-purple-600/10"
+              className="flex items-center gap-1.5 px-4 py-1.5 bg-[#8ab4f8] hover:bg-[#a8c7fa] text-[#1e1f22] rounded-full text-xs font-bold shadow-md transition-all"
             >
               <Play size={12} className={isRunning ? 'animate-pulse' : ''} />
               <span>{isRunning ? 'Running...' : 'Run Cell'}</span>
             </button>
           </div>
 
-          {/* Cell Code Editor input */}
-          <div className="p-6 bg-[#05060b] font-mono text-xs text-gray-300 leading-relaxed min-h-[160px] relative border-b border-white/5">
+          {/* Cell Code Editor */}
+          <div className="p-6 bg-[#05060b] font-mono text-xs text-gray-300 leading-relaxed min-h-[160px] relative border-b border-[#3f4046]">
             <div className="absolute left-2 top-6 text-gray-600 text-right w-8 select-none">
               In [1]:
             </div>
@@ -82,16 +82,16 @@ print("Output tensor shape:", output.shape)`
           </div>
 
           {/* Cell Output Panel */}
-          <div className="p-6 bg-[#090a0f] font-mono text-[11px] leading-relaxed min-h-[100px]">
-            <div className="absolute left-2 text-gray-600 text-right w-8 select-none">
+          <div className="p-6 bg-[#1e1f22] font-mono text-[11px] leading-relaxed min-h-[100px]">
+            <div className="absolute left-2 text-[#5f6368] text-right w-8 select-none">
               Out [1]:
             </div>
             <div className="pl-12 space-y-1">
               {outputs.length === 0 ? (
-                <span className="text-gray-600 italic">No output logged yet. Run cell to compile script.</span>
+                <span className="text-[#5f6368] italic">No output logged yet. Run cell to compile script.</span>
               ) : (
                 outputs.map((line, idx) => (
-                  <div key={idx} className={line.startsWith('Success') ? 'text-emerald-400 font-bold' : 'text-gray-400'}>
+                  <div key={idx} className={line.startsWith('Success') ? 'text-[#81c784] font-bold' : 'text-[#9aa0a6]'}>
                     {line}
                   </div>
                 ))

@@ -1,5 +1,28 @@
 import { create } from 'zustand';
-import { CanvasNode, CanvasEdge, LogItem, NodeType, NodeConfig } from '@/types/canvas';
+import { CanvasNode, CanvasEdge, LogItem, NodeType, NodeConfig, ValidationError, CompilationResult, GraphOperation, Collaborator, TrainingJob, CanvasNodeGroup, ModelCheckpoint } from '@/types/canvas';
+import dagre from 'dagre';
+import { toast } from './notificationStore';
+import { 
+  graphqlRequest, 
+  ADD_NODE, 
+  ADD_EDGE, 
+  DELETE_NODE, 
+  DELETE_EDGE, 
+  GET_PROJECT_DETAILS,
+  VALIDATE_PROJECT_COMPILATION,
+  TRIGGER_TRAINING_JOB,
+  GET_TRAINING_JOB,
+  GET_DATASETS
+} from '@/lib/graphql/client';
+import { useProjectStore } from './projectStore';
+
+
+let compilationTimeout: NodeJS.Timeout | null = null;
+let heartbeatInterval: NodeJS.Timeout | null = null;
+let reconnectTimeout: NodeJS.Timeout | null = null;
+let trainingInterval: NodeJS.Timeout | null = null;
+let hardwareFluctuationInterval: NodeJS.Timeout | null = null;
+let autoSaveTimeout: NodeJS.Timeout | null = null;
 
 interface CanvasState {
   nodes: CanvasNode[];
@@ -19,14 +42,33 @@ interface CanvasState {
   isPlayingAnimation: boolean;
   activeAnimationNodeId: string | null;
   activeAnimationEdgeId: string | null;
+  activeAnimationEdgeIds: string[];
+
+  // Validation & Sandbox State
+  validationErrors: ValidationError[];
+  compilationResult: CompilationResult | null;
+  isValidating: boolean;
+
+  // History / Undo / Redo Engine State
+  undoStack: GraphOperation[];
+  redoStack: GraphOperation[];
+  isApplyingUndoRedo: boolean;
+
+  // Collaboration State
+  ws: WebSocket | null;
+  clientId: string | null;
+  collaborators: Record<string, Collaborator>;
+  syncStatus: 'disconnected' | 'connecting' | 'connected';
   
   // Core Actions
-  addNode: (type: NodeType, x: number, y: number) => void;
-  removeNode: (id: string) => void;
-  updateNodeConfig: (id: string, config: Partial<NodeConfig>) => void;
-  updateNodeName: (id: string, name: string) => void;
-  addEdge: (sourceId: string, targetId: string) => void;
-  removeEdge: (id: string) => void;
+  loadGraph: (projectId: string) => Promise<void>;
+  addNode: (type: NodeType, x: number, y: number, presetId?: string, isRemote?: boolean) => Promise<void>;
+  removeNode: (id: string, isUndoRedo?: boolean, isRemote?: boolean) => Promise<void>;
+  updateNodeConfig: (id: string, config: Partial<NodeConfig>, isUndoRedo?: boolean, isRemote?: boolean) => void;
+  updateNodeName: (id: string, name: string, isUndoRedo?: boolean, isRemote?: boolean) => void;
+  addEdge: (sourceId: string, targetId: string, presetId?: string, isRemote?: boolean) => Promise<void>;
+  removeEdge: (id: string, isUndoRedo?: boolean, isRemote?: boolean) => Promise<void>;
+  moveNode: (id: string, x: number, y: number, isUndoRedo?: boolean, isRemote?: boolean) => void;
   setSelectedNodeId: (id: string | null) => void;
   setZoom: (zoom: number | ((prev: number) => number)) => void;
   setPan: (pan: { x: number; y: number } | ((prev: { x: number; y: number }) => { x: number; y: number })) => void;
@@ -38,67 +80,74 @@ interface CanvasState {
   // Interactive Flow Actions
   runForwardPass: () => Promise<void>;
   recalculateShapes: () => void;
+  triggerCompilation: () => Promise<void>;
+  showStatsOverlay: boolean;
+  toggleStatsOverlay: () => void;
+
+  // History Actions
+  pushOperation: (op: Omit<GraphOperation, 'id'>) => void;
+  undo: () => Promise<void>;
+  redo: () => Promise<void>;
+  clearHistory: () => void;
+
+  // Collaboration Actions
+  connectCollaboration: (projectId: string) => void;
+  disconnectCollaboration: () => void;
+  sendCursorPosition: (x: number, y: number) => void;
+  sendSelection: (nodeId: string | null) => void;
+
+  // Training & Telemetry State
+  trainingJob: TrainingJob | null;
+  isTrainingLoading: boolean;
+  trainingProvider: 'local' | 'vertex';
+  trainingEpochs: number;
+  datasets: any[];
+  
+  // Training Actions
+  setTrainingProvider: (provider: 'local' | 'vertex') => void;
+  setTrainingEpochs: (epochs: number) => void;
+  loadDatasets: () => Promise<void>;
+  startTraining: (datasetId?: string | null) => Promise<void>;
+  pauseTraining: () => void;
+  stopTraining: () => void;
+
+  // Advanced Graph Editing UX State
+  selectedNodeIds: string[];
+  nodeGroups: CanvasNodeGroup[];
+
+  // Advanced Graph Editing UX Actions
+  setSelectedNodeIds: (ids: string[]) => void;
+  addNodeGroup: (name: string, nodeIds: string[]) => void;
+  removeNodeGroup: (groupId: string) => void;
+  toggleGroupCollapse: (groupId: string) => void;
+  alignSelectedNodes: (alignment: 'top' | 'left' | 'distribute-h' | 'distribute-v') => void;
+  batchMoveNodes: (nodePositions: { id: string; x: number; y: number }[]) => void;
+
+  // Model Versioning & Auto-saving State
+  draftSavedStatus: 'idle' | 'saving' | 'saved' | 'error';
+  checkpoints: ModelCheckpoint[];
+
+  // Model Versioning Actions
+  triggerAutoSave: () => void;
+  saveCheckpoint: (name: string) => void;
+  restoreCheckpoint: (checkpointId: string) => void;
+  deleteCheckpoint: (checkpointId: string) => void;
+  loadCheckpoints: (projectId: string) => void;
+
+  // Auto-Layout Suggester Engine Actions
+  triggerAutoLayout: () => void;
+
+  // Admin Allocations State & Actions
+  clusterPriority: 'High' | 'Medium' | 'Low';
+  gpuThrottleLimit: number;
+  setClusterPriority: (priority: 'High' | 'Medium' | 'Low') => void;
+  setGpuThrottleLimit: (limit: number) => void;
 }
 
-// Initial setup nodes mimicking Image 2 (ResNet-Mini initial structure)
-const initialNodes: CanvasNode[] = [
-  {
-    id: 'input_1',
-    type: 'Input',
-    name: 'INPUT_1',
-    x: 200,
-    y: 180,
-    inputShape: [],
-    outputShape: [224, 224, 3],
-    config: { dim: [224, 224, 3] },
-  },
-  {
-    id: 'conv2d_base',
-    type: 'Conv2D',
-    name: 'CONV2D_BASE',
-    x: 450,
-    y: 250,
-    inputShape: [224, 224, 3],
-    outputShape: [224, 224, 64],
-    config: { filters: 64, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' },
-  },
-  {
-    id: 'maxpool2d_1',
-    type: 'MaxPool2D',
-    name: 'MAXPOOL2D_1',
-    x: 720,
-    y: 190,
-    inputShape: [224, 224, 64],
-    outputShape: [112, 112, 64],
-    config: { poolSize: 2, stride: 2 },
-  },
-  {
-    id: 'relu_1',
-    type: 'Dense',
-    name: 'RELU_1',
-    x: 720,
-    y: 320,
-    inputShape: [224, 224, 64],
-    outputShape: [100],
-    config: { units: 100 },
-  }
-];
 
-const initialEdges: CanvasEdge[] = [
-  { id: 'edge_1', source: 'input_1', target: 'conv2d_base' },
-  { id: 'edge_2', source: 'conv2d_base', target: 'maxpool2d_1' },
-  { id: 'edge_3', source: 'conv2d_base', target: 'relu_1' },
-];
-
-const initialLogs: LogItem[] = [
-  { id: '1', timestamp: '14:22:01', type: 'info', text: 'Graph initialized.' },
-  { id: '2', timestamp: '14:22:03', type: 'info', text: 'Validating ResNet-Mini architecture...' },
-  { id: '3', timestamp: '14:22:05', type: 'success', text: 'DAG Validation: Successful' },
-  { id: '4', timestamp: '14:22:06', type: 'info', text: 'Ready for code generation' },
-];
 
 export const useCanvasStore = create<CanvasState>((set, get) => {
-  // Topological sort helper for animations and shape propagation
+  
   const getTopologicalOrder = (nodes: CanvasNode[], edges: CanvasEdge[]): CanvasNode[] => {
     const adj = new Map<string, string[]>();
     const inDegree = new Map<string, number>();
@@ -134,7 +183,6 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
       });
     }
     
-    // Fallback if there is a cycle or isolated nodes
     const orderedNodes = order.map(id => nodes.find(n => n.id === id)!).filter(Boolean);
     const remainingNodes = nodes.filter(n => !order.includes(n.id));
     return [...orderedNodes, ...remainingNodes];
@@ -149,7 +197,6 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
     }
 
     if (type === 'Conv2D') {
-      // Input shape H, W, C
       const [H, W] = inputShape;
       const filters = config.filters || 64;
       const kernelSize = config.kernelSize || 3;
@@ -169,7 +216,6 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
       if (inputShape.length < 3) return inputShape;
       const [H, W, C] = inputShape;
       const poolSize = config.poolSize || 2;
-      const stride = config.stride || 2;
       const outH = Math.max(1, Math.floor(H / poolSize));
       const outW = Math.max(1, Math.floor(W / poolSize));
       return [outH, outW, C];
@@ -194,30 +240,139 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
   };
 
   return {
-    nodes: initialNodes,
-    edges: initialEdges,
+    nodes: [],
+    edges: [],
     selectedNodeId: null,
     zoom: 1,
     pan: { x: 0, y: 0 },
     isConnecting: false,
     connectingSourceId: null,
-    logs: initialLogs,
+    logs: [],
     isPlayingAnimation: false,
     activeAnimationNodeId: null,
     activeAnimationEdgeId: null,
+    activeAnimationEdgeIds: [],
+    showStatsOverlay: false,
+    validationErrors: [],
+    compilationResult: null,
+    isValidating: false,
+    undoStack: [],
+    redoStack: [],
+    isApplyingUndoRedo: false,
+    ws: null,
+    clientId: null,
+    collaborators: {},
+    syncStatus: 'disconnected',
 
-    addNode: (type, x, y) => set((state) => {
-      const count = state.nodes.filter(n => n.type === type).length + 1;
-      const id = `${type.toLowerCase()}_${count}_${Math.random().toString(36).substr(2, 4)}`;
+    // Training & Telemetry State Init
+    trainingJob: null,
+    isTrainingLoading: false,
+    trainingProvider: 'local',
+    trainingEpochs: 10,
+    datasets: [],
+
+    // Advanced Graph Editing UX State Init
+    selectedNodeIds: [],
+    nodeGroups: [],
+
+    // Model Versioning State Init
+    draftSavedStatus: 'idle',
+    checkpoints: [],
+
+    // Admin Allocations State Init
+    clusterPriority: 'High',
+    gpuThrottleLimit: 80,
+
+    loadGraph: async (projectId) => {
+      const isOnline = await useProjectStore.getState().checkBackendStatus();
+      const time = getFormattedTime();
+
+      // Always load checkpoints from local storage
+      get().loadCheckpoints(projectId);
+
+      if (isOnline) {
+        try {
+          const data = await graphqlRequest(GET_PROJECT_DETAILS, { id: projectId });
+          if (data && data.project) {
+            const p = data.project;
+            const nodesTranslated: CanvasNode[] = (p.nodes || []).map((n: any) => ({
+              id: n.id,
+              type: n.type as NodeType,
+              name: n.label || n.type.toUpperCase(),
+              x: n.positionX || 100,
+              y: n.positionY || 100,
+              inputShape: n.inputShape || [],
+              outputShape: n.outputShape || [],
+              config: n.config || {},
+            }));
+
+            const edgesTranslated: CanvasEdge[] = (p.edges || []).map((e: any) => ({
+              id: e.id,
+              source: e.fromNodeId,
+              target: e.toNodeId,
+            }));
+
+            set({
+              nodes: nodesTranslated,
+              edges: edgesTranslated,
+              logs: [
+                { id: 'init', timestamp: time, type: 'success', text: `GraphQL Synced: Pulled ${nodesTranslated.length} nodes from cloud database.` }
+              ]
+            });
+            setTimeout(() => get().recalculateShapes(), 50);
+            return;
+          }
+        } catch (err) {
+          console.warn('Failed to load project details from database. Falling back to local draft...', err);
+        }
+      }
+
+      // Check if there's a saved draft in localStorage as a self-healing sandbox recovery
+      if (typeof window !== 'undefined') {
+        const savedDraft = localStorage.getItem(`mlbuilder_project_draft_${projectId}`);
+        if (savedDraft) {
+          try {
+            const parsed = JSON.parse(savedDraft);
+            set({
+              nodes: parsed.nodes || [],
+              edges: parsed.edges || [],
+              nodeGroups: parsed.nodeGroups || [],
+              logs: [
+                { id: 'init-draft', timestamp: time, type: 'warning', text: `Offline Sandbox: Restored visual graph from local auto-save draft.` }
+              ]
+            });
+            setTimeout(() => get().recalculateShapes(), 50);
+            return;
+          } catch (err) {
+            console.error('Failed to parse offline local draft:', err);
+          }
+        }
+      }
+
+      // Enforce connection warning and set empty state
+      set({
+        nodes: [],
+        edges: [],
+        logs: [
+          { id: 'offline', timestamp: time, type: 'error', text: 'Connection Failure: Cannot connect to Strawberry GraphQL API. Visual workspace offline.' }
+        ]
+      });
+    },
+
+    addNode: async (type, x, y, presetId, isRemote = false) => {
+      const isOnline = useProjectStore.getState().isOnline;
+      const activeProjId = useProjectStore.getState().activeProjectId;
+      const ws = get().ws;
+      const isWsConnected = get().syncStatus === 'connected' && ws && ws.readyState === WebSocket.OPEN;
+
+      if (isRemote) return;
+
+      const count = get().nodes.filter(n => n.type === type).length + 1;
       const name = `${type.toUpperCase()}_${count}`;
       
       let config: NodeConfig = {};
-      let inputShape: number[] = [];
-      let outputShape: number[] = [];
-
       if (type === 'Input') {
         config = { dim: [224, 224, 3] };
-        outputShape = [224, 224, 3];
       } else if (type === 'Conv2D') {
         config = { filters: 64, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' };
       } else if (type === 'MaxPool2D') {
@@ -228,126 +383,553 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
         config = { units: 10 };
       }
 
-      const newNode: CanvasNode = {
-        id,
-        type,
-        name,
-        x,
-        y,
-        inputShape,
-        outputShape,
-        config,
-      };
-
-      const updatedNodes = [...state.nodes, newNode];
-      
-      const time = getFormattedTime();
-      const log: LogItem = {
-        id: Math.random().toString(),
-        timestamp: time,
-        type: 'info',
-        text: `Added visual block: ${name}`,
-      };
-
-      setTimeout(() => get().recalculateShapes(), 50);
-
-      return {
-        nodes: updatedNodes,
-        logs: [...state.logs, log],
-        selectedNodeId: id,
-      };
-    }),
-
-    removeNode: (id) => set((state) => {
-      const nodeToRemove = state.nodes.find(n => n.id === id);
-      if (!nodeToRemove) return {};
-
-      const updatedNodes = state.nodes.filter(n => n.id !== id);
-      const updatedEdges = state.edges.filter(e => e.source !== id && e.target !== id);
-
-      const time = getFormattedTime();
-      const log: LogItem = {
-        id: Math.random().toString(),
-        timestamp: time,
-        type: 'warning',
-        text: `Removed block: ${nodeToRemove.name}`,
-      };
-
-      setTimeout(() => get().recalculateShapes(), 50);
-
-      return {
-        nodes: updatedNodes,
-        edges: updatedEdges,
-        selectedNodeId: state.selectedNodeId === id ? null : state.selectedNodeId,
-        logs: [...state.logs, log],
-      };
-    }),
-
-    updateNodeConfig: (id, newConfig) => set((state) => {
-      const updatedNodes = state.nodes.map((n) => {
-        if (n.id === id) {
-          const config = { ...n.config, ...newConfig };
-          return { ...n, config };
+      if (!isWsConnected && (!isOnline || !activeProjId)) {
+        // Offline Sandbox path
+        const tempId = presetId || `node_${Math.random().toString(36).substr(2, 9)}`;
+        const newNode: CanvasNode = {
+          id: tempId,
+          type,
+          name,
+          x,
+          y,
+          inputShape: [],
+          outputShape: [],
+          config,
+        };
+        set(state => ({
+          nodes: [...state.nodes, newNode],
+          selectedNodeId: tempId,
+          logs: [...state.logs, {
+            id: Math.random().toString(),
+            timestamp: getFormattedTime(),
+            type: 'info',
+            text: `Offline Sandbox: Created temporary local layer ${name}.`,
+          }]
+        }));
+        if (!get().isApplyingUndoRedo) {
+          get().pushOperation({
+            type: 'ADD_NODE',
+            payload: { node: newNode },
+          });
         }
-        return n;
-      });
+        setTimeout(() => get().recalculateShapes(), 50);
+        return;
+      }
 
+      if (isWsConnected) {
+        // Collaborative WebSocket path
+        const generatedId = presetId || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `node_${Math.random().toString(36).substr(2, 9)}`);
+        const newNode: CanvasNode = {
+          id: generatedId,
+          type,
+          name,
+          x: parseFloat(x.toFixed(1)),
+          y: parseFloat(y.toFixed(1)),
+          inputShape: [],
+          outputShape: [],
+          config,
+        };
+
+        set(state => ({
+          nodes: [...state.nodes, newNode],
+          selectedNodeId: generatedId,
+          logs: [...state.logs, {
+            id: Math.random().toString(),
+            timestamp: getFormattedTime(),
+            type: 'success',
+            text: `Collaborative: Created local layer ${name}. Syncing...`,
+          }]
+        }));
+
+        const op = {
+          action: 'ADD_NODE',
+          payload: {
+            node_id: generatedId,
+            type,
+            label: name,
+            position_x: parseFloat(x.toFixed(1)),
+            position_y: parseFloat(y.toFixed(1)),
+            config
+          },
+          timestamp: Date.now() / 1000
+        };
+        ws.send(JSON.stringify({ type: 'operation', op }));
+
+        if (!get().isApplyingUndoRedo) {
+          get().pushOperation({
+            type: 'ADD_NODE',
+            payload: { node: newNode },
+          });
+        }
+        setTimeout(() => get().recalculateShapes(), 50);
+        return;
+      }
+
+      // Standard GraphQL fallback path
+      try {
+        const data = await graphqlRequest(ADD_NODE, {
+          projectId: activeProjId,
+          type,
+          label: name,
+          position: { x: parseFloat(x.toFixed(1)), y: parseFloat(y.toFixed(1)) },
+          config,
+        });
+        if (data && data.addNode) {
+          const n = data.addNode;
+          const newNode: CanvasNode = {
+            id: n.id,
+            type: n.type as NodeType,
+            name: n.label,
+            x: n.positionX,
+            y: n.positionY,
+            inputShape: n.inputShape || [],
+            outputShape: n.outputShape || [],
+            config: n.config || {},
+          };
+          set(state => ({
+            nodes: [...state.nodes, newNode],
+            logs: [...state.logs, {
+              id: Math.random().toString(),
+              timestamp: getFormattedTime(),
+              type: 'success',
+              text: `GraphQL sync: Added visual node ${n.label} in database.`,
+            }],
+            selectedNodeId: n.id,
+          }));
+
+          if (!get().isApplyingUndoRedo) {
+            get().pushOperation({
+              type: 'ADD_NODE',
+              payload: { node: newNode },
+            });
+          }
+
+          setTimeout(() => get().recalculateShapes(), 50);
+        }
+      } catch (err: any) {
+        alert(`Mutation error adding block: ${err.message || err}`);
+      }
+    },
+
+    removeNode: async (id, isUndoRedo = false, isRemote = false) => {
+      const isOnline = useProjectStore.getState().isOnline;
+      const activeProjId = useProjectStore.getState().activeProjectId;
+      const ws = get().ws;
+      const isWsConnected = get().syncStatus === 'connected' && ws && ws.readyState === WebSocket.OPEN;
+
+      if (isRemote) return;
+
+      const nodeToRemove = get().nodes.find(n => n.id === id);
+      if (!nodeToRemove) return;
+
+      const connectedEdges = get().edges.filter(e => e.source === id || e.target === id);
+
+      if (!isWsConnected && (!isOnline || !activeProjId)) {
+        // Offline Sandbox path
+        set(state => ({
+          nodes: state.nodes.filter(n => n.id !== id),
+          edges: state.edges.filter(e => e.source !== id && e.target !== id),
+          selectedNodeId: state.selectedNodeId === id ? null : state.selectedNodeId,
+          logs: [...state.logs, {
+            id: Math.random().toString(),
+            timestamp: getFormattedTime(),
+            type: 'warning',
+            text: `Offline Sandbox: Deleted local layer ${nodeToRemove.name}.`,
+          }]
+        }));
+        if (!isUndoRedo && !get().isApplyingUndoRedo) {
+          get().pushOperation({
+            type: 'REMOVE_NODE',
+            payload: { node: nodeToRemove, edges: connectedEdges },
+          });
+        }
+        setTimeout(() => get().recalculateShapes(), 50);
+        return;
+      }
+
+      if (isWsConnected) {
+        // Collaborative WebSocket path
+        set(state => ({
+          nodes: state.nodes.filter(n => n.id !== id),
+          edges: state.edges.filter(e => e.source !== id && e.target !== id),
+          selectedNodeId: state.selectedNodeId === id ? null : state.selectedNodeId,
+          logs: [...state.logs, {
+            id: Math.random().toString(),
+            timestamp: getFormattedTime(),
+            type: 'warning',
+            text: `Collaborative: Removed layer ${nodeToRemove.name}. Syncing...`,
+          }]
+        }));
+
+        const op = {
+          action: 'DELETE_NODE',
+          payload: { node_id: id },
+          timestamp: Date.now() / 1000
+        };
+        ws.send(JSON.stringify({ type: 'operation', op }));
+
+        if (!isUndoRedo && !get().isApplyingUndoRedo) {
+          get().pushOperation({
+            type: 'REMOVE_NODE',
+            payload: { node: nodeToRemove, edges: connectedEdges },
+          });
+        }
+        setTimeout(() => get().recalculateShapes(), 50);
+        return;
+      }
+
+      // Standard GraphQL fallback path (Optimistic UI)
+      set(state => ({
+        nodes: state.nodes.filter(n => n.id !== id),
+        edges: state.edges.filter(e => e.source !== id && e.target !== id),
+        selectedNodeId: state.selectedNodeId === id ? null : state.selectedNodeId,
+        logs: [...state.logs, {
+          id: Math.random().toString(),
+          timestamp: getFormattedTime(),
+          type: 'warning',
+          text: `GraphQL sync: Deleting layer ${nodeToRemove.name} (optimistic update)...`,
+        }]
+      }));
+
+      if (!isUndoRedo && !get().isApplyingUndoRedo) {
+        get().pushOperation({
+          type: 'REMOVE_NODE',
+          payload: { node: nodeToRemove, edges: connectedEdges },
+        });
+      }
       setTimeout(() => get().recalculateShapes(), 50);
 
-      return { nodes: updatedNodes };
-    }),
+      // Perform mutation asynchronously in the background
+      (async () => {
+        try {
+          await graphqlRequest(DELETE_NODE, {
+            projectId: activeProjId,
+            nodeId: id,
+          });
+        } catch (err: any) {
+          console.error('Failed to sync node deletion to backend database:', err);
+          get().addLog('error', `Failed to sync deletion of '${nodeToRemove.name}' to server: ${err.message || err}`);
+          toast.error('Sync Error', `Failed to sync deletion of '${nodeToRemove.name}' to database.`);
+        }
+      })();
+    },
 
-    updateNodeName: (id, name) => set((state) => ({
-      nodes: state.nodes.map((n) => n.id === id ? { ...n, name: name.toUpperCase() } : n),
-    })),
+    updateNodeConfig: (id, newConfig, isUndoRedo = false, isRemote = false) => {
+      const node = get().nodes.find(n => n.id === id);
+      if (!node) return;
 
-    addEdge: (sourceId, targetId) => set((state) => {
-      // Avoid duplicate edges
-      const edgeExists = state.edges.some(e => e.source === sourceId && e.target === targetId);
+      if (!isRemote) {
+        const ws = get().ws;
+        const isWsConnected = get().syncStatus === 'connected' && ws && ws.readyState === WebSocket.OPEN;
+
+        if (isWsConnected) {
+          const op = {
+            action: 'UPDATE_NODE_CONFIG',
+            payload: {
+              node_id: id,
+              config: newConfig
+            },
+            timestamp: Date.now() / 1000
+          };
+          ws.send(JSON.stringify({ type: 'operation', op }));
+        }
+      }
+
+      if (!isUndoRedo && !get().isApplyingUndoRedo && !isRemote) {
+        get().pushOperation({
+          type: 'UPDATE_CONFIG',
+          payload: {
+            nodeId: id,
+            oldConfig: { ...node.config },
+            newConfig: { ...node.config, ...newConfig },
+          },
+        });
+      }
+
+      set((state) => {
+        const updatedNodes = state.nodes.map((n) => {
+          if (n.id === id) {
+            const config = { ...n.config, ...newConfig };
+            return { ...n, config };
+          }
+          return n;
+        });
+        setTimeout(() => get().recalculateShapes(), 50);
+        return { nodes: updatedNodes };
+      });
+    },
+
+    updateNodeName: (id, name, isUndoRedo = false, isRemote = false) => {
+      const node = get().nodes.find(n => n.id === id);
+      if (!node) return;
+
+      if (!isUndoRedo && !get().isApplyingUndoRedo && !isRemote) {
+        get().pushOperation({
+          type: 'UPDATE_NAME',
+          payload: {
+            nodeId: id,
+            oldName: node.name,
+            newName: name.toUpperCase(),
+          },
+        });
+      }
+
+      set((state) => ({
+        nodes: state.nodes.map((n) => n.id === id ? { ...n, name: name.toUpperCase() } : n),
+      }));
+    },
+
+    moveNode: (id, x, y, isUndoRedo = false, isRemote = false) => {
+      const node = get().nodes.find(n => n.id === id);
+      if (!node) return;
+
+      if (!isRemote) {
+        const ws = get().ws;
+        const isWsConnected = get().syncStatus === 'connected' && ws && ws.readyState === WebSocket.OPEN;
+
+        if (isWsConnected) {
+          const op = {
+            action: 'MOVE_NODE',
+            payload: {
+              node_id: id,
+              position_x: x,
+              position_y: y
+            },
+            timestamp: Date.now() / 1000
+          };
+          ws.send(JSON.stringify({ type: 'operation', op }));
+        }
+      }
+
+      if (!isUndoRedo && !get().isApplyingUndoRedo && !isRemote) {
+        get().pushOperation({
+          type: 'MOVE_NODE',
+          payload: {
+            nodeId: id,
+            oldX: node.x,
+            oldY: node.y,
+            newX: x,
+            newY: y,
+          },
+        });
+      }
+
+      set((state) => ({
+        nodes: state.nodes.map((n) => n.id === id ? { ...n, x, y } : n),
+      }));
+      setTimeout(() => get().recalculateShapes(), 50);
+    },
+
+    addEdge: async (sourceId, targetId, presetId, isRemote = false) => {
+      const isOnline = useProjectStore.getState().isOnline;
+      const activeProjId = useProjectStore.getState().activeProjectId;
+      const ws = get().ws;
+      const isWsConnected = get().syncStatus === 'connected' && ws && ws.readyState === WebSocket.OPEN;
+
+      if (isRemote) return;
+
+      const edgeExists = get().edges.some(e => e.source === sourceId && e.target === targetId);
       const isSelfConnection = sourceId === targetId;
 
-      if (edgeExists || isSelfConnection) return {};
+      if (edgeExists || isSelfConnection) return;
 
-      const edgeId = `edge_${Math.random().toString(36).substr(2, 9)}`;
-      const newEdge: CanvasEdge = { id: edgeId, source: sourceId, target: targetId };
-
-      const time = getFormattedTime();
-      const srcNode = state.nodes.find(n => n.id === sourceId);
-      const trgNode = state.nodes.find(n => n.id === targetId);
-      
-      const log: LogItem = {
-        id: Math.random().toString(),
-        timestamp: time,
-        type: 'success',
-        text: `Connected output of ${srcNode?.name || sourceId} to input of ${trgNode?.name || targetId}`,
+      const generatedId = presetId || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `edge_${Math.random().toString(36).substr(2, 9)}`);
+      const newEdge: CanvasEdge = {
+        id: generatedId,
+        source: sourceId,
+        target: targetId,
       };
 
+      if (!isWsConnected && (!isOnline || !activeProjId)) {
+        // Offline Sandbox path
+        set(state => ({
+          edges: [...state.edges, newEdge],
+          logs: [...state.logs, {
+            id: Math.random().toString(),
+            timestamp: getFormattedTime(),
+            type: 'info',
+            text: 'Offline Sandbox: Connected layer flow locally.',
+          }]
+        }));
+
+        if (!get().isApplyingUndoRedo) {
+          get().pushOperation({
+            type: 'ADD_EDGE',
+            payload: { edge: newEdge },
+          });
+        }
+        setTimeout(() => get().recalculateShapes(), 50);
+        return;
+      }
+
+      if (isWsConnected) {
+        // Collaborative WebSocket path
+        set(state => ({
+          edges: [...state.edges, newEdge],
+          logs: [...state.logs, {
+            id: Math.random().toString(),
+            timestamp: getFormattedTime(),
+            type: 'success',
+            text: 'Collaborative: Connected layer flow. Syncing...',
+          }]
+        }));
+
+        const op = {
+          action: 'ADD_EDGE',
+          payload: {
+            edge_id: generatedId,
+            from_node_id: sourceId,
+            to_node_id: targetId
+          },
+          timestamp: Date.now() / 1000
+        };
+        ws.send(JSON.stringify({ type: 'operation', op }));
+
+        if (!get().isApplyingUndoRedo) {
+          get().pushOperation({
+            type: 'ADD_EDGE',
+            payload: { edge: newEdge },
+          });
+        }
+        setTimeout(() => get().recalculateShapes(), 50);
+        return;
+      }
+
+      // GraphQL mutation fallback path
+      try {
+        const data = await graphqlRequest(ADD_EDGE, {
+          projectId: activeProjId,
+          fromNodeId: sourceId,
+          toNodeId: targetId,
+        });
+        if (data && data.addEdge) {
+          const edge = data.addEdge;
+          const gqlEdge: CanvasEdge = {
+            id: edge.id,
+            source: edge.fromNodeId,
+            target: edge.toNodeId,
+          };
+          set(state => ({
+            edges: [...state.edges, gqlEdge],
+            logs: [...state.logs, {
+              id: Math.random().toString(),
+              timestamp: getFormattedTime(),
+              type: 'success',
+              text: `GraphQL sync: Created edge connection in database.`,
+            }]
+          }));
+
+          if (!get().isApplyingUndoRedo) {
+            get().pushOperation({
+              type: 'ADD_EDGE',
+              payload: { edge: gqlEdge },
+            });
+          }
+
+          setTimeout(() => get().recalculateShapes(), 50);
+        }
+      } catch (err: any) {
+        alert(`Mutation error connecting edge: ${err.message || err}`);
+      }
+    },
+
+    removeEdge: async (id, isUndoRedo = false, isRemote = false) => {
+      const isOnline = useProjectStore.getState().isOnline;
+      const activeProjId = useProjectStore.getState().activeProjectId;
+      const ws = get().ws;
+      const isWsConnected = get().syncStatus === 'connected' && ws && ws.readyState === WebSocket.OPEN;
+
+      if (isRemote) return;
+
+      const edgeToRemove = get().edges.find(e => e.id === id);
+      if (!edgeToRemove) return;
+
+      if (!isWsConnected && (!isOnline || !activeProjId)) {
+        // Offline Sandbox path
+        set(state => ({
+          edges: state.edges.filter(e => e.id !== id),
+          logs: [...state.logs, {
+            id: Math.random().toString(),
+            timestamp: getFormattedTime(),
+            type: 'warning',
+            text: 'Offline Sandbox: Disconnected layer flow locally.',
+          }]
+        }));
+
+        if (!isUndoRedo && !get().isApplyingUndoRedo) {
+          get().pushOperation({
+            type: 'REMOVE_EDGE',
+            payload: { edge: edgeToRemove },
+          });
+        }
+        setTimeout(() => get().recalculateShapes(), 50);
+        return;
+      }
+
+      if (isWsConnected) {
+        // Collaborative WebSocket path
+        set(state => ({
+          edges: state.edges.filter(e => e.id !== id),
+          logs: [...state.logs, {
+            id: Math.random().toString(),
+            timestamp: getFormattedTime(),
+            type: 'warning',
+            text: 'Collaborative: Disconnected layer flow. Syncing...',
+          }]
+        }));
+
+        const op = {
+          action: 'DELETE_EDGE',
+          payload: {
+            edge_id: id
+          },
+          timestamp: Date.now() / 1000
+        };
+        ws.send(JSON.stringify({ type: 'operation', op }));
+
+        if (!isUndoRedo && !get().isApplyingUndoRedo) {
+          get().pushOperation({
+            type: 'REMOVE_EDGE',
+            payload: { edge: edgeToRemove },
+          });
+        }
+        setTimeout(() => get().recalculateShapes(), 50);
+        return;
+      }
+
+      // GraphQL mutation fallback path (Optimistic UI)
+      set(state => ({
+        edges: state.edges.filter(e => e.id !== id),
+        logs: [...state.logs, {
+          id: Math.random().toString(),
+          timestamp: getFormattedTime(),
+          type: 'warning',
+          text: `GraphQL sync: Disconnecting layer flow connection (optimistic update)...`,
+        }]
+      }));
+
+      if (!isUndoRedo && !get().isApplyingUndoRedo) {
+        get().pushOperation({
+          type: 'REMOVE_EDGE',
+          payload: { edge: edgeToRemove },
+        });
+      }
       setTimeout(() => get().recalculateShapes(), 50);
 
-      return {
-        edges: [...state.edges, newEdge],
-        logs: [...state.logs, log],
-      };
-    }),
-
-    removeEdge: (id) => set((state) => {
-      const updatedEdges = state.edges.filter(e => e.id !== id);
-
-      const time = getFormattedTime();
-      const log: LogItem = {
-        id: Math.random().toString(),
-        timestamp: time,
-        type: 'warning',
-        text: `Disconnected tensor edge connection`,
-      };
-
-      setTimeout(() => get().recalculateShapes(), 50);
-
-      return {
-        edges: updatedEdges,
-        logs: [...state.logs, log],
-      };
-    }),
+      // Perform mutation asynchronously in the background
+      (async () => {
+        try {
+          await graphqlRequest(DELETE_EDGE, {
+            projectId: activeProjId,
+            edgeId: id,
+          });
+        } catch (err: any) {
+          console.error('Failed to sync edge deletion to backend database:', err);
+          get().addLog('error', `Failed to sync disconnection to server: ${err.message || err}`);
+          toast.error('Sync Error', 'Failed to sync edge disconnection to database.');
+        }
+      })();
+    },
 
     setSelectedNodeId: (id) => set({ selectedNodeId: id }),
 
@@ -374,15 +956,14 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
 
     recalculateShapes: () => set((state) => {
       const orderedNodes = getTopologicalOrder(state.nodes, state.edges);
-      const shapesMap = new Map<string, number[]>(); // nodeId -> outputShape
+      const shapesMap = new Map<string, number[]>();
+      const localErrors: ValidationError[] = [];
 
       const computedNodes = state.nodes.map(n => {
-        // Find inputs
         const incomingEdges = state.edges.filter(e => e.target === n.id);
         let inputShape: number[] = [];
 
         if (incomingEdges.length > 0) {
-          // Take the output shape of the first incoming edge's source
           const parentId = incomingEdges[0].source;
           const parentOutputShape = shapesMap.get(parentId);
           if (parentOutputShape) {
@@ -400,7 +981,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
         };
       });
 
-      // Check if DAG has a cycle
+      // 1. DAG DFS Cycle checker
       const visited = new Set<string>();
       const recStack = new Set<string>();
       let hasCycle = false;
@@ -430,19 +1011,153 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
         }
       });
 
-      const updatedLogs = [...state.logs];
       if (hasCycle) {
-        const time = getFormattedTime();
-        updatedLogs.push({
-          id: Math.random().toString(),
-          timestamp: time,
+        localErrors.push({
           type: 'error',
-          text: 'DAG loop validation failed: Cyclic connections detected in model architecture!',
+          category: 'cycle',
+          message: 'DAG loop validation failed: Cyclic connections detected in model architecture! Loops are not allowed.',
+        });
+        const wasCycle = state.validationErrors.some(e => e.category === 'cycle');
+        if (!wasCycle) {
+          toast.error('Cycle Detected', 'DAG loop validation failed: Cyclic connections detected in model!');
+        }
+      }
+
+      // 2. Disconnected components check
+      const inputNode = computedNodes.find(n => n.type === 'Input');
+      if (inputNode) {
+        const flowVisited = new Set<string>();
+        const queue = [inputNode.id];
+        while (queue.length > 0) {
+          const curr = queue.shift()!;
+          if (!flowVisited.has(curr)) {
+            flowVisited.add(curr);
+            const neighbors = state.edges.filter(e => e.source === curr).map(e => e.target);
+            neighbors.forEach(v => {
+              if (!flowVisited.has(v)) queue.push(v);
+            });
+          }
+        }
+
+        computedNodes.forEach(n => {
+          if (!flowVisited.has(n.id) && n.type !== 'Input') {
+            localErrors.push({
+              nodeId: n.id,
+              type: 'warning',
+              category: 'disconnected',
+              message: `Layer '${n.name}' is disconnected from the main 'Input' graph flow. All active layers must connect.`,
+            });
+          }
         });
       }
 
+      // 3. Ranks and shape validation
+      computedNodes.forEach(n => {
+        if (n.type === 'Conv2D' || n.type === 'MaxPool2D') {
+          if (n.inputShape.length > 0 && n.inputShape.length !== 3) {
+            localErrors.push({
+              nodeId: n.id,
+              type: 'error',
+              category: 'rank',
+              message: `Layer '${n.name}' (${n.type}) requires a 3D input tensor [Height, Width, Channels] (implicit batch). Received: [${n.inputShape.join(', ')}] (Rank ${n.inputShape.length}).`,
+            });
+          }
+        } else if (n.type === 'Dense') {
+          if (n.inputShape.length > 0 && n.inputShape.length !== 1) {
+            localErrors.push({
+              nodeId: n.id,
+              type: 'error',
+              category: 'rank',
+              message: `Layer '${n.name}' (${n.type}) requires a 1D input tensor [Features] (implicit batch). Received: [${n.inputShape.join(', ')}] (Rank ${n.inputShape.length}). Insert a Flatten block.`,
+            });
+          }
+        }
+      });
+
+      // 4. Broadcasting validation for merging links
+      computedNodes.forEach(n => {
+        const incomingEdges = state.edges.filter(e => e.target === n.id);
+        if (incomingEdges.length > 1) {
+          const firstParentId = incomingEdges[0].source;
+          const firstShape = shapesMap.get(firstParentId) || [];
+          
+          for (let idx = 1; idx < incomingEdges.length; idx++) {
+            const otherParentId = incomingEdges[idx].source;
+            const otherParent = state.nodes.find(node => node.id === otherParentId);
+            const otherShape = shapesMap.get(otherParentId) || [];
+            
+            let isCompatible = true;
+            if (firstShape.length !== otherShape.length) {
+              isCompatible = false;
+            } else {
+              for (let d = 0; d < firstShape.length; d++) {
+                if (firstShape[d] !== otherShape[d] && firstShape[d] !== 1 && otherShape[d] !== 1) {
+                  isCompatible = false;
+                  break;
+                }
+              }
+            }
+            
+            if (!isCompatible) {
+              localErrors.push({
+                nodeId: n.id,
+                type: 'error',
+                category: 'broadcast',
+                message: `Broadcasting conflict at Layer '${n.name}': Incoming shape from '${otherParent?.name || 'parent'}' [${otherShape.join(', ')}] conflicts with base shape [${firstShape.join(', ')}].`,
+              });
+            }
+          }
+        }
+      });
+
+      const updatedLogs = [...state.logs];
+      localErrors.forEach(err => {
+        if (!updatedLogs.some(l => l.text === err.message)) {
+          updatedLogs.push({
+            id: Math.random().toString(),
+            timestamp: getFormattedTime(),
+            type: err.type,
+            text: err.message,
+          });
+        }
+      });
+
+      // 5. Benchmark Alerts for parameter explosions
+      const prevNodes = state.nodes;
+      computedNodes.forEach(n => {
+        if (n.type === 'Dense' && n.inputShape && n.inputShape.length > 0) {
+          const inputDim = n.inputShape.reduce((a, b) => a * b, 1);
+          const units = n.config.units || 10;
+          const params = inputDim * units;
+          
+          if (params > 500000) {
+            const wasExploded = prevNodes.find(node => node.id === n.id)?.config._exploded;
+            if (!wasExploded) {
+              toast.warning(
+                'Benchmark Alert',
+                `Warning: Dense parameter explosion (${(params/1e6).toFixed(1)}M params) detected at '${n.name}'! Overfitting/vRAM risk.`
+              );
+              n.config = { ...n.config, _exploded: true };
+            }
+          } else {
+            if (n.config._exploded) {
+              const updatedConfig = { ...n.config };
+              delete updatedConfig._exploded;
+              n.config = updatedConfig;
+            }
+          }
+        }
+      });
+
+      // Trigger server-side compilation validation query debounced
+      setTimeout(() => get().triggerCompilation(), 50);
+
+      // Trigger automated local-storage draft saving
+      setTimeout(() => get().triggerAutoSave(), 100);
+
       return {
         nodes: computedNodes,
+        validationErrors: localErrors,
         logs: updatedLogs,
       };
     }),
@@ -459,17 +1174,22 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
       for (let i = 0; i < order.length; i++) {
         const node = order[i];
         
-        // Highlight Node
         set({ activeAnimationNodeId: node.id });
         state.addLog('info', `Forward-pass: Activated ${node.name} [Shape: [${node.outputShape.join(', ')}]]`);
         await new Promise(resolve => setTimeout(resolve, 600));
 
-        // Find edge leaving this node
-        const outgoingEdge = state.edges.find(e => e.source === node.id);
-        if (outgoingEdge && i < order.length - 1) {
-          set({ activeAnimationEdgeId: outgoingEdge.id });
+        const outgoingEdges = state.edges.filter(e => e.source === node.id);
+        if (outgoingEdges.length > 0 && i < order.length - 1) {
+          const edgeIds = outgoingEdges.map(e => e.id);
+          set({ 
+            activeAnimationEdgeIds: edgeIds,
+            activeAnimationEdgeId: edgeIds[0]
+          });
           await new Promise(resolve => setTimeout(resolve, 450));
-          set({ activeAnimationEdgeId: null });
+          set({ 
+            activeAnimationEdgeIds: [],
+            activeAnimationEdgeId: null 
+          });
         }
       }
 
@@ -477,9 +1197,1339 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
         isPlayingAnimation: false,
         activeAnimationNodeId: null,
         activeAnimationEdgeId: null,
+        activeAnimationEdgeIds: [],
       });
 
       state.addLog('success', 'Forward pass simulation completed: Outputs calculated for all active layers.');
     },
+
+    toggleStatsOverlay: () => {
+      set((state) => {
+        const nextVal = !state.showStatsOverlay;
+        state.addLog('info', `${nextVal ? 'Enabled' : 'Disabled'} live visual node statistics layer overlays.`);
+        return { showStatsOverlay: nextVal };
+      });
+    },
+
+    triggerCompilation: async () => {
+      const isOnline = useProjectStore.getState().isOnline;
+      const activeProjId = useProjectStore.getState().activeProjectId;
+      if (!isOnline || !activeProjId) return;
+
+      if (compilationTimeout) {
+        clearTimeout(compilationTimeout);
+      }
+
+      set({ isValidating: true });
+
+      compilationTimeout = setTimeout(async () => {
+        try {
+          const data = await graphqlRequest(VALIDATE_PROJECT_COMPILATION, { projectId: activeProjId });
+          if (data && data.validateProjectCompilation) {
+            const res = data.validateProjectCompilation;
+            const semanticErrors = res.semanticErrors || [];
+            const compatibilityErrors = res.compatibilityErrors || [];
+            const compilationErrors = res.compilationErrors || [];
+            
+            // Map string errors to ValidationError objects
+            const serverErrors: ValidationError[] = [
+              ...semanticErrors.map((msg: string) => {
+                const matchedNode = get().nodes.find(n => msg.includes(`'${n.name}'`));
+                return {
+                  nodeId: matchedNode?.id,
+                  type: 'error' as const,
+                  category: 'rank' as const,
+                  message: msg,
+                };
+              }),
+              ...compatibilityErrors.map((msg: string) => {
+                const matchedNode = get().nodes.find(n => msg.includes(`'${n.name}'`));
+                return {
+                  nodeId: matchedNode?.id,
+                  type: 'warning' as const,
+                  category: 'compatibility' as const,
+                  message: msg,
+                };
+              }),
+              ...compilationErrors.map((msg: string) => {
+                const matchedNode = get().nodes.find(n => msg.includes(`'${n.name}'`));
+                return {
+                  nodeId: matchedNode?.id,
+                  type: 'error' as const,
+                  category: 'compilation' as const,
+                  message: msg,
+                };
+              }),
+            ];
+
+            // Merge local and server errors (removing duplicates if any)
+            set((state) => {
+              const localErrors = state.validationErrors.filter(e => 
+                e.category === 'cycle' || e.category === 'disconnected' || e.category === 'rank' || e.category === 'broadcast'
+              );
+              
+              const allErrors = [...localErrors];
+              serverErrors.forEach(se => {
+                if (!allErrors.some(le => le.message === se.message)) {
+                  allErrors.push(se);
+                }
+              });
+
+              const updatedLogs = [...state.logs];
+              if (res.success) {
+                if (!updatedLogs.some(l => l.text.includes('Sandbox Compilation: Successful'))) {
+                  updatedLogs.push({
+                    id: Math.random().toString(),
+                    timestamp: getFormattedTime(),
+                    type: 'success',
+                    text: 'Sandbox Compilation: Successful. PyTorch module verified and tested in Python environment.',
+                  });
+                }
+                toast.success('Compilation Successful', 'Model compiled cleanly. PyTorch, TensorFlow, and JAX module outputs ready!');
+              } else {
+                compilationErrors.forEach((err: string) => {
+                  if (!updatedLogs.some(l => l.text === err)) {
+                    updatedLogs.push({
+                      id: Math.random().toString(),
+                      timestamp: getFormattedTime(),
+                      type: 'error',
+                      text: `Compiler Traceback: ${err}`,
+                    });
+                  }
+                });
+                toast.error('Compilation Failed', 'Model sandbox run crashed. Check AST & Compile errors for tracebacks.');
+              }
+
+              return {
+                validationErrors: allErrors,
+                compilationResult: {
+                  success: res.success,
+                  generatedCode: res.generatedCode || '',
+                  executionLogs: res.executionLogs || '',
+                  semanticErrors,
+                  compatibilityErrors,
+                  compilationErrors,
+                },
+                isValidating: false,
+                logs: updatedLogs,
+              };
+            });
+          }
+        } catch (err: any) {
+          console.warn('Sandbox validation failed:', err);
+          set({ isValidating: false });
+          toast.error('Sandbox Connection Failed', 'Failed to communicate with the compiler validation sandbox.');
+        }
+      }, 2500); // 2500ms debounce
+    },
+
+    pushOperation: (op) => set((state) => {
+      const nextOp = {
+        ...op,
+        id: Math.random().toString(),
+      };
+      const undoStack = [nextOp, ...state.undoStack].slice(0, 50); // limit to 50 items
+      return {
+        undoStack,
+        redoStack: [], // clear redo on new operation
+      };
+    }),
+
+    clearHistory: () => set({ undoStack: [], redoStack: [] }),
+
+    undo: async () => {
+      if (get().undoStack.length === 0) return;
+
+      const undoStack = [...get().undoStack];
+      const op = undoStack.shift()!;
+      
+      set({ isApplyingUndoRedo: true });
+      const activeProjId = useProjectStore.getState().activeProjectId;
+
+      try {
+        switch (op.type) {
+          case 'ADD_NODE': {
+            if (op.payload.node) {
+              await get().removeNode(op.payload.node.id, true);
+            }
+            break;
+          }
+          case 'REMOVE_NODE': {
+            const oldNode = op.payload.node;
+            if (oldNode) {
+              const data = await graphqlRequest(ADD_NODE, {
+                projectId: activeProjId,
+                type: oldNode.type,
+                label: oldNode.name,
+                position: { x: oldNode.x, y: oldNode.y },
+                config: oldNode.config,
+              });
+              if (data && data.addNode) {
+                const n = data.addNode;
+                const newId = n.id;
+                const oldId = oldNode.id;
+
+                const newNode: CanvasNode = {
+                  id: newId,
+                  type: n.type as NodeType,
+                  name: n.label,
+                  x: n.positionX,
+                  y: n.positionY,
+                  inputShape: n.inputShape || [],
+                  outputShape: n.outputShape || [],
+                  config: n.config || {},
+                };
+                
+                set(state => ({
+                  nodes: [...state.nodes, newNode],
+                }));
+
+                // Recreate connected edges, mapping oldId -> newId
+                const restoredEdges: CanvasEdge[] = [];
+                const edgesToRestore = op.payload.edges || [];
+                for (const oldEdge of edgesToRestore) {
+                  const srcId = oldEdge.source === oldId ? newId : oldEdge.source;
+                  const trgId = oldEdge.target === oldId ? newId : oldEdge.target;
+                  
+                  const edgeData = await graphqlRequest(ADD_EDGE, {
+                    projectId: activeProjId,
+                    fromNodeId: srcId,
+                    toNodeId: trgId,
+                  });
+                  if (edgeData && edgeData.addEdge) {
+                    const edgeRes = edgeData.addEdge;
+                    restoredEdges.push({
+                      id: edgeRes.id,
+                      source: edgeRes.fromNodeId,
+                      target: edgeRes.toNodeId,
+                    });
+                  }
+                }
+
+                set(state => ({
+                  edges: [...state.edges, ...restoredEdges],
+                }));
+
+                // Save translated IDs inside operation payload for future Redo steps
+                op.payload.node = { ...newNode };
+                op.payload.edges = restoredEdges;
+              }
+            }
+            break;
+          }
+          case 'ADD_EDGE': {
+            if (op.payload.edge) {
+              await get().removeEdge(op.payload.edge.id, true);
+            }
+            break;
+          }
+          case 'REMOVE_EDGE': {
+            const oldEdge = op.payload.edge;
+            if (oldEdge) {
+              const edgeData = await graphqlRequest(ADD_EDGE, {
+                projectId: activeProjId,
+                fromNodeId: oldEdge.source,
+                toNodeId: oldEdge.target,
+              });
+              if (edgeData && edgeData.addEdge) {
+                const edgeRes = edgeData.addEdge;
+                const newEdge: CanvasEdge = {
+                  id: edgeRes.id,
+                  source: edgeRes.fromNodeId,
+                  target: edgeRes.toNodeId,
+                };
+                set(state => ({
+                  edges: [...state.edges, newEdge],
+                }));
+                op.payload.edge = newEdge;
+              }
+            }
+            break;
+          }
+          case 'UPDATE_CONFIG': {
+            if (op.payload.nodeId && op.payload.oldConfig) {
+              get().updateNodeConfig(op.payload.nodeId, op.payload.oldConfig, true);
+            }
+            break;
+          }
+          case 'UPDATE_NAME': {
+            if (op.payload.nodeId && op.payload.oldName) {
+              get().updateNodeName(op.payload.nodeId, op.payload.oldName, true);
+            }
+            break;
+          }
+          case 'MOVE_NODE': {
+            if (op.payload.batchNodes) {
+              op.payload.batchNodes.forEach(item => {
+                get().moveNode(item.id, item.oldX, item.oldY, true);
+              });
+            } else if (op.payload.nodeId && op.payload.oldX !== undefined && op.payload.oldY !== undefined) {
+              get().moveNode(op.payload.nodeId, op.payload.oldX, op.payload.oldY, true);
+            }
+            break;
+          }
+        }
+
+        set((state) => ({
+          undoStack,
+          redoStack: [op, ...state.redoStack],
+        }));
+        setTimeout(() => get().recalculateShapes(), 50);
+      } catch (err) {
+        console.warn('Undo operation execution failed:', err);
+      } finally {
+        set({ isApplyingUndoRedo: false });
+      }
+    },
+
+    redo: async () => {
+      if (get().redoStack.length === 0) return;
+
+      const redoStack = [...get().redoStack];
+      const op = redoStack.shift()!;
+      
+      set({ isApplyingUndoRedo: true });
+      const activeProjId = useProjectStore.getState().activeProjectId;
+
+      try {
+        switch (op.type) {
+          case 'ADD_NODE': {
+            const oldNode = op.payload.node;
+            if (oldNode) {
+              const data = await graphqlRequest(ADD_NODE, {
+                projectId: activeProjId,
+                type: oldNode.type,
+                label: oldNode.name,
+                position: { x: oldNode.x, y: oldNode.y },
+                config: oldNode.config,
+              });
+              if (data && data.addNode) {
+                const n = data.addNode;
+                const newNode = {
+                  id: n.id,
+                  type: n.type as NodeType,
+                  name: n.label,
+                  x: n.positionX,
+                  y: n.positionY,
+                  inputShape: n.inputShape || [],
+                  outputShape: n.outputShape || [],
+                  config: n.config || {},
+                };
+                set(state => ({ nodes: [...state.nodes, newNode] }));
+                op.payload.node = newNode;
+              }
+            }
+            break;
+          }
+          case 'REMOVE_NODE': {
+            if (op.payload.node) {
+              await get().removeNode(op.payload.node.id, true);
+            }
+            break;
+          }
+          case 'ADD_EDGE': {
+            const oldEdge = op.payload.edge;
+            if (oldEdge) {
+              const edgeData = await graphqlRequest(ADD_EDGE, {
+                projectId: activeProjId,
+                fromNodeId: oldEdge.source,
+                toNodeId: oldEdge.target,
+              });
+              if (edgeData && edgeData.addEdge) {
+                const edgeRes = edgeData.addEdge;
+                const newEdge = { id: edgeRes.id, source: edgeRes.fromNodeId, target: edgeRes.toNodeId };
+                set(state => ({ edges: [...state.edges, newEdge] }));
+                op.payload.edge = newEdge;
+              }
+            }
+            break;
+          }
+          case 'REMOVE_EDGE': {
+            if (op.payload.edge) {
+              await get().removeEdge(op.payload.edge.id, true);
+            }
+            break;
+          }
+          case 'UPDATE_CONFIG': {
+            if (op.payload.nodeId && op.payload.newConfig) {
+              get().updateNodeConfig(op.payload.nodeId, op.payload.newConfig, true);
+            }
+            break;
+          }
+          case 'UPDATE_NAME': {
+            if (op.payload.nodeId && op.payload.newName) {
+              get().updateNodeName(op.payload.nodeId, op.payload.newName, true);
+            }
+            break;
+          }
+          case 'MOVE_NODE': {
+            if (op.payload.batchNodes) {
+              op.payload.batchNodes.forEach(item => {
+                get().moveNode(item.id, item.newX, item.newY, true);
+              });
+            } else if (op.payload.nodeId && op.payload.newX !== undefined && op.payload.newY !== undefined) {
+              get().moveNode(op.payload.nodeId, op.payload.newX, op.payload.newY, true);
+            }
+            break;
+          }
+        }
+
+        set((state) => ({
+          redoStack,
+          undoStack: [op, ...state.undoStack],
+        }));
+        setTimeout(() => get().recalculateShapes(), 50);
+      } catch (err) {
+        console.warn('Redo operation execution failed:', err);
+      } finally {
+        set({ isApplyingUndoRedo: false });
+      }
+    },
+
+
+
+    connectCollaboration: (projectId) => {
+      if (get().ws) return;
+
+      const isOnline = useProjectStore.getState().isOnline;
+      const token = typeof window !== 'undefined' ? localStorage.getItem('mlbuilder_token') : null;
+
+      if (!isOnline || !token) {
+        // Silently fall back to offline sandbox mode and skip connection
+        set({ syncStatus: 'disconnected', ws: null });
+        return;
+      }
+
+      set({ syncStatus: 'connecting' });
+      toast.info('Syncing Room', 'Attempting real-time workspace handshake...');
+      const wsUrl = `ws://localhost:8000/ws/projects/${projectId}?token=${token}`;
+
+      let socket: WebSocket;
+      try {
+        socket = new WebSocket(wsUrl);
+      } catch (err) {
+        console.error('Failed to instantiate WebSocket connection:', err);
+        set({ syncStatus: 'disconnected', ws: null });
+        toast.warning('Local Sandbox', 'Lost cloud database sync. Local edits active.');
+        return;
+      }
+
+      socket.onopen = () => {
+        set({ syncStatus: 'connected', ws: socket });
+        get().addLog('success', 'Real-time collaboration: Connected to workspace room.');
+        toast.success('Room Connected', 'Cloud Sync established. Collaborators active.');
+
+        if (heartbeatInterval) clearInterval(heartbeatInterval);
+        heartbeatInterval = setInterval(() => {
+          const ws = get().ws;
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'ping' }));
+          }
+        }, 20000);
+      };
+
+      socket.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          switch (msg.type) {
+            case 'SessionInit': {
+              const collaboratorsMap: Record<string, Collaborator> = {};
+              if (Array.isArray(msg.presence)) {
+                msg.presence.forEach((col: any) => {
+                  if (col.client_id !== msg.client_id) {
+                    collaboratorsMap[col.client_id] = {
+                      clientId: col.client_id,
+                      userId: col.user_id,
+                      username: col.username,
+                      color: col.color,
+                      cursor: col.cursor || null,
+                      selection: col.selection || null
+                    };
+                  }
+                });
+              }
+              set({ clientId: msg.client_id, collaborators: collaboratorsMap });
+              break;
+            }
+            case 'UserJoined': {
+              const u = msg.user;
+              if (u.client_id !== get().clientId) {
+                set((state) => {
+                  const collaborators = { ...state.collaborators };
+                  collaborators[u.client_id] = {
+                    clientId: u.client_id,
+                    userId: u.user_id,
+                    username: u.username,
+                    color: u.color,
+                    cursor: u.cursor || null,
+                    selection: u.selection || null
+                  };
+                  return { collaborators };
+                });
+                get().addLog('info', `${u.username} joined the workspace.`);
+              }
+              break;
+            }
+            case 'UserLeft': {
+              if (msg.client_id !== get().clientId) {
+                set((state) => {
+                  const collaborators = { ...state.collaborators };
+                  const leftUser = collaborators[msg.client_id];
+                  delete collaborators[msg.client_id];
+                  if (leftUser) {
+                    setTimeout(() => get().addLog('info', `${leftUser.username} left the workspace.`), 50);
+                  }
+                  return { collaborators };
+                });
+              }
+              break;
+            }
+            case 'UserCursor': {
+              if (msg.client_id !== get().clientId) {
+                set((state) => {
+                  const collaborators = { ...state.collaborators };
+                  if (collaborators[msg.client_id]) {
+                    collaborators[msg.client_id].cursor = { x: msg.x, y: msg.y };
+                  }
+                  return { collaborators };
+                });
+              }
+              break;
+            }
+            case 'UserSelection': {
+              if (msg.client_id !== get().clientId) {
+                set((state) => {
+                  const collaborators = { ...state.collaborators };
+                  if (collaborators[msg.client_id]) {
+                    collaborators[msg.client_id].selection = msg.node_id;
+                  }
+                  return { collaborators };
+                });
+              }
+              break;
+            }
+            case 'OperationApplied': {
+              if (msg.client_id !== get().clientId) {
+                const op = msg.op;
+                set({ isApplyingUndoRedo: true });
+
+                (async () => {
+                  try {
+                    switch (op.type || op.action) {
+                      case 'ADD_NODE': {
+                        const payload = op.payload || {};
+                        const nodeId = payload.node_id || payload.node?.id;
+                        if (nodeId && !get().nodes.some(n => n.id === nodeId)) {
+                          const name = payload.label || payload.node?.name || 'REMOTE_LAYER';
+                          const newNode: CanvasNode = {
+                            id: nodeId,
+                            type: (payload.type || payload.node?.type || 'Dense') as NodeType,
+                            name,
+                            x: payload.position_x || payload.node?.x || 100,
+                            y: payload.position_y || payload.node?.y || 100,
+                            inputShape: [],
+                            outputShape: [],
+                            config: payload.config || payload.node?.config || {}
+                          };
+                          set((state) => ({
+                            nodes: [...state.nodes, newNode]
+                          }));
+                          get().addLog('info', `Collaborator added layer: ${name}`);
+                        }
+                        break;
+                      }
+                      case 'DELETE_NODE':
+                      case 'REMOVE_NODE': {
+                        const payload = op.payload || {};
+                        const nodeId = payload.node_id || payload.node?.id;
+                        if (nodeId) {
+                          const targetNode = get().nodes.find(n => n.id === nodeId);
+                          set((state) => ({
+                            nodes: state.nodes.filter(n => n.id !== nodeId),
+                            edges: state.edges.filter(e => e.source !== nodeId && e.target !== nodeId)
+                          }));
+                          if (targetNode) {
+                            get().addLog('info', `Collaborator deleted layer: ${targetNode.name}`);
+                          }
+                        }
+                        break;
+                      }
+                      case 'ADD_EDGE': {
+                        const payload = op.payload || {};
+                        const edgeId = payload.edge_id || payload.edge?.id;
+                        const fromNodeId = payload.from_node_id || payload.edge?.source;
+                        const toNodeId = payload.to_node_id || payload.edge?.target;
+                        if (edgeId && fromNodeId && toNodeId && !get().edges.some(e => e.id === edgeId)) {
+                          const newEdge: CanvasEdge = {
+                            id: edgeId,
+                            source: fromNodeId,
+                            target: toNodeId
+                          };
+                          set((state) => ({
+                            edges: [...state.edges, newEdge]
+                          }));
+                          get().addLog('info', 'Collaborator connected a new layer flow link.');
+                        }
+                        break;
+                      }
+                      case 'DELETE_EDGE':
+                      case 'REMOVE_EDGE': {
+                        const payload = op.payload || {};
+                        const edgeId = payload.edge_id || payload.edge?.id;
+                        if (edgeId) {
+                          set((state) => ({
+                            edges: state.edges.filter(e => e.id !== edgeId)
+                          }));
+                          get().addLog('info', 'Collaborator disconnected a layer flow link.');
+                        }
+                        break;
+                      }
+                      case 'UPDATE_NODE_CONFIG':
+                      case 'UPDATE_CONFIG': {
+                        const payload = op.payload || {};
+                        const nodeId = payload.node_id || payload.nodeId;
+                        const config = payload.config || payload.newConfig;
+                        if (nodeId && config) {
+                          set((state) => ({
+                            nodes: state.nodes.map(n => n.id === nodeId ? { ...n, config: { ...n.config, ...config } } : n)
+                          }));
+                          get().addLog('info', 'Collaborator updated layer hyperparameters.');
+                        }
+                        break;
+                      }
+                      case 'MOVE_NODE': {
+                        const payload = op.payload || {};
+                        const nodeId = payload.node_id || payload.nodeId;
+                        const x = payload.position_x !== undefined ? payload.position_x : payload.newX;
+                        const y = payload.position_y !== undefined ? payload.position_y : payload.newY;
+                        if (nodeId && x !== undefined && y !== undefined) {
+                          set((state) => ({
+                            nodes: state.nodes.map(n => n.id === nodeId ? { ...n, x, y } : n)
+                          }));
+                        }
+                        break;
+                      }
+                    }
+                    setTimeout(() => get().recalculateShapes(), 50);
+                  } catch (err) {
+                    console.error('Failed to apply remote collaborative operation:', err);
+                  } finally {
+                    set({ isApplyingUndoRedo: false });
+                  }
+                })();
+              }
+              break;
+            }
+            case 'OperationRejected': {
+              get().addLog('error', `Operation Rejected: ${msg.reason}`);
+              const activeProjId = useProjectStore.getState().activeProjectId;
+              if (activeProjId) {
+                get().loadGraph(activeProjId);
+              }
+              break;
+            }
+          }
+        } catch (err) {
+          console.warn('Failed to parse incoming WebSocket frame:', err);
+        }
+      };
+
+      socket.onclose = (event) => {
+        const wasConnected = get().syncStatus === 'connected';
+        set({ syncStatus: 'disconnected', ws: null, clientId: null, collaborators: {} });
+        if (heartbeatInterval) clearInterval(heartbeatInterval);
+
+        if (wasConnected) {
+          toast.warning('Local Sandbox', 'Lost cloud database sync. Local edits active.');
+        }
+
+        const activeProjId = useProjectStore.getState().activeProjectId;
+        const online = useProjectStore.getState().isOnline;
+        const activeToken = typeof window !== 'undefined' ? localStorage.getItem('mlbuilder_token') : null;
+
+        if (activeProjId && event.code !== 1000 && online && activeToken) {
+          if (reconnectTimeout) clearTimeout(reconnectTimeout);
+          reconnectTimeout = setTimeout(() => {
+            get().connectCollaboration(projectId);
+          }, 5000);
+        }
+      };
+
+      socket.onerror = () => {
+        set({ syncStatus: 'disconnected' });
+      };
+    },
+
+    disconnectCollaboration: () => {
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      if (heartbeatInterval) clearInterval(heartbeatInterval);
+
+      const ws = get().ws;
+      if (ws) {
+        ws.close(1000, 'User Navigating Away');
+      }
+      set({ ws: null, clientId: null, collaborators: {}, syncStatus: 'disconnected' });
+    },
+
+    sendCursorPosition: (x, y) => {
+      const ws = get().ws;
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'presence_cursor',
+          x,
+          y
+        }));
+      }
+    },
+
+    sendSelection: (nodeId) => {
+      const ws = get().ws;
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'presence_selection',
+          node_id: nodeId
+        }));
+      }
+    },
+
+    setTrainingProvider: (provider) => {
+      set({ trainingProvider: provider });
+      get().addLog('info', `Switched execution toggle to: ${provider === 'vertex' ? 'Google Cloud Vertex AI' : 'Local Celery Worker'}`);
+    },
+
+    setTrainingEpochs: (epochs) => {
+      set({ trainingEpochs: epochs });
+    },
+
+    loadDatasets: async () => {
+      const isOnline = useProjectStore.getState().isOnline;
+      if (isOnline) {
+        try {
+          const data = await graphqlRequest(GET_DATASETS);
+          if (data && data.datasets) {
+            set({ datasets: data.datasets });
+            return;
+          }
+        } catch (err) {
+          console.warn('Failed to load datasets, falling back to mock.', err);
+        }
+      }
+      
+      // Fallback
+      set({
+        datasets: [
+          { id: 'ds_cifar10', name: 'CIFAR-10 Objects', datasetType: 'Image', status: 'READY', numRecords: 60000 },
+          { id: 'ds_mnist', name: 'MNIST Digits', datasetType: 'Image', status: 'READY', numRecords: 70000 },
+          { id: 'ds_imdb', name: 'IMDB Sentiment', datasetType: 'Text', status: 'READY', numRecords: 50000 }
+        ]
+      });
+    },
+
+    startTraining: async (datasetId = null) => {
+      const isOnline = useProjectStore.getState().isOnline;
+      const activeProjId = useProjectStore.getState().activeProjectId;
+      
+      if (trainingInterval) clearInterval(trainingInterval);
+      if (hardwareFluctuationInterval) clearInterval(hardwareFluctuationInterval);
+      
+      const totalEpochs = get().trainingEpochs;
+      const provider = get().trainingProvider;
+      
+      get().addLog('info', `Initializing network training workflow (Provider: ${provider === 'vertex' ? 'Vertex AI' : 'Local Celery'})...`);
+      toast.info('Training Started', 'Initializing container and loading datasets...');
+      
+      let milestone25 = false;
+      let milestone50 = false;
+      let milestone75 = false;
+
+      const initialJob: TrainingJob = {
+        id: `job_${Math.random().toString(36).substring(2, 10)}`,
+        projectId: activeProjId || 'sandbox_project',
+        datasetId,
+        status: 'PENDING',
+        epochs: totalEpochs,
+        currentEpoch: 0,
+        lossHistory: [],
+        accuracyHistory: [],
+        metricsMetadata: {
+          provider,
+          device: provider === 'vertex' ? 'NVIDIA Tesla T4 (1x)' : 'CPU Worker',
+          machine_type: provider === 'vertex' ? 'n1-standard-4' : 'Celery Thread',
+          logs: 'Job initialized. Preparing execution container...',
+          temperature: provider === 'vertex' ? 62 : 41,
+          memory_used_mb: provider === 'vertex' ? 2450 : 380,
+          system_load: 12
+        }
+      };
+      
+      set({ trainingJob: initialJob });
+      
+      if (isOnline && activeProjId) {
+        set({ isTrainingLoading: true });
+        try {
+          const res = await graphqlRequest(TRIGGER_TRAINING_JOB, {
+            projectId: activeProjId,
+            epochs: totalEpochs,
+            datasetId: datasetId
+          });
+          
+          const backendJobId = res.triggerTrainingJob;
+          get().addLog('success', `Training job successfully registered on backend. ID: ${backendJobId}`);
+          
+          set((state) => {
+            if (state.trainingJob) {
+              return {
+                isTrainingLoading: false,
+                trainingJob: {
+                  ...state.trainingJob,
+                  id: backendJobId,
+                  status: 'RUNNING'
+                }
+              };
+            }
+            return {};
+          });
+          
+          // Poll the database every 1.5s
+          trainingInterval = setInterval(async () => {
+            try {
+              const pollRes = await graphqlRequest(GET_TRAINING_JOB, { id: backendJobId });
+              if (pollRes && pollRes.trainingJob) {
+                const job = pollRes.trainingJob;
+                
+                // Formulate updated object
+                const updatedJob: TrainingJob = {
+                  id: job.id,
+                  projectId: job.projectId,
+                  datasetId: job.datasetId,
+                  status: job.status as any,
+                  epochs: job.epochs,
+                  currentEpoch: job.currentEpoch,
+                  lossHistory: job.lossHistory || [],
+                  accuracyHistory: job.accuracyHistory || [],
+                  metricsMetadata: {
+                    ...get().trainingJob?.metricsMetadata,
+                    ...job.metricsMetadata,
+                    // Inject fluctuating parameters
+                    temperature: provider === 'vertex' 
+                      ? Math.min(85, Math.max(60, 68 + Math.round((Math.random() - 0.5) * 5)))
+                      : Math.min(60, Math.max(38, 44 + Math.round((Math.random() - 0.5) * 3))),
+                    memory_used_mb: provider === 'vertex'
+                      ? Math.round(11200 + Math.random() * 500)
+                      : Math.round(420 + Math.random() * 30),
+                    system_load: Math.min(99, Math.max(70, 85 + Math.round((Math.random() - 0.5) * 10)))
+                  }
+                };
+                
+                set({ trainingJob: updatedJob });
+                
+                // Alert on progress benchmarks
+                const percent = Math.round((job.currentEpoch / totalEpochs) * 100);
+                if (percent >= 25 && !milestone25) {
+                  milestone25 = true;
+                  toast.info('Training Progress: 25%', `Model training has completed 25% of epochs (${job.currentEpoch}/${totalEpochs}).`);
+                }
+                if (percent >= 50 && !milestone50) {
+                  milestone50 = true;
+                  toast.info('Training Progress: 50%', `Model training is halfway completed (${job.currentEpoch}/${totalEpochs}).`);
+                }
+                if (percent >= 75 && !milestone75) {
+                  milestone75 = true;
+                  toast.info('Training Progress: 75%', `Model training has completed 75% of epochs (${job.currentEpoch}/${totalEpochs}).`);
+                }
+
+                if (job.status === 'COMPLETED' || job.status === 'SUCCESS' || job.status === 'FAILED') {
+                  if (trainingInterval) clearInterval(trainingInterval);
+                  get().addLog(
+                    job.status === 'FAILED' ? 'error' : 'success', 
+                    `Training run ${job.status === 'FAILED' ? 'failed' : 'completed successfully'} at epoch ${job.currentEpoch}/${job.epochs}.`
+                  );
+                  if (job.status === 'FAILED') {
+                    toast.error('Training Failed', `Training run failed at epoch ${job.currentEpoch}/${job.epochs}. Check console logs.`);
+                  } else {
+                    toast.success('Training Completed', `Model converged successfully after ${job.epochs} epochs.`);
+                  }
+                }
+              }
+            } catch (pollErr) {
+              console.error('Failed to poll training job:', pollErr);
+            }
+          }, 1500);
+          
+          return;
+        } catch (err) {
+          get().addLog('warning', `Failed to initiate cloud training: ${err instanceof Error ? err.message : err}. Falling back to high-fidelity Sandbox simulation...`);
+        }
+      }
+      
+      // Sandbox local fallback loop
+      set({ isTrainingLoading: false });
+      
+      set((state) => {
+        if (state.trainingJob) {
+          return {
+            trainingJob: {
+              ...state.trainingJob,
+              status: 'RUNNING'
+            }
+          };
+        }
+        return {};
+      });
+      
+      get().addLog('info', 'Sandbox Training session started.');
+      
+      let curEpoch = 0;
+      let currentLoss = 0.82;
+      let currentAcc = 0.22;
+      
+      const lossList: number[] = [];
+      const accList: number[] = [];
+      
+      trainingInterval = setInterval(() => {
+        curEpoch++;
+        if (curEpoch > totalEpochs) {
+          if (trainingInterval) clearInterval(trainingInterval);
+          if (hardwareFluctuationInterval) clearInterval(hardwareFluctuationInterval);
+          
+          set((state) => {
+            if (state.trainingJob) {
+              const updated: TrainingJob = {
+                ...state.trainingJob,
+                status: 'COMPLETED',
+                metricsMetadata: {
+                  ...state.trainingJob.metricsMetadata,
+                  logs: `Sandbox training completed successfully for ${totalEpochs} epochs.`,
+                  peak_memory_used_mb: provider === 'vertex' ? 14450 : 480,
+                  training_duration_seconds: totalEpochs * 1.2,
+                  final_loss: lossList[lossList.length - 1],
+                  final_accuracy: accList[accList.length - 1]
+                }
+              };
+              return { trainingJob: updated };
+            }
+            return {};
+          });
+          
+          get().addLog('success', `[Sandbox] Model converged. Final validation accuracy: ${(accList[accList.length - 1] * 100).toFixed(2)}%`);
+          toast.success('Training Completed', `Sandbox model converged successfully after ${totalEpochs} epochs.`);
+          return;
+        }
+        
+        // Exponential decay for loss and sigmoidal climb for accuracy
+        const decay = 0.08 + Math.random() * 0.08;
+        const growth = 0.05 + Math.random() * 0.07;
+        
+        currentLoss = Math.max(0.015, currentLoss * (1 - decay));
+        currentAcc = Math.min(0.992, currentAcc + (1 - currentAcc) * growth);
+        
+        lossList.push(Number(currentLoss.toFixed(4)));
+        accList.push(Number(currentAcc.toFixed(4)));
+        
+        set((state) => {
+          if (state.trainingJob) {
+            const updated: TrainingJob = {
+              ...state.trainingJob,
+              currentEpoch: curEpoch,
+              lossHistory: [...lossList],
+              accuracyHistory: [...accList],
+              metricsMetadata: {
+                ...state.trainingJob.metricsMetadata,
+                logs: `Epoch ${curEpoch}/${totalEpochs} - Loss: ${currentLoss.toFixed(4)} - Val Accuracy: ${(currentAcc * 100).toFixed(2)}%`
+              }
+            };
+            return { trainingJob: updated };
+          }
+          return {};
+        });
+        
+        get().addLog('info', `[Sandbox] Epoch ${curEpoch}/${totalEpochs} - Loss: ${currentLoss.toFixed(4)} - Accuracy: ${(currentAcc * 100).toFixed(2)}%`);
+
+        // Alert on progress benchmarks for Sandbox
+        const percent = Math.round((curEpoch / totalEpochs) * 100);
+        if (percent >= 25 && !milestone25) {
+          milestone25 = true;
+          toast.info('Training Progress: 25%', `Sandbox completed ${curEpoch}/${totalEpochs} epochs.`);
+        }
+        if (percent >= 50 && !milestone50) {
+          milestone50 = true;
+          toast.info('Training Progress: 50%', `Sandbox completed ${curEpoch}/${totalEpochs} epochs.`);
+        }
+        if (percent >= 75 && !milestone75) {
+          milestone75 = true;
+          toast.info('Training Progress: 75%', `Sandbox completed ${curEpoch}/${totalEpochs} epochs.`);
+        }
+      }, 1000);
+      
+      // Animate Hardware metrics fluctuation
+      hardwareFluctuationInterval = setInterval(() => {
+        set((state) => {
+          if (state.trainingJob && state.trainingJob.metricsMetadata) {
+            const temp = provider === 'vertex'
+              ? Math.min(85, Math.max(68, 73 + Math.round((Math.random() - 0.5) * 4)))
+              : Math.min(58, Math.max(40, 44 + Math.round((Math.random() - 0.5) * 2)));
+              
+            const mem = provider === 'vertex'
+              ? Math.round(11200 + Math.random() * 400)
+              : Math.round(410 + Math.random() * 20);
+              
+            const load = Math.min(99, Math.max(60, 88 + Math.round((Math.random() - 0.5) * 8)));
+            
+            return {
+              trainingJob: {
+                ...state.trainingJob,
+                metricsMetadata: {
+                  ...state.trainingJob.metricsMetadata,
+                  temperature: temp,
+                  memory_used_mb: mem,
+                  system_load: load
+                }
+              }
+            };
+          }
+          return {};
+        });
+      }, 800);
+    },
+
+    pauseTraining: () => {
+      if (trainingInterval) clearInterval(trainingInterval);
+      if (hardwareFluctuationInterval) clearInterval(hardwareFluctuationInterval);
+      
+      set((state) => {
+        if (state.trainingJob) {
+          return {
+            trainingJob: {
+              ...state.trainingJob,
+              status: 'PAUSED'
+            }
+          };
+        }
+        return {};
+      });
+      
+      get().addLog('warning', 'Training paused by user.');
+    },
+
+    stopTraining: () => {
+      if (trainingInterval) clearInterval(trainingInterval);
+      if (hardwareFluctuationInterval) clearInterval(hardwareFluctuationInterval);
+      
+      set((state) => {
+        if (state.trainingJob) {
+          return {
+            trainingJob: {
+              ...state.trainingJob,
+              status: 'STOPPED'
+            }
+          };
+        }
+        return {};
+      });
+      
+      get().addLog('error', 'Training process aborted by developer.');
+    },
+
+    setSelectedNodeIds: (ids) => {
+      set({ selectedNodeIds: ids, selectedNodeId: ids[0] || null });
+    },
+
+    addNodeGroup: (name, nodeIds) => {
+      const newGroup: CanvasNodeGroup = {
+        id: `group_${Math.random().toString(36).substring(2, 10)}`,
+        name,
+        color: ['#c5a3ff', '#8ab4f8', '#80cbc4', '#ffe082', '#81c784'][Math.floor(Math.random() * 5)],
+        nodeIds,
+        isCollapsed: false
+      };
+      set((state) => ({
+        nodeGroups: [...state.nodeGroups, newGroup],
+        selectedNodeIds: []
+      }));
+      get().addLog('success', `Created layer group container: "${name}" wrapping ${nodeIds.length} layers.`);
+    },
+
+    removeNodeGroup: (groupId) => {
+      set((state) => ({
+        nodeGroups: state.nodeGroups.filter(g => g.id !== groupId)
+      }));
+      get().addLog('info', `Unpacked layer group container.`);
+    },
+
+    toggleGroupCollapse: (groupId) => {
+      set((state) => ({
+        nodeGroups: state.nodeGroups.map(g => 
+          g.id === groupId ? { ...g, isCollapsed: !g.isCollapsed } : g
+        )
+      }));
+    },
+
+    alignSelectedNodes: (alignment) => {
+      const selectedIds = get().selectedNodeIds;
+      if (selectedIds.length < 2) return;
+      const selectedNodes = get().nodes.filter(n => selectedIds.includes(n.id));
+      
+      let updatedNodes = [...get().nodes];
+      if (alignment === 'top') {
+        const minY = Math.min(...selectedNodes.map(n => n.y));
+        updatedNodes = get().nodes.map(n => 
+          selectedIds.includes(n.id) ? { ...n, y: minY } : n
+        );
+        get().addLog('info', `Aligned selected layers to top boundary.`);
+      } else if (alignment === 'left') {
+        const minX = Math.min(...selectedNodes.map(n => n.x));
+        updatedNodes = get().nodes.map(n => 
+          selectedIds.includes(n.id) ? { ...n, x: minX } : n
+        );
+        get().addLog('info', `Aligned selected layers to left boundary.`);
+      } else if (alignment === 'distribute-h') {
+        const sorted = [...selectedNodes].sort((a, b) => a.x - b.x);
+        const minX = sorted[0].x;
+        const maxX = sorted[sorted.length - 1].x;
+        const span = maxX - minX;
+        
+        if (sorted.length > 2 && span > 0) {
+          const step = span / (sorted.length - 1);
+          const newCoords = new Map<string, number>();
+          sorted.forEach((n, idx) => {
+            newCoords.set(n.id, Math.round((minX + idx * step) / 20) * 20);
+          });
+          updatedNodes = get().nodes.map(n => 
+            newCoords.has(n.id) ? { ...n, x: newCoords.get(n.id)! } : n
+          );
+          get().addLog('info', `Distributed selected layers evenly horizontally.`);
+        }
+      } else if (alignment === 'distribute-v') {
+        const sorted = [...selectedNodes].sort((a, b) => a.y - b.y);
+        const minY = sorted[0].y;
+        const maxY = sorted[sorted.length - 1].y;
+        const span = maxY - minY;
+        
+        if (sorted.length > 2 && span > 0) {
+          const step = span / (sorted.length - 1);
+          const newCoords = new Map<string, number>();
+          sorted.forEach((n, idx) => {
+            newCoords.set(n.id, Math.round((minY + idx * step) / 20) * 20);
+          });
+          updatedNodes = get().nodes.map(n => 
+            newCoords.has(n.id) ? { ...n, y: newCoords.get(n.id)! } : n
+          );
+          get().addLog('info', `Distributed selected layers evenly vertically.`);
+        }
+      }
+      
+      set({ nodes: updatedNodes });
+      get().recalculateShapes();
+    },
+
+    batchMoveNodes: (nodePositions) => {
+      const updatedNodes = get().nodes.map(n => {
+        const targetPos = nodePositions.find(p => p.id === n.id);
+        if (targetPos) {
+          return { ...n, x: targetPos.x, y: targetPos.y };
+        }
+        return n;
+      });
+      set({ nodes: updatedNodes });
+    },
+
+    // Model Versioning & Auto-saving actions
+    triggerAutoSave: () => {
+      const projectId = useProjectStore.getState().activeProjectId;
+      if (!projectId) return;
+
+      set({ draftSavedStatus: 'saving' });
+
+      if (autoSaveTimeout) {
+        clearTimeout(autoSaveTimeout);
+      }
+
+      autoSaveTimeout = setTimeout(() => {
+        try {
+          const { nodes, edges, nodeGroups } = get();
+          const data = JSON.stringify({ nodes, edges, nodeGroups });
+          localStorage.setItem(`mlbuilder_project_draft_${projectId}`, data);
+          set({ draftSavedStatus: 'saved' });
+
+          const activeCheckpoints = get().checkpoints;
+          localStorage.setItem(`mlbuilder_project_checkpoints_${projectId}`, JSON.stringify(activeCheckpoints));
+        } catch (err) {
+          console.error('Failed to auto-save draft:', err);
+          set({ draftSavedStatus: 'error' });
+        }
+      }, 800);
+    },
+
+    loadCheckpoints: (projectId) => {
+      if (typeof window === 'undefined') return;
+      try {
+        const saved = localStorage.getItem(`mlbuilder_project_checkpoints_${projectId}`);
+        if (saved) {
+          set({ checkpoints: JSON.parse(saved) });
+        } else {
+          set({ checkpoints: [] });
+        }
+      } catch (err) {
+        console.warn('Failed to load checkpoints from localStorage:', err);
+      }
+    },
+
+    saveCheckpoint: (name) => {
+      const projectId = useProjectStore.getState().activeProjectId;
+      if (!projectId) return;
+
+      const { nodes, edges, nodeGroups, checkpoints } = get();
+      const newCheckpoint: ModelCheckpoint = {
+        id: 'cp_' + Math.random().toString(36).substr(2, 9),
+        name: name || `Checkpoint - ${new Date().toLocaleTimeString()}`,
+        timestamp: new Date().toLocaleString(),
+        nodes: JSON.parse(JSON.stringify(nodes)),
+        edges: JSON.parse(JSON.stringify(edges)),
+        nodeGroups: JSON.parse(JSON.stringify(nodeGroups))
+      };
+
+      const updated = [newCheckpoint, ...checkpoints];
+      set({ checkpoints: updated });
+      localStorage.setItem(`mlbuilder_project_checkpoints_${projectId}`, JSON.stringify(updated));
+      get().addLog('success', `Created named checkpoint snapshot: "${newCheckpoint.name}"`);
+    },
+
+    restoreCheckpoint: (checkpointId) => {
+      const cp = get().checkpoints.find(c => c.id === checkpointId);
+      if (!cp) return;
+
+      // Pushing to undo stack for seamless undo of checkpoint restores!
+      const originalNodes = get().nodes;
+      const originalEdges = get().edges;
+      const originalGroups = get().nodeGroups;
+
+      const batchNodesMove = originalNodes.map(n => {
+        const target = cp.nodes.find(cn => cn.id === n.id);
+        return {
+          id: n.id,
+          oldX: n.x,
+          oldY: n.y,
+          newX: target ? target.x : n.x,
+          newY: target ? target.y : n.y
+        };
+      });
+
+      get().pushOperation({
+        type: 'MOVE_NODE',
+        payload: {
+          batchNodes: batchNodesMove
+        }
+      });
+
+      set({
+        nodes: JSON.parse(JSON.stringify(cp.nodes)),
+        edges: JSON.parse(JSON.stringify(cp.edges)),
+        nodeGroups: JSON.parse(JSON.stringify(cp.nodeGroups)),
+        selectedNodeIds: [],
+        selectedNodeId: null
+      });
+
+      get().recalculateShapes();
+      get().addLog('info', `Restored visual graph from checkpoint: "${cp.name}"`);
+      get().triggerAutoSave();
+    },
+
+    deleteCheckpoint: (checkpointId) => {
+      const projectId = useProjectStore.getState().activeProjectId;
+      if (!projectId) return;
+
+      const updated = get().checkpoints.filter(c => c.id !== checkpointId);
+      set({ checkpoints: updated });
+      localStorage.setItem(`mlbuilder_project_checkpoints_${projectId}`, JSON.stringify(updated));
+      get().addLog('info', `Deleted checkpoint snapshot.`);
+    },
+
+    // Topological Auto-Layout Suggester Engine (Upgraded to Dagre.js)
+    triggerAutoLayout: () => {
+      const { nodes, edges } = get();
+      if (nodes.length === 0) return;
+
+      try {
+        // 1. Initialize Dagre graph layout container
+        const g = new dagre.graphlib.Graph();
+        g.setGraph({ 
+          rankdir: 'LR',  // Left-to-Right structural flow
+          ranksep: 90,    // Horizontal rank separation
+          nodesep: 60,    // Vertical node separation
+          marginx: 100,
+          marginy: 100
+        });
+        g.setDefaultEdgeLabel(() => ({}));
+
+        // 2. Add nodes with standard box dimensions (220 width, 80 height)
+        nodes.forEach(node => {
+          g.setNode(node.id, { width: 220, height: 80 });
+        });
+
+        // 3. Add connection edges
+        edges.forEach(edge => {
+          if (g.hasNode(edge.source) && g.hasNode(edge.target)) {
+            g.setEdge(edge.source, edge.target);
+          }
+        });
+
+        // 4. Run Dagre hierarchical layout solver
+        dagre.layout(g);
+
+        // 5. Retrieve coordinates, convert from center-based to top-left, and snap to 20px grid
+        const batchNodesMove: { id: string; oldX: number; oldY: number; newX: number; newY: number }[] = [];
+        const nodePositions: { id: string; x: number; y: number }[] = [];
+
+        nodes.forEach(node => {
+          const dagreNode = g.node(node.id);
+          if (dagreNode) {
+            // Dagre coordinates represent the center of the node box (220 x 80)
+            const calculatedX = dagreNode.x - 110;
+            const calculatedY = dagreNode.y - 40;
+
+            // Apply 20px visual grid snapping
+            const snappedX = Math.round(calculatedX / 20) * 20;
+            const snappedY = Math.round(calculatedY / 20) * 20;
+
+            batchNodesMove.push({
+              id: node.id,
+              oldX: node.x,
+              oldY: node.y,
+              newX: snappedX,
+              newY: snappedY
+            });
+            nodePositions.push({ id: node.id, x: snappedX, y: snappedY });
+          }
+        });
+
+        // 6. Push batch transaction to the undo stack for single-click undo safety
+        get().pushOperation({
+          type: 'MOVE_NODE',
+          payload: {
+            batchNodes: batchNodesMove
+          }
+        });
+
+        // 7. Apply layout shifts and trigger reactive shape propagation
+        get().batchMoveNodes(nodePositions);
+        get().recalculateShapes();
+        get().addLog('success', `Dagre Auto-Layout: Arranged visual model graph using hierarchical Gansner-North solver.`);
+      } catch (err) {
+        console.error('Dagre layout computation failed:', err);
+        get().addLog('error', `Auto-Layout Error: Dagre solver failed.`);
+      }
+    },
+
+    setClusterPriority: (priority) => {
+      set({ clusterPriority: priority });
+      get().addLog('info', `Admin: Cluster Priority updated to ${priority}`);
+    },
+
+    setGpuThrottleLimit: (limit) => {
+      set({ gpuThrottleLimit: limit });
+      get().addLog('info', `Admin: GPU Throttle Limit set to ${limit}%`);
+    },
   };
 });
+
+

@@ -6,11 +6,12 @@ import MainLayout from '@/components/Layout/MainLayout';
 import LayerLibrary from '@/components/Panels/LayerLibrary';
 import ConfigPanel from '@/components/Panels/ConfigPanel';
 import ValidationPanel from '@/components/Panels/ValidationPanel';
+import ValidationSidebar from '@/components/Panels/ValidationSidebar';
 import CanvasWrapper from '@/components/Canvas/CanvasWrapper';
 import CodePreviewModal from '@/components/Modals/CodePreviewModal';
+import ErrorBoundary from '@/components/Common/ErrorBoundary';
 import { useCanvasStore } from '@/store/canvasStore';
 import { useProjectStore } from '@/store/projectStore';
-import { compileToPyTorch } from '@/lib/canvas/pytorchCompiler';
 import { 
   ZoomIn, 
   ZoomOut, 
@@ -24,18 +25,65 @@ export default function EditorPage() {
   const params = useParams();
   const projectId = params.projectId as string;
   
-  const { nodes, edges, zoom, setZoom, setPan, runForwardPass, isPlayingAnimation, addNode } = useCanvasStore();
+  const { 
+    nodes, 
+    edges, 
+    zoom, 
+    setZoom, 
+    setPan, 
+    runForwardPass, 
+    isPlayingAnimation, 
+    addNode, 
+    loadGraph,
+    undo,
+    redo,
+    connectCollaboration,
+    disconnectCollaboration,
+  } = useCanvasStore();
   const setActiveProjectId = useProjectStore((state) => state.setActiveProjectId);
 
   // Modals state
   const [isCodeModalOpen, setIsCodeModalOpen] = useState(false);
 
+  // Keyboard shortcut listener for structural Undo / Redo
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (
+        document.activeElement?.tagName === 'INPUT' ||
+        document.activeElement?.tagName === 'TEXTAREA' ||
+        document.activeElement?.hasAttribute('contenteditable')
+      ) {
+        return;
+      }
+
+      if (e.ctrlKey || e.metaKey) {
+        if (e.key.toLowerCase() === 'z') {
+          e.preventDefault();
+          undo();
+        } else if (e.key.toLowerCase() === 'y') {
+          e.preventDefault();
+          redo();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [undo, redo]);
+
   // Set active project context on load
   useEffect(() => {
     if (projectId) {
       setActiveProjectId(projectId);
+      loadGraph(projectId);
+      connectCollaboration(projectId);
     }
-  }, [projectId, setActiveProjectId]);
+    return () => {
+      disconnectCollaboration();
+    };
+  }, [projectId, setActiveProjectId, loadGraph, connectCollaboration, disconnectCollaboration]);
 
   const handleZoomIn = () => setZoom(z => z + 0.1);
   const handleZoomOut = () => setZoom(z => z - 0.1);
@@ -49,44 +97,46 @@ export default function EditorPage() {
     addNode('Conv2D', 300, 200);
   };
 
-  const generatedCode = compileToPyTorch(nodes, edges);
-
   return (
     <MainLayout onGenerateCode={() => setIsCodeModalOpen(true)}>
       <div className="flex h-[calc(100vh-4rem)] overflow-hidden relative z-10 select-none">
         
         {/* Left inner Sidebar: Layer Library */}
-        <LayerLibrary />
+        <ErrorBoundary name="Layer Library Sidebar">
+          <LayerLibrary />
+        </ErrorBoundary>
 
         {/* Middle Area: Canvas + Toolbar + Bottom Console Monitor */}
         <div className="flex-1 flex flex-col h-full relative overflow-hidden bg-[#090a0f]">
           
           {/* Main Visual interactive canvas wrapper */}
           <div className="flex-1 relative w-full h-full overflow-hidden">
-            <CanvasWrapper />
+            <ErrorBoundary name="Visual Canvas Stage">
+              <CanvasWrapper />
+            </ErrorBoundary>
 
             {/* Float Floating Zoom Panel overlays at bottom middle */}
-            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-4 px-5 py-3 bg-[#11121d]/85 backdrop-blur-xl border border-white/5 shadow-2xl rounded-2xl z-30 select-none">
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-4 px-6 py-2.5 bg-[#2b2d31]/95 border border-[#3f4046] shadow-xl rounded-full z-30 select-none">
               <button 
                 onClick={handleZoomIn}
-                className="p-2 hover:bg-white/5 text-gray-400 hover:text-white rounded-lg transition-all" 
+                className="p-1.5 hover:bg-[#1e1f22] text-[#9aa0a6] hover:text-white rounded-full transition-all" 
                 title="Zoom In"
               >
                 <ZoomIn size={16} />
               </button>
               <button 
                 onClick={handleZoomOut}
-                className="p-2 hover:bg-white/5 text-gray-400 hover:text-white rounded-lg transition-all" 
+                className="p-1.5 hover:bg-[#1e1f22] text-[#9aa0a6] hover:text-white rounded-full transition-all" 
                 title="Zoom Out"
               >
                 <ZoomOut size={16} />
               </button>
               
-              <div className="w-[1px] h-4 bg-white/10 mx-1"></div>
+              <div className="w-[1px] h-4 bg-[#3f4046] mx-1"></div>
 
               <button 
                 onClick={handleResetView}
-                className="p-2 hover:bg-white/5 text-gray-400 hover:text-white rounded-lg transition-all" 
+                className="p-1.5 hover:bg-[#1e1f22] text-[#9aa0a6] hover:text-white rounded-full transition-all" 
                 title="Fit to Screen"
               >
                 <Maximize2 size={15} />
@@ -94,10 +144,10 @@ export default function EditorPage() {
               <button 
                 onClick={runForwardPass}
                 disabled={isPlayingAnimation}
-                className={`p-2 rounded-lg transition-all ${
+                className={`p-1.5 rounded-full transition-all ${
                   isPlayingAnimation 
-                    ? 'bg-purple-600/20 text-purple-400 cursor-not-allowed'
-                    : 'hover:bg-purple-600/10 text-purple-400 hover:text-purple-300'
+                    ? 'bg-[#8ab4f8]/10 text-[#8ab4f8] cursor-not-allowed'
+                    : 'hover:bg-[#8ab4f8]/10 text-[#8ab4f8] hover:text-[#a8c7fa]'
                 }`}
                 title="Run Forward Pass"
               >
@@ -108,7 +158,7 @@ export default function EditorPage() {
             {/* Float floating Quick-Add Button overlays at bottom right */}
             <button
               onClick={handleFloatingAdd}
-              className="absolute bottom-6 right-6 w-12 h-12 rounded-full bg-gradient-to-tr from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white flex items-center justify-center shadow-lg shadow-purple-500/25 border border-purple-500/25 hover:scale-105 active:scale-95 transition-all z-30"
+              className="absolute bottom-6 right-6 w-12 h-12 rounded-full bg-[#8ab4f8] hover:bg-[#a8c7fa] text-[#1e1f22] flex items-center justify-center shadow-lg hover:scale-105 active:scale-95 transition-all z-30 border-none cursor-pointer"
               title="Quick Add Conv2D"
             >
               <Plus size={22} />
@@ -116,17 +166,27 @@ export default function EditorPage() {
           </div>
 
           {/* Bottom Console Monitor Panel */}
-          <ValidationPanel />
+          <ErrorBoundary name="IDE Console Panel">
+            <ValidationPanel />
+          </ErrorBoundary>
         </div>
 
         {/* Right side Panel: Hyperparameters Config Inspector */}
-        <ConfigPanel />
+        <ErrorBoundary name="Inspector Config Panel">
+          <ConfigPanel />
+        </ErrorBoundary>
 
-        {/* Floating PyTorch Code Preview Modal */}
+        {/* Validation & Compilation Sandbox Sidebar */}
+        <ErrorBoundary name="Diagnostics Sidebar">
+          <ValidationSidebar />
+        </ErrorBoundary>
+
+        {/* Floating Code Preview Modal */}
         <CodePreviewModal
           isOpen={isCodeModalOpen}
           onClose={() => setIsCodeModalOpen(false)}
-          codeString={generatedCode}
+          nodes={nodes}
+          edges={edges}
         />
 
       </div>

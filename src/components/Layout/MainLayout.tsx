@@ -1,8 +1,12 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import Sidebar from './Sidebar';
 import Header from './Header';
+import ToastContainer from './ToastContainer';
+import { useProjectStore } from '@/store/projectStore';
+import { Loader2 } from 'lucide-react';
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -10,8 +14,43 @@ interface MainLayoutProps {
 }
 
 export default function MainLayout({ children, onGenerateCode }: MainLayoutProps) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const isOnline = useProjectStore((state) => state.isOnline);
+  const checkBackendStatus = useProjectStore((state) => state.checkBackendStatus);
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+
+  useEffect(() => {
+    // Check initial online status
+    checkBackendStatus();
+  }, [checkBackendStatus]);
+
+  useEffect(() => {
+    const token = localStorage.getItem('mlbuilder_token');
+    
+    // Route guard: if online is active and token is missing, or token is missing entirely, redirect to /login
+    if ((isOnline || !token) && !token && pathname !== '/login') {
+      router.push('/login');
+    } else {
+      setIsCheckingAuth(false);
+    }
+  }, [isOnline, pathname, router]);
+
+  const isEditor = pathname.startsWith('/editor');
+
+  if (isCheckingAuth && pathname !== '/login') {
+    return (
+      <div className="min-h-screen w-full flex items-center justify-center bg-[#0a0b10] text-[#e3e3e3]">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="h-8 w-8 text-[#8ab4f8] animate-spin" />
+          <span className="text-xs font-semibold text-[#9aa0a6]">Securing Session Handshake...</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-[#090a0f] text-gray-100 flex overflow-hidden">
+    <div className="min-h-screen bg-[#1e1f22] text-[#e3e3e3] flex overflow-hidden">
       {/* Visual background elements */}
       <div className="absolute inset-0 dot-grid pointer-events-none opacity-40 z-0"></div>
       
@@ -19,11 +58,12 @@ export default function MainLayout({ children, onGenerateCode }: MainLayoutProps
       <Sidebar />
       
       {/* Main Content Area */}
-      <div className="flex-1 pl-64 flex flex-col h-screen overflow-hidden relative z-10">
+      <div className={`flex-1 ${isEditor ? 'pl-20' : 'pl-64'} flex flex-col h-screen overflow-hidden relative z-10 transition-all duration-300`}>
         <Header onGenerateCode={onGenerateCode} />
         <main className="flex-1 overflow-y-auto relative">
           {children}
         </main>
+        <ToastContainer />
       </div>
     </div>
   );
