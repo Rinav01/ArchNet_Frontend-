@@ -1,5 +1,14 @@
 import { CanvasNode, CanvasEdge } from '@/types/canvas';
 
+function cleanVarName(id: string, type: string, name?: string): string {
+  let base = (name || type || 'layer').toLowerCase().replace(/[^a-z0-9_]/g, '_');
+  if (!/^[a-z_]/.test(base)) {
+    base = 'node_' + base;
+  }
+  const idHash = id.replace(/-/g, '').substring(0, 8);
+  return `${base}_${idHash}`;
+}
+
 export function compileToJAX(nodes: CanvasNode[], edges: CanvasEdge[]): string {
   // 1. Topological Sort
   const getTopologicalOrder = (): CanvasNode[] => {
@@ -57,12 +66,15 @@ export function compileToJAX(nodes: CanvasNode[], edges: CanvasEdge[]): string {
 
   // Compile individual node declarations in Flax Linen Compact mode
   order.forEach((node) => {
-    const varName = node.id;
+    const varName = cleanVarName(node.id, node.type, node.name);
     const config = node.config;
     
     // Find incoming parent nodes/variables
     const incomingEdges = edges.filter(e => e.target === node.id);
-    const parentVars = incomingEdges.map(e => e.source);
+    const parentVars = incomingEdges.map(e => {
+      const srcNode = nodes.find(n => n.id === e.source);
+      return srcNode ? cleanVarName(srcNode.id, srcNode.type, srcNode.name) : 'x';
+    });
     
     let inputVar = 'x';
     if (parentVars.length === 1) {
@@ -112,6 +124,17 @@ export function compileToJAX(nodes: CanvasNode[], edges: CanvasEdge[]): string {
       forwardSteps.push(`        # Dense linear projection layer`);
       forwardSteps.push(`        ${varName} = nn.Dense(features=${units})(${inputVar})`);
     }
+    
+    else if (node.type === 'BatchNorm2D') {
+      forwardSteps.push(`        # Feature Normalization`);
+      forwardSteps.push(`        ${varName} = nn.BatchNorm()(${inputVar})`);
+    }
+    
+    else if (node.type === 'Dropout') {
+      const rate = config.rate !== undefined ? config.rate : 0.5;
+      forwardSteps.push(`        # Regularization Dropout`);
+      forwardSteps.push(`        ${varName} = nn.Dropout(rate=${rate}, deterministic=True)(${inputVar})`);
+    }
 
     forwardSteps.push(''); // add spacer line
   });
@@ -120,9 +143,9 @@ export function compileToJAX(nodes: CanvasNode[], edges: CanvasEdge[]): string {
   const finalLeaves = nodes.filter(n => outgoingCount.get(n.id) === 0);
   let returnStatement = 'return x';
   if (finalLeaves.length === 1) {
-    returnStatement = `return ${finalLeaves[0].id}`;
+    returnStatement = `return ${cleanVarName(finalLeaves[0].id, finalLeaves[0].type, finalLeaves[0].name)}`;
   } else if (finalLeaves.length > 1) {
-    returnStatement = `return ${finalLeaves.map(n => n.id).join(', ')}`;
+    returnStatement = `return ${finalLeaves.map(n => cleanVarName(n.id, n.type, n.name)).join(', ')}`;
   }
 
   // Assemble full modular Flax Linen subclass

@@ -57,6 +57,8 @@ interface CanvasState {
   // Collaboration State
   ws: WebSocket | null;
   clientId: string | null;
+  myUserId: string | null;
+  myUsername: string | null;
   collaborators: Record<string, Collaborator>;
   syncStatus: 'disconnected' | 'connecting' | 'connected';
   
@@ -231,6 +233,10 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
       return [units];
     }
 
+    if (type === 'BatchNorm2D' || type === 'Dropout') {
+      return inputShape;
+    }
+
     return inputShape;
   };
 
@@ -261,6 +267,8 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
     isApplyingUndoRedo: false,
     ws: null,
     clientId: null,
+    myUserId: null,
+    myUsername: null,
     collaborators: {},
     syncStatus: 'disconnected',
 
@@ -381,6 +389,10 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
         config = {};
       } else if (type === 'Dense') {
         config = { units: 10 };
+      } else if (type === 'BatchNorm2D') {
+        config = {};
+      } else if (type === 'Dropout') {
+        config = { rate: 0.5 };
       }
 
       if (!isWsConnected && (!isOnline || !activeProjId)) {
@@ -1633,10 +1645,23 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
           const msg = JSON.parse(event.data);
           switch (msg.type) {
             case 'SessionInit': {
+              let myUserId: string | null = null;
+              let myUsername: string | null = null;
+              if (Array.isArray(msg.presence)) {
+                const selfEntry = msg.presence.find((col: any) => col.client_id === msg.client_id);
+                if (selfEntry) {
+                  myUserId = selfEntry.user_id;
+                  myUsername = selfEntry.username;
+                }
+              }
+
               const collaboratorsMap: Record<string, Collaborator> = {};
               if (Array.isArray(msg.presence)) {
                 msg.presence.forEach((col: any) => {
-                  if (col.client_id !== msg.client_id) {
+                  const isSelf = col.client_id === msg.client_id || 
+                                 (myUserId && col.user_id === myUserId) || 
+                                 (myUsername && col.username === myUsername);
+                  if (!isSelf) {
                     collaboratorsMap[col.client_id] = {
                       clientId: col.client_id,
                       userId: col.user_id,
@@ -1648,12 +1673,24 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
                   }
                 });
               }
-              set({ clientId: msg.client_id, collaborators: collaboratorsMap });
+              set({ 
+                clientId: msg.client_id, 
+                myUserId, 
+                myUsername, 
+                collaborators: collaboratorsMap 
+              });
               break;
             }
             case 'UserJoined': {
               const u = msg.user;
-              if (u.client_id !== get().clientId) {
+              const myUserId = get().myUserId;
+              const myUsername = get().myUsername;
+              
+              const isSelf = u.client_id === get().clientId || 
+                             (myUserId && u.user_id === myUserId) || 
+                             (myUsername && u.username === myUsername);
+              
+              if (!isSelf) {
                 set((state) => {
                   const collaborators = { ...state.collaborators };
                   collaborators[u.client_id] = {

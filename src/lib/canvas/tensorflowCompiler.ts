@@ -1,5 +1,14 @@
 import { CanvasNode, CanvasEdge } from '@/types/canvas';
 
+function cleanVarName(id: string, type: string, name?: string): string {
+  let base = (name || type || 'layer').toLowerCase().replace(/[^a-z0-9_]/g, '_');
+  if (!/^[a-z_]/.test(base)) {
+    base = 'node_' + base;
+  }
+  const idHash = id.replace(/-/g, '').substring(0, 8);
+  return `${base}_${idHash}`;
+}
+
 export function compileToTensorFlow(nodes: CanvasNode[], edges: CanvasEdge[]): string {
   // 1. Topological Sort
   const getTopologicalOrder = (): CanvasNode[] => {
@@ -58,12 +67,15 @@ export function compileToTensorFlow(nodes: CanvasNode[], edges: CanvasEdge[]): s
 
   // Compile individual node declarations and traces
   order.forEach((node) => {
-    const varName = node.id;
+    const varName = cleanVarName(node.id, node.type, node.name);
     const config = node.config;
     
     // Find incoming parent nodes/variables
     const incomingEdges = edges.filter(e => e.target === node.id);
-    const parentVars = incomingEdges.map(e => e.source);
+    const parentVars = incomingEdges.map(e => {
+      const srcNode = nodes.find(n => n.id === e.source);
+      return srcNode ? cleanVarName(srcNode.id, srcNode.type, srcNode.name) : 'x';
+    });
     
     let inputVar = 'x';
     if (parentVars.length === 1) {
@@ -120,6 +132,19 @@ export function compileToTensorFlow(nodes: CanvasNode[], edges: CanvasEdge[]): s
       forwardSteps.push(`        # Dense projection layer`);
       forwardSteps.push(`        ${varName} = self.${varName}(${inputVar})`);
     }
+    
+    else if (node.type === 'BatchNorm2D') {
+      initializers.push(`        self.${varName} = layers.BatchNormalization()`);
+      forwardSteps.push(`        # Feature normalization`);
+      forwardSteps.push(`        ${varName} = self.${varName}(${inputVar})`);
+    }
+    
+    else if (node.type === 'Dropout') {
+      const rate = config.rate !== undefined ? config.rate : 0.5;
+      initializers.push(`        self.${varName} = layers.Dropout(rate=${rate})`);
+      forwardSteps.push(`        # Regularization Dropout`);
+      forwardSteps.push(`        ${varName} = self.${varName}(${inputVar})`);
+    }
 
     forwardSteps.push(''); // add spacer line
   });
@@ -128,9 +153,9 @@ export function compileToTensorFlow(nodes: CanvasNode[], edges: CanvasEdge[]): s
   const finalLeaves = nodes.filter(n => outgoingCount.get(n.id) === 0);
   let returnStatement = 'return x';
   if (finalLeaves.length === 1) {
-    returnStatement = `return ${finalLeaves[0].id}`;
+    returnStatement = `return ${cleanVarName(finalLeaves[0].id, finalLeaves[0].type, finalLeaves[0].name)}`;
   } else if (finalLeaves.length > 1) {
-    returnStatement = `return ${finalLeaves.map(n => n.id).join(', ')}`;
+    returnStatement = `return ${finalLeaves.map(n => cleanVarName(n.id, n.type, n.name)).join(', ')}`;
   }
 
   // Assemble full modular python class

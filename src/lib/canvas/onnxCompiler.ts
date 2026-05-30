@@ -1,5 +1,14 @@
 import { CanvasNode, CanvasEdge } from '@/types/canvas';
 
+function cleanVarName(id: string, type: string, name?: string): string {
+  let base = (name || type || 'layer').toLowerCase().replace(/[^a-z0-9_]/g, '_');
+  if (!/^[a-z_]/.test(base)) {
+    base = 'node_' + base;
+  }
+  const idHash = id.replace(/-/g, '').substring(0, 8);
+  return `${base}_${idHash}`;
+}
+
 export function compileToONNX(nodes: CanvasNode[], edges: CanvasEdge[]): string {
   // 1. Topological Sort
   const getTopologicalOrder = (): CanvasNode[] => {
@@ -58,12 +67,15 @@ export function compileToONNX(nodes: CanvasNode[], edges: CanvasEdge[]): string 
 
   // Compile individual node builders
   order.forEach((node) => {
-    const varName = node.id;
+    const varName = cleanVarName(node.id, node.type, node.name);
     const config = node.config;
     
     // Find incoming parent nodes/variables
     const incomingEdges = edges.filter(e => e.target === node.id);
-    const parentVars = incomingEdges.map(e => e.source);
+    const parentVars = incomingEdges.map(e => {
+      const srcNode = nodes.find(n => n.id === e.source);
+      return srcNode ? cleanVarName(srcNode.id, srcNode.type, srcNode.name) : 'x';
+    });
     
     let inputVar = 'x';
     if (parentVars.length === 1) {
@@ -196,13 +208,52 @@ export function compileToONNX(nodes: CanvasNode[], edges: CanvasEdge[]): string 
     )
     onnx_nodes.append(node_${varName})`);
     }
+    
+    else if (node.type === 'BatchNorm2D') {
+      let inChannels = 3;
+      if (node.inputShape.length === 3) {
+        inChannels = node.inputShape[2];
+      }
+      initializers.push(`    # BatchNorm parameters for ${varName}
+    scale_val_${varName} = np.ones([${inChannels}]).astype(np.float32)
+    bias_val_${varName} = np.zeros([${inChannels}]).astype(np.float32)
+    mean_val_${varName} = np.zeros([${inChannels}]).astype(np.float32)
+    var_val_${varName} = np.ones([${inChannels}]).astype(np.float32)
+    
+    scale_tensor_${varName} = helper.make_tensor("scale_${varName}", TensorProto.FLOAT, [${inChannels}], scale_val_${varName})
+    bias_tensor_${varName} = helper.make_tensor("bias_${varName}", TensorProto.FLOAT, [${inChannels}], bias_val_${varName})
+    mean_tensor_${varName} = helper.make_tensor("mean_${varName}", TensorProto.FLOAT, [${inChannels}], mean_val_${varName})
+    var_tensor_${varName} = helper.make_tensor("var_${varName}", TensorProto.FLOAT, [${inChannels}], var_val_${varName})
+    
+    onnx_initializers.extend([scale_tensor_${varName}, bias_tensor_${varName}, mean_tensor_${varName}, var_tensor_${varName}])`);
+
+      helperNodes.push(`    # Batch Normalization: ${varName}
+    node_${varName} = helper.make_node(
+        "BatchNormalization",
+        inputs=["${inputVar}", "scale_${varName}", "bias_${varName}", "mean_${varName}", "var_${varName}"],
+        outputs=["${varName}"]
+    )
+    onnx_nodes.append(node_${varName})`);
+    }
+    
+    else if (node.type === 'Dropout') {
+      const rate = config.rate !== undefined ? config.rate : 0.5;
+      helperNodes.push(`    # Regularization Dropout: ${varName}
+    node_${varName} = helper.make_node(
+        "Dropout",
+        inputs=["${inputVar}"],
+        outputs=["${varName}"],
+        ratio=${rate}
+    )
+    onnx_nodes.append(node_${varName})`);
+    }
   });
 
   // Calculate final return elements
   const finalLeaves = nodes.filter(n => outgoingCount.get(n.id) === 0);
-  let outputsArray = `["${finalLeaves[0]?.id || 'x'}"]`;
+  let outputsArray = `["${finalLeaves[0] ? cleanVarName(finalLeaves[0].id, finalLeaves[0].type, finalLeaves[0].name) : 'x'}"]`;
   if (finalLeaves.length > 1) {
-    outputsArray = `[${finalLeaves.map(n => `"${n.id}"`).join(', ')}]`;
+    outputsArray = `[${finalLeaves.map(n => `"${cleanVarName(n.id, n.type, n.name)}"`).join(', ')}]`;
   }
 
   // Placeholder function for shape mapping
@@ -244,9 +295,10 @@ ${helperNodes.join('\n\n')}
     # Output nodes matching terminal nodes
     graph_outputs = []
 ${finalLeaves.map(leaf => {
+  const cleanLeafName = cleanVarName(leaf.id, leaf.type, leaf.name);
   return `    graph_outputs.append(
         helper.make_tensor_value_info(
-            "${leaf.id}",
+            "${cleanLeafName}",
             TensorProto.FLOAT,
             [1, ${leaf.outputShape.length > 0 ? leaf.outputShape.reduce((a, b) => a * b, 1) : 10}]
         )

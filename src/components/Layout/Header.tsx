@@ -80,11 +80,34 @@ export default function Header({ onGenerateCode }: HeaderProps) {
             >
               <ArrowLeft size={18} />
             </button>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="text-sm font-semibold text-[#9aa0a6]">Project:</span>
               <span className="text-sm font-bold text-[#8ab4f8] tracking-wide bg-[#8ab4f8]/10 px-3 py-1 rounded-full border border-[#8ab4f8]/20">
                 {currentProject?.name || 'ResNet-Mini'}
               </span>
+
+              {/* Framework Tag */}
+              {currentProject?.framework && (
+                <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-md bg-[#8ab4f8]/10 text-[#8ab4f8] border border-[#8ab4f8]/25">
+                  {currentProject.framework}
+                </span>
+              )}
+
+              {/* Status / Starting Stage Badge */}
+              {currentProject?.status && (
+                <span className={`text-[10px] uppercase font-extrabold tracking-wider px-2.5 py-0.5 rounded-full border flex items-center gap-1.5 ${
+                  currentProject.status === 'Production Ready' ? 'bg-[#81c784]/10 text-[#81c784] border-[#81c784]/25' :
+                  currentProject.status === 'Training' ? 'bg-[#ffe082]/10 text-[#ffe082] border-[#ffe082]/25 animate-pulse' :
+                  'bg-[#80cbc4]/10 text-[#80cbc4] border-[#80cbc4]/25'
+                }`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${
+                    currentProject.status === 'Production Ready' ? 'bg-[#81c784]' :
+                    currentProject.status === 'Training' ? 'bg-[#ffe082] animate-ping' :
+                    'bg-[#80cbc4]'
+                  }`}></span>
+                  <span>{currentProject.status}</span>
+                </span>
+              )}
             </div>
             
             {/* Live System Status Badges Block */}
@@ -350,14 +373,17 @@ export default function Header({ onGenerateCode }: HeaderProps) {
             {/* Real-time Overlapping Presence Avatars Group */}
             {syncStatus === 'connected' && Object.keys(collaborators).length > 0 && (
               <div className="flex items-center -space-x-2 select-none ml-2">
-                {Object.values(collaborators).map((c) => {
-                  const initials = c.username
-                    .split(' ')
-                    .map((n) => n[0])
-                    .join('')
-                    .toUpperCase()
-                    .slice(0, 2);
-                  return (
+                {Object.values(collaborators)
+                  // Deduplicate concurrent sessions from the same collaborator account to render one circle per user
+                  .filter((c, idx, arr) => arr.findIndex((x) => x.username === c.username) === idx)
+                  .map((c) => {
+                    const initials = c.username
+                      .split(' ')
+                      .map((n) => n[0])
+                      .join('')
+                      .toUpperCase()
+                      .slice(0, 2);
+                    return (
                     <div
                       key={c.clientId}
                       className="w-8 h-8 rounded-full border-2 border-[#1e1f22] flex items-center justify-center cursor-pointer font-bold text-xs shadow-md transition-transform hover:scale-110 hover:z-30 relative group"

@@ -19,30 +19,7 @@ export default function ConfigPanel() {
   const selectedNode = nodes.find(n => n.id === selectedNodeId);
 
   if (!selectedNode) {
-    return (
-      <div className="w-80 border-l border-[#3f4046] bg-[#1e1f22] flex flex-col h-full items-center justify-center p-6 text-center select-none z-15 relative">
-        {/* Glass lock overlay for Viewers */}
-        {userRole === 'Viewer' && (
-          <div className="absolute inset-0 bg-[#1e1f22]/80 backdrop-blur-[3px] z-50 flex flex-col items-center justify-center p-6 text-center select-none animate-in fade-in duration-200">
-            <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-full mb-3 text-red-400 shadow-lg shadow-black/10">
-              <Lock size={24} className="animate-pulse" />
-            </div>
-            <h4 className="text-sm font-bold text-white tracking-wide">Inspector Restricted</h4>
-            <p className="text-[11px] text-[#9aa0a6] mt-2 max-w-[200px] leading-relaxed font-semibold">
-              Read-only Viewer Mode is active. Parameters modification is locked.
-            </p>
-          </div>
-        )}
-        <div className="absolute inset-0 dot-grid opacity-20 pointer-events-none"></div>
-        <div className="p-3 bg-[#2b2d31] border border-[#3f4046] rounded-2xl text-[#9aa0a6] mb-4">
-          <Info size={24} />
-        </div>
-        <h4 className="text-sm font-bold text-gray-300">No Block Selected</h4>
-        <p className="text-xs text-[#9aa0a6] mt-1 max-w-[200px] font-semibold">
-          Click any canvas block to inspect its hyperparameter profile.
-        </p>
-      </div>
-    );
+    return null;
   }
 
   const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -252,6 +229,49 @@ export default function ConfigPanel() {
                 step="2"
                 value={config.units || 10}
                 onChange={(e) => handleConfigChange('units', parseInt(e.target.value))}
+                className="w-full cursor-pointer accent-[#8ab4f8]"
+              />
+            </div>
+          </div>
+        );
+
+      case 'BatchNorm2D':
+        return (
+          <div className="space-y-4">
+            <h4 className="text-[10px] font-extrabold uppercase text-[#9aa0a6] tracking-wider flex items-center gap-1.5 mb-2">
+              <Sliders size={12} />
+              <span>Normalization Parameters</span>
+            </h4>
+            <div className="p-3.5 bg-[#2b2d31] border border-[#3f4046] rounded-xl text-center">
+              <p className="text-xs text-white font-bold">Standard 2D Batch Normalization</p>
+              <p className="text-[10px] text-[#9aa0a6] mt-1.5 leading-relaxed font-semibold">
+                Normalizes features across the channel dimension. Learns scale and bias parameters automatically.
+              </p>
+            </div>
+          </div>
+        );
+
+      case 'Dropout':
+        return (
+          <div className="space-y-6">
+            <h4 className="text-[10px] font-extrabold uppercase text-[#9aa0a6] tracking-wider flex items-center gap-1.5 mb-2">
+              <Sliders size={12} />
+              <span>Regularization Parameters</span>
+            </h4>
+            
+            {/* Rate Slider */}
+            <div className="space-y-2">
+              <div className="flex justify-between text-xs font-bold text-[#9aa0a6]">
+                <span>DROPOUT RATE</span>
+                <span className="text-[#8ab4f8] font-mono">{config.rate !== undefined ? config.rate : 0.5}</span>
+              </div>
+              <input
+                type="range"
+                min="0.0"
+                max="0.9"
+                step="0.05"
+                value={config.rate !== undefined ? config.rate : 0.5}
+                onChange={(e) => handleConfigChange('rate', parseFloat(e.target.value))}
                 className="w-full cursor-pointer accent-[#8ab4f8]"
               />
             </div>

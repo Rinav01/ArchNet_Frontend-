@@ -14,7 +14,9 @@ export default function LayerLibrary() {
   const blockTypes: { type: NodeType; desc: string; color: string }[] = [
     { type: 'Input', desc: 'Starting tensor shape', color: 'bg-[#81c784]' },
     { type: 'Conv2D', desc: 'Spatial convolution layer', color: 'bg-[#8ab4f8]' },
+    { type: 'BatchNorm2D', desc: 'Batch normalization layer', color: 'bg-[#f48fb1]' },
     { type: 'MaxPool2D', desc: 'Spatial downsampling grid', color: 'bg-[#80cbc4]' },
+    { type: 'Dropout', desc: 'Regularize using activation drop', color: 'bg-[#ffab91]' },
     { type: 'Flatten', desc: 'Reshape spatial to vector', color: 'bg-[#c5a3ff]' },
     { type: 'Dense', desc: 'Fully connected projection', color: 'bg-[#ffe082]' },
   ];

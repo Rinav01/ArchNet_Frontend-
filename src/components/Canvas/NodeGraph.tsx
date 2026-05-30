@@ -297,20 +297,22 @@ export default function NodeGraph() {
   // Handle stage marquee selection start
   const handleStageMouseDown = (e: any) => {
     if (e.target === stageRef.current) {
-      const stage = stageRef.current;
-      const pointer = stage.getPointerPosition();
-      if (!pointer) return;
-      
-      const canvasX = (pointer.x - stage.x()) / stage.scaleX();
-      const canvasY = (pointer.y - stage.y()) / stage.scaleY();
-      
-      setMarqueeStart({ x: canvasX, y: canvasY });
-      setMarqueeEnd({ x: canvasX, y: canvasY });
-      setIsMarqueeDragging(true);
-      
-      // Clear selection array unless Shift key is held (multi-selection marquee)
-      if (!e.evt.shiftKey) {
+      // Only initiate marquee selection drag if Shift key is pressed
+      if (e.evt && e.evt.shiftKey) {
+        const stage = stageRef.current;
+        const pointer = stage.getPointerPosition();
+        if (!pointer) return;
+        
+        const canvasX = (pointer.x - stage.x()) / stage.scaleX();
+        const canvasY = (pointer.y - stage.y()) / stage.scaleY();
+        
+        setMarqueeStart({ x: canvasX, y: canvasY });
+        setMarqueeEnd({ x: canvasX, y: canvasY });
+        setIsMarqueeDragging(true);
+      } else {
+        // Clear selection array when clicking empty stage without Shift
         setSelectedNodeIds([]);
+        sendSelection(null);
       }
     }
   };
@@ -382,7 +384,9 @@ export default function NodeGraph() {
     switch (type) {
       case 'Input': return '#81c784';     /* Emerald Green */
       case 'Conv2D': return '#8ab4f8';    /* Material Blue */
+      case 'BatchNorm2D': return '#f48fb1'; /* Rose Pink */
       case 'MaxPool2D': return '#80cbc4'; /* Dark Cyan Teal */
+      case 'Dropout': return '#ffab91';   /* Soft Orange */
       case 'Flatten': return '#c5a3ff';   /* Soft Purple */
       case 'Dense': return '#ffe082';     /* Amber Yellow */
       default: return '#9aa0a6';
@@ -539,6 +543,7 @@ export default function NodeGraph() {
         x={pan.x}
         y={pan.y}
         draggable={!isConnecting && !isMarqueeDragging}
+        onDragMove={handleStageDrag}
         onDragEnd={handleStageDrag}
         onMouseMove={handleStageMouseMove}
         onMouseDown={handleStageMouseDown}
@@ -1151,130 +1156,6 @@ export default function NodeGraph() {
         </div>
       </div>
 
-      {/* Floating Layout Alignments Panel overlay (alignment) */}
-      <div className="absolute bottom-6 left-[18%] -translate-x-1/2 flex items-center gap-2.5 px-5 py-2 bg-[#2b2d31]/95 border border-[#3f4046] shadow-xl rounded-full z-30 select-none">
-        <span className="text-[9px] font-extrabold text-[#9aa0a6] uppercase tracking-wider pr-2.5 border-r border-[#3f4046]">Align</span>
-        
-        <button
-          onClick={() => {
-            if (userRole === 'Viewer') return;
-            alignSelectedNodes('left');
-          }}
-          disabled={selectedNodeIds.length < 2 || userRole === 'Viewer'}
-          className={`p-1.5 rounded-full transition-all ${
-            selectedNodeIds.length < 2 || userRole === 'Viewer'
-              ? 'text-[#5f6368] cursor-not-allowed opacity-50'
-              : 'text-[#9aa0a6] hover:text-white hover:bg-[#1e1f22] cursor-pointer'
-          }`}
-          title={userRole === 'Viewer' ? "Align Restricted" : "Align Left"}
-        >
-          <AlignLeft size={14} />
-        </button>
-        <button
-          onClick={() => {
-            if (userRole === 'Viewer') return;
-            alignSelectedNodes('top');
-          }}
-          disabled={selectedNodeIds.length < 2 || userRole === 'Viewer'}
-          className={`p-1.5 rounded-full transition-all ${
-            selectedNodeIds.length < 2 || userRole === 'Viewer'
-              ? 'text-[#5f6368] cursor-not-allowed opacity-50'
-              : 'text-[#9aa0a6] hover:text-white hover:bg-[#1e1f22] cursor-pointer'
-          }`}
-          title={userRole === 'Viewer' ? "Align Restricted" : "Align Top"}
-        >
-          <AlignVerticalJustifyStart size={14} />
-        </button>
-        <button
-          onClick={() => {
-            if (userRole === 'Viewer') return;
-            alignSelectedNodes('distribute-h');
-          }}
-          disabled={selectedNodeIds.length < 3 || userRole === 'Viewer'}
-          className={`p-1.5 rounded-full transition-all ${
-            selectedNodeIds.length < 3 || userRole === 'Viewer'
-              ? 'text-[#5f6368] cursor-not-allowed opacity-50'
-              : 'text-[#9aa0a6] hover:text-white hover:bg-[#1e1f22] cursor-pointer'
-          }`}
-          title={userRole === 'Viewer' ? "Distribute Restricted" : "Distribute Horizontally"}
-        >
-          <Columns size={14} />
-        </button>
-        <button
-          onClick={() => {
-            if (userRole === 'Viewer') return;
-            alignSelectedNodes('distribute-v');
-          }}
-          disabled={selectedNodeIds.length < 3 || userRole === 'Viewer'}
-          className={`p-1.5 rounded-full transition-all ${
-            selectedNodeIds.length < 3 || userRole === 'Viewer'
-              ? 'text-[#5f6368] cursor-not-allowed opacity-50'
-              : 'text-[#9aa0a6] hover:text-white hover:bg-[#1e1f22] cursor-pointer'
-          }`}
-          title={userRole === 'Viewer' ? "Distribute Restricted" : "Distribute Vertically"}
-        >
-          <Rows size={14} />
-        </button>
-
-        {/* Group Node folders creator */}
-        <div className="w-[1px] h-4 bg-[#3f4046] mx-1"></div>
-        
-        <button
-          onClick={() => {
-            if (userRole === 'Viewer') return;
-            const name = window.prompt("Enter visual group name:", "ResNet Block");
-            if (name && name.trim()) {
-              addNodeGroup(name, selectedNodeIds);
-            }
-          }}
-          disabled={selectedNodeIds.length < 2 || userRole === 'Viewer'}
-          className={`flex items-center gap-1.5 px-3 py-1 border rounded-full text-[10px] font-bold transition-all ${
-            selectedNodeIds.length < 2 || userRole === 'Viewer'
-              ? 'text-[#5f6368] bg-[#2b2d31]/20 border-[#3f4046]/40 cursor-not-allowed opacity-40'
-              : 'text-[#8ab4f8] bg-[#8ab4f8]/10 hover:bg-[#8ab4f8]/20 border border-[#8ab4f8]/20 cursor-pointer'
-          }`}
-          title={userRole === 'Viewer' ? "Grouping Restricted" : "Group Selected Layers"}
-        >
-          <FolderPlus size={12} />
-          <span>Group</span>
-        </button>
-
-        {/* Topological Auto-Layout Trigger */}
-        <div className="w-[1px] h-4 bg-[#3f4046] mx-1"></div>
-        
-        <button
-          onClick={() => {
-            if (userRole === 'Viewer') return;
-            triggerAutoLayout();
-          }}
-          disabled={userRole === 'Viewer'}
-          className={`flex items-center gap-1.5 px-3 py-1 border rounded-full text-[10px] font-bold transition-all ${
-            userRole === 'Viewer'
-              ? 'text-[#5f6368] bg-[#2b2d31]/20 border-[#3f4046]/40 cursor-not-allowed opacity-40'
-              : 'bg-[#81c784]/15 hover:bg-[#81c784]/25 border border-[#81c784]/30 text-[#81c784] cursor-pointer'
-          }`}
-          title={userRole === 'Viewer' ? "Auto Layout Restricted" : "Auto Layout Graph (Topological Grid)"}
-        >
-          <Sparkles size={12} />
-          <span>Auto Layout</span>
-        </button>
-
-        {/* Toggle Node Stats Overlay */}
-        <div className="w-[1px] h-4 bg-[#3f4046] mx-1"></div>
-        
-        <button
-          onClick={() => toggleStatsOverlay()}
-          className={`flex items-center gap-1.5 px-3 py-1 border rounded-full text-[10px] font-bold transition-all ${
-            showStatsOverlay
-              ? 'bg-[#c5a3ff]/15 hover:bg-[#c5a3ff]/25 border-[#c5a3ff]/30 text-[#c5a3ff] cursor-pointer'
-              : 'bg-[#2b2d31]/20 hover:bg-[#1e1f22] border-[#3f4046] text-[#9aa0a6] cursor-pointer'
-          }`}
-          title="Toggle Layer Statistics Overlay"
-        >
-          <BarChart2 size={12} />
-          <span>Stats Overlay</span>
-        </button>
-      </div>
 
     </div>
   );

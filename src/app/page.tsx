@@ -36,6 +36,38 @@ export default function Dashboard() {
   const [newProjFramework, setNewProjFramework] = useState<'PyTorch' | 'TensorFlow' | 'JAX'>('PyTorch');
   const [newProjStatus, setNewProjStatus] = useState<'Production Ready' | 'Training' | 'Draft'>('Draft');
 
+  // Live Telemetry Analytics & Hardware Simulation State
+  const [currentGpuCluster, setCurrentGpuCluster] = useState<'RTX 4090 Global Cluster' | 'NVIDIA A100 Cluster' | 'NVIDIA H100 Tensor Core'>('RTX 4090 Global Cluster');
+  const [activeChartTab, setActiveChartTab] = useState<'traffic' | 'complexity' | 'benchmarks'>('traffic');
+  const [ticker, setTicker] = useState(0);
+
+  // Trigger re-render to ripple the live traffic bars dynamically
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setTicker((t) => t + 1);
+    }, 1500);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Baseline load/VRAM mapping per cluster profile
+  const getClusterConfig = (clusterName: string) => {
+    switch (clusterName) {
+      case 'NVIDIA A100 Cluster':
+        return { totalVramMb: 81920, idleVramMb: 2048, label: '80GB HBM2' };
+      case 'NVIDIA H100 Tensor Core':
+        return { totalVramMb: 81920, idleVramMb: 3072, label: '80GB HBM3' };
+      default:
+        return { totalVramMb: 24576, idleVramMb: 1280, label: '24GB GDDR6X' };
+    }
+  };
+
+  const { totalVramMb, idleVramMb, label: vramLabel } = getClusterConfig(currentGpuCluster);
+
+  // Sum up estimated memory of all projects in workspace
+  const workspaceAllocatedMemory = projects.reduce((sum, p) => sum + (p.estimatedGpuMemoryMb || 0), 0);
+  const activeGpuMemoryUse = idleVramMb + workspaceAllocatedMemory;
+  const calculatedGpuLoadPercent = Math.min(99.5, Math.round((activeGpuMemoryUse / totalVramMb) * 100 * 10) / 10);
+
   const handleOpenCanvas = (projectId: string) => {
     setActiveProjectId(projectId);
     clearLogs();
@@ -290,44 +322,94 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           
           {/* Inference Distribution Chart */}
-          <div className="lg:col-span-2 glass-card rounded-2xl p-6 relative overflow-hidden">
-            <div className="flex items-center justify-between border-b border-[#3f4046] pb-4 mb-4">
+          <div className="lg:col-span-2 glass-card rounded-2xl p-6 relative overflow-hidden flex flex-col justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-[#3f4046] pb-4 mb-4 gap-3">
               <h3 className="text-lg font-bold text-white flex items-center gap-2">
                 <TrendingUp size={18} className="text-[#8ab4f8]" />
-                <span>Inference Distribution</span>
+                <span>Analytics Monitor</span>
               </h3>
-              <div className="flex items-center gap-4 text-xs font-semibold">
-                <span className="flex items-center gap-1.5 text-[#9aa0a6]">
-                  <span className="w-2.5 h-2.5 rounded-full bg-[#8ab4f8]"></span>
-                  PyTorch Cluster
-                </span>
-                <span className="flex items-center gap-1.5 text-[#9aa0a6]">
-                  <span className="w-2.5 h-2.5 rounded-full bg-[#ffe082]"></span>
-                  Global Edge
-                </span>
+              
+              {/* Tab Toggles */}
+              <div className="flex items-center bg-[#1e1f22] p-1 rounded-full border border-[#3f4046] select-none text-[10px] font-bold">
+                {[
+                  { id: 'traffic', label: 'Live Traffic' },
+                  { id: 'complexity', label: 'Complexity Map' },
+                  { id: 'benchmarks', label: 'Benchmarks' }
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setActiveChartTab(tab.id as any)}
+                    className={`px-3 py-1 rounded-full transition-all cursor-pointer ${
+                      activeChartTab === tab.id
+                        ? 'bg-[#8ab4f8] text-[#1e1f22]'
+                        : 'text-[#9aa0a6] hover:text-white'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
               </div>
             </div>
 
-            {/* Custom SVG Bar Chart */}
-            <div className="h-48 flex items-end justify-between gap-3 pt-6 px-2">
-              {[
-                { height: 'h-12', color: 'bg-[#8ab4f8]/20 border-[#8ab4f8]/35' },
-                { height: 'h-24', color: 'bg-[#8ab4f8]/35 border-[#8ab4f8]/50' },
-                { height: 'h-32', color: 'bg-[#8ab4f8]/50 border-[#8ab4f8]/65' },
-                { height: 'h-40', color: 'bg-[#8ab4f8]/70 border-[#8ab4f8]/85 shadow-lg shadow-[#8ab4f8]/10' },
-                { height: 'h-28', color: 'bg-[#8ab4f8]/50 border-[#8ab4f8]/65' },
-                { height: 'h-16', color: 'bg-[#ffe082]/20 border-[#ffe082]/35' },
-                { height: 'h-36', color: 'bg-[#ffe082]/50 border-[#ffe082]/65' },
-                { height: 'h-44', color: 'bg-[#ffe082]/70 border-[#ffe082]/85 shadow-lg shadow-[#ffe082]/10' },
-                { height: 'h-20', color: 'bg-[#8ab4f8]/35 border-[#8ab4f8]/50' },
-                { height: 'h-30', color: 'bg-[#8ab4f8]/50 border-[#8ab4f8]/65' },
-              ].map((bar, i) => (
-                <div key={i} className="flex-1 flex flex-col items-center gap-2">
-                  <div className={`w-full ${bar.height} ${bar.color} rounded-t-lg border-t border-x transition-all duration-500 hover:scale-x-105`}></div>
-                  <span className="text-[10px] text-[#9aa0a6] font-mono">M{i+1}</span>
-                </div>
-              ))}
-            </div>
+            {/* Custom Dynamic SVG Bar Chart */}
+            {projects.length === 0 ? (
+              <div className="h-48 flex flex-col items-center justify-center text-center select-none gap-2">
+                <TrendingUp size={24} className="text-[#3f4046]" />
+                <span className="text-xs text-[#9aa0a6] font-semibold">No project metrics loaded.</span>
+                <span className="text-[10px] text-[#5f6368] font-medium max-w-[280px]">Create a neural network project above to compile and view active hardware distribution analytics.</span>
+              </div>
+            ) : (
+              <div className="h-48 flex items-end justify-start gap-4 pt-6 px-2 overflow-x-auto min-w-full scrollbar-none">
+                {projects.map((project, idx) => {
+                  let valueLabel = '';
+                  let percentHeight = 20;
+
+                  if (activeChartTab === 'complexity') {
+                    const paramsM = (project.totalParameterCount || 0) / 1_000_000;
+                    valueLabel = `${paramsM.toFixed(2)}M Params`;
+                    const maxParams = Math.max(...projects.map(p => p.totalParameterCount || 0), 1_000_000);
+                    percentHeight = Math.round(((project.totalParameterCount || 0) / maxParams) * 75 + 20);
+                  } else if (activeChartTab === 'benchmarks') {
+                    valueLabel = `${(project.estimatedGpuMemoryMb || 0).toFixed(1)} MB VRAM`;
+                    const maxMem = Math.max(...projects.map(p => p.estimatedGpuMemoryMb || 0), 10);
+                    percentHeight = Math.round(((project.estimatedGpuMemoryMb || 0) / maxMem) * 75 + 20);
+                  } else {
+                    // 'traffic' tab: Live throughput simulated from model complexity (smaller models = faster throughput!)
+                    const complexityScale = Math.max(1, (project.totalParameterCount || 0) / 100_000);
+                    const baseThroughput = Math.max(50, 1200 / complexityScale);
+                    const liveRipple = 1 + (Math.sin(ticker / 2 + idx) * 0.05); // slight live organic ripple using ticker
+                    const activeThroughput = Math.round(baseThroughput * liveRipple);
+                    valueLabel = `${activeThroughput} req/s`;
+                    percentHeight = Math.round(Math.min(95, Math.max(15, (activeThroughput / 1200) * 80 + 15)));
+                  }
+
+                  const barColor = 
+                    project.framework === 'PyTorch' ? 'bg-[#8ab4f8]/20 border-[#8ab4f8]/35 shadow-[0_0_15px_rgba(138,180,248,0.03)] hover:bg-[#8ab4f8]/30 hover:border-[#8ab4f8]/50' :
+                    project.framework === 'TensorFlow' ? 'bg-[#ffe082]/15 border-[#ffe082]/30 hover:bg-[#ffe082]/25 hover:border-[#ffe082]/45' :
+                    'bg-[#80cbc4]/15 border-[#80cbc4]/30 hover:bg-[#80cbc4]/25 hover:border-[#80cbc4]/45';
+
+                  return (
+                    <div key={project.id} className="flex-1 min-w-[90px] max-w-[120px] flex flex-col items-center gap-2 h-full justify-end group/bar relative">
+                      {/* Hover Value Tooltip Card */}
+                      <div className="absolute top-0 opacity-0 group-hover/bar:opacity-100 transition-opacity bg-[#1e1f22] border border-[#3f4046] rounded-xl p-3 text-[9px] font-mono text-[#e3e3e3] whitespace-nowrap shadow-2xl z-20 pointer-events-none -translate-y-8 flex flex-col gap-0.5">
+                        <div className="font-extrabold text-white text-[10.5px] truncate max-w-[100px]">{project.name}</div>
+                        <div className="text-[#8ab4f8] font-bold text-[10px]">{valueLabel}</div>
+                      </div>
+
+                      <div 
+                        className={`w-full ${barColor} rounded-t-xl border-t border-x transition-all duration-700 ease-out hover:scale-x-105 cursor-pointer relative flex items-end justify-center pb-2.5`}
+                        style={{ height: `${percentHeight}%` }}
+                      >
+                        {/* Sub-label inside bar */}
+                        <span className="text-[8px] font-extrabold text-white/30 tracking-wider truncate max-w-[90%] uppercase">{project.framework}</span>
+                      </div>
+                      <span className="text-[10px] text-[#9aa0a6] font-extrabold truncate max-w-full" title={project.name}>{project.name}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* GPU Hardware Load Metric */}
@@ -335,9 +417,9 @@ export default function Dashboard() {
             <div className="absolute -right-12 -bottom-12 w-28 h-28 bg-[#8ab4f8]/5 rounded-full blur-2xl"></div>
             
             <div className="space-y-3">
-              <span className="text-[10px] font-extrabold text-[#9aa0a6] uppercase tracking-widest block">GPU Load</span>
-              <h2 className="text-6xl font-black text-white tracking-tighter flex items-baseline gap-1">
-                <span>{gpuLoad}%</span>
+              <span className="text-[10px] font-extrabold text-[#9aa0a6] uppercase tracking-widest block">Workspace GPU Allocation</span>
+              <h2 className="text-6xl font-black text-white tracking-tighter flex items-baseline gap-1.5">
+                <span className="transition-all duration-300 select-all font-mono tabular-nums">{calculatedGpuLoadPercent}%</span>
                 <span className="text-xs text-[#8ab4f8] font-extrabold uppercase animate-pulse">Online</span>
               </h2>
             </div>
@@ -345,14 +427,29 @@ export default function Dashboard() {
             <div className="space-y-4">
               <div className="w-full h-2 bg-[#3f4046] rounded-full overflow-hidden">
                 <div 
-                  className="h-full bg-gradient-to-r from-[#8ab4f8] to-[#c5a3ff] rounded-full shadow-lg shadow-[#8ab4f8]/30"
-                  style={{ width: `${gpuLoad}%` }}
+                  className="h-full bg-gradient-to-r from-[#8ab4f8] to-[#c5a3ff] rounded-full shadow-lg shadow-[#8ab4f8]/30 transition-all duration-700 ease-out"
+                  style={{ width: `${calculatedGpuLoadPercent}%` }}
                 ></div>
               </div>
 
-              <div className="flex items-center justify-between text-xs text-[#9aa0a6] font-semibold">
-                <span>{gpuCluster}</span>
-                <span className="font-mono text-[10px] text-[#8ab4f8]/80">48GB VRAM</span>
+              {/* Click to Cycle/Select Hardware Profiles */}
+              <div 
+                onClick={() => {
+                  setCurrentGpuCluster(prev => 
+                    prev === 'RTX 4090 Global Cluster' ? 'NVIDIA A100 Cluster' :
+                    prev === 'NVIDIA A100 Cluster' ? 'NVIDIA H100 Tensor Core' :
+                    'RTX 4090 Global Cluster'
+                  );
+                }}
+                className="flex items-center justify-between text-xs text-[#9aa0a6] font-semibold bg-[#1e1f22]/60 hover:bg-[#1e1f22]/90 border border-[#3f4046]/40 px-3.5 py-2 rounded-xl cursor-pointer transition-all hover:border-[#8ab4f8]/30 shadow-inner group"
+                title="Click to cycle active hardware cluster profiles"
+              >
+                <span className="group-hover:text-white transition-colors">{currentGpuCluster}</span>
+                <span className="font-mono text-[10px] text-[#8ab4f8]/80 bg-[#8ab4f8]/10 px-2 py-0.5 rounded border border-[#8ab4f8]/20">
+                  {workspaceAllocatedMemory > 0 
+                    ? `${workspaceAllocatedMemory.toFixed(1)}MB / ${(totalVramMb / 1024).toFixed(0)}GB` 
+                    : vramLabel}
+                </span>
               </div>
             </div>
           </div>

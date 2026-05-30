@@ -51,6 +51,8 @@ export const GET_PROJECTS = `
       description
       createdAt
       updatedAt
+      totalParameterCount
+      estimatedGpuMemoryMb
     }
   }
 `;

@@ -55,10 +55,10 @@ export default function MainLayout({ children, onGenerateCode }: MainLayoutProps
       <div className="absolute inset-0 dot-grid pointer-events-none opacity-40 z-0"></div>
       
       {/* Sidebar Navigation */}
-      <Sidebar />
+      {!isEditor && <Sidebar />}
       
       {/* Main Content Area */}
-      <div className={`flex-1 ${isEditor ? 'pl-20' : 'pl-64'} flex flex-col h-screen overflow-hidden relative z-10 transition-all duration-300`}>
+      <div className={`flex-1 ${isEditor ? 'pl-0' : 'pl-64'} flex flex-col h-screen overflow-hidden relative z-10 transition-all duration-300`}>
         <Header onGenerateCode={onGenerateCode} />
         <main className="flex-1 overflow-y-auto relative">
           {children}

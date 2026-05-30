@@ -1,4 +1,4 @@
-export type NodeType = 'Input' | 'Conv2D' | 'MaxPool2D' | 'Flatten' | 'Dense';
+export type NodeType = 'Input' | 'Conv2D' | 'MaxPool2D' | 'Flatten' | 'Dense' | 'BatchNorm2D' | 'Dropout';
 
 export interface NodeConfig {
   // Input specific
@@ -16,6 +16,9 @@ export interface NodeConfig {
 
   // Dense specific
   units?: number;
+
+  // Dropout specific
+  rate?: number;
 
   // Private parameters tracking flag
   _exploded?: boolean;
@@ -57,6 +60,8 @@ export interface Project {
   parameters?: string;
   updatedAt: string;
   notes?: string;
+  totalParameterCount?: number;
+  estimatedGpuMemoryMb?: number;
 }
 
 export interface ValidationError {

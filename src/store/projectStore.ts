@@ -42,15 +42,21 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       try {
         const data = await graphqlRequest(GET_PROJECTS);
         if (data && data.projects) {
-          const formatted: Project[] = data.projects.map((p: any) => ({
-            id: p.id,
-            name: p.name,
-            framework: p.framework || 'PyTorch',
-            status: 'Draft',
-            layersCount: 4,
-            updatedAt: new Date(p.updatedAt).toLocaleDateString() || 'Synced',
-            notes: p.description || 'Live cloud model',
-          }));
+          const formatted: Project[] = data.projects.map((p: any) => {
+            const isValStatus = ['Production Ready', 'Training', 'Draft'].includes(p.description);
+            const activeStatus = isValStatus ? p.description as 'Production Ready' | 'Training' | 'Draft' : 'Draft';
+            return {
+              id: p.id,
+              name: p.name,
+              framework: p.framework || 'PyTorch',
+              status: activeStatus,
+              layersCount: 4,
+              updatedAt: new Date(p.updatedAt).toLocaleDateString() || 'Synced',
+              notes: isValStatus ? `Milestone: ${p.description}` : (p.description || 'Live cloud model'),
+              totalParameterCount: p.totalParameterCount || 0,
+              estimatedGpuMemoryMb: p.estimatedGpuMemoryMb || 0,
+            };
+          });
           set({ projects: formatted });
           return;
         }
@@ -77,14 +83,16 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       });
       if (data && data.createProject) {
         const p = data.createProject;
+        const isValStatus = ['Production Ready', 'Training', 'Draft'].includes(p.description);
+        const activeStatus = isValStatus ? p.description as 'Production Ready' | 'Training' | 'Draft' : 'Draft';
         const newProject: Project = {
           id: p.id,
           name: p.name,
           framework: p.framework || 'PyTorch',
-          status: 'Draft',
+          status: activeStatus,
           layersCount: 1,
           updatedAt: 'Just now',
-          notes: p.description || '',
+          notes: isValStatus ? `Milestone: ${p.description}` : (p.description || ''),
         };
         set((state) => ({ projects: [newProject, ...state.projects] }));
       }
