@@ -90,6 +90,18 @@ export default function ValidationPanel() {
     loadDatasets();
   }, [loadDatasets]);
 
+  // Listen to external triggers (like Command Palette) to switch active tabs
+  useEffect(() => {
+    const handleSetTab = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail) {
+        setActiveTab(customEvent.detail);
+      }
+    };
+    window.addEventListener('set-console-tab', handleSetTab);
+    return () => window.removeEventListener('set-console-tab', handleSetTab);
+  }, []);
+
   // Automatically scroll console down when logs or compile state changes
   useEffect(() => {
     if (consoleBottomRef.current) {

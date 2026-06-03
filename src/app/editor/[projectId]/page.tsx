@@ -10,6 +10,8 @@ import ValidationSidebar from '@/components/Panels/ValidationSidebar';
 import CanvasWrapper from '@/components/Canvas/CanvasWrapper';
 import CodePreviewModal from '@/components/Modals/CodePreviewModal';
 import ErrorBoundary from '@/components/Common/ErrorBoundary';
+import CommandPalette from '@/components/Modals/CommandPalette';
+import GraphSearch from '@/components/Modals/GraphSearch';
 import { useCanvasStore } from '@/store/canvasStore';
 import { useProjectStore } from '@/store/projectStore';
 import { 
@@ -25,7 +27,8 @@ import {
   Rows, 
   FolderPlus, 
   Sparkles, 
-  BarChart2
+  BarChart2,
+  Save
 } from 'lucide-react';
 
 export default function EditorPage() {
@@ -52,6 +55,8 @@ export default function EditorPage() {
     triggerAutoLayout,
     showStatsOverlay,
     toggleStatsOverlay,
+    saveCustomBlock,
+    loadCustomBlocks,
   } = useCanvasStore();
   const setActiveProjectId = useProjectStore((state) => state.setActiveProjectId);
   const loadProjects = useProjectStore((state) => state.loadProjects);
@@ -59,10 +64,24 @@ export default function EditorPage() {
 
   // Modals state
   const [isCodeModalOpen, setIsCodeModalOpen] = useState(false);
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [isGraphSearchOpen, setIsGraphSearchOpen] = useState(false);
 
-  // Keyboard shortcut listener for structural Undo / Redo
+  // Keyboard shortcut listener for Undo / Redo and Modals (Command Palette / Graph Search)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey) {
+        if (e.shiftKey && e.key.toLowerCase() === 'p') {
+          e.preventDefault();
+          setIsCommandPaletteOpen(prev => !prev);
+          return;
+        } else if (e.key.toLowerCase() === 'k') {
+          e.preventDefault();
+          setIsGraphSearchOpen(prev => !prev);
+          return;
+        }
+      }
+
       if (
         document.activeElement?.tagName === 'INPUT' ||
         document.activeElement?.tagName === 'TEXTAREA' ||
@@ -95,11 +114,12 @@ export default function EditorPage() {
       loadProjects();
       loadGraph(projectId);
       connectCollaboration(projectId);
+      loadCustomBlocks();
     }
     return () => {
       disconnectCollaboration();
     };
-  }, [projectId, setActiveProjectId, loadProjects, loadGraph, connectCollaboration, disconnectCollaboration]);
+  }, [projectId, setActiveProjectId, loadProjects, loadGraph, connectCollaboration, disconnectCollaboration, loadCustomBlocks]);
 
   const handleZoomIn = () => setZoom(z => z + 0.1);
   const handleZoomOut = () => setZoom(z => z - 0.1);
@@ -222,6 +242,26 @@ export default function EditorPage() {
                   <span>Group</span>
                 </button>
 
+                <button
+                  onClick={() => {
+                    if (userRole === 'Viewer') return;
+                    const name = window.prompt("Enter Custom Block name:", "Custom Transformer Block");
+                    if (name && name.trim()) {
+                      saveCustomBlock(name, selectedNodeIds);
+                    }
+                  }}
+                  disabled={selectedNodeIds.length === 0 || userRole === 'Viewer'}
+                  className={`flex items-center gap-1.5 px-3 py-1 border rounded-full text-[10px] font-bold transition-all ${
+                    selectedNodeIds.length === 0 || userRole === 'Viewer'
+                      ? 'text-[#5f6368] bg-[#2b2d31]/20 border-[#3f4046]/40 cursor-not-allowed opacity-40'
+                      : 'text-[#81c784] bg-[#81c784]/10 hover:bg-[#81c784]/20 border border-[#81c784]/20 cursor-pointer'
+                  }`}
+                  title={userRole === 'Viewer' ? "Saving Blocks Restricted" : "Save Selected Layers as Custom Reusable Block"}
+                >
+                  <Save size={12} />
+                  <span>Save Block</span>
+                </button>
+
                 {/* Topological Auto-Layout Trigger */}
                 <div className="w-[1px] h-4 bg-[#3f4046] mx-1"></div>
                 
@@ -333,6 +373,19 @@ export default function EditorPage() {
           onClose={() => setIsCodeModalOpen(false)}
           nodes={nodes}
           edges={edges}
+        />
+
+        {/* Global Command Palette dialog */}
+        <CommandPalette
+          isOpen={isCommandPaletteOpen}
+          onClose={() => setIsCommandPaletteOpen(false)}
+          onGenerateCode={() => setIsCodeModalOpen(true)}
+        />
+
+        {/* Jump-to-node search dialog */}
+        <GraphSearch
+          isOpen={isGraphSearchOpen}
+          onClose={() => setIsGraphSearchOpen(false)}
         />
 
       </div>

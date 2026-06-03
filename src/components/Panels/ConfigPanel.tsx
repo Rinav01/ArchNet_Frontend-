@@ -55,7 +55,11 @@ export default function ConfigPanel() {
                       onChange={(e) => {
                         const newDim = [...currentDim];
                         newDim[idx] = Math.max(1, parseInt(e.target.value) || 1);
-                        handleConfigChange('dim', newDim);
+                        const [h, w, c] = newDim;
+                        updateNodeConfig(selectedNode.id, {
+                          dim: newDim,
+                          shape: [null, c, h, w]
+                        });
                       }}
                       className="w-full text-center px-2 py-2 bg-[#2b2d31] border border-[#3f4046] rounded-lg text-sm text-white focus:outline-none focus:border-[#8ab4f8]"
                     />

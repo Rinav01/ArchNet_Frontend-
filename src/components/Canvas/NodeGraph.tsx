@@ -105,6 +105,7 @@ export default function NodeGraph() {
     showStatsOverlay,
     toggleStatsOverlay,
     validationErrors,
+    highlightedNodeId,
     setSelectedNodeId,
     setPan,
     addEdge,
@@ -126,6 +127,8 @@ export default function NodeGraph() {
   } = useCanvasStore();
 
   const stageRef = useRef<any>(null);
+  const minimapSvgRef = useRef<SVGSVGElement | null>(null);
+  const [isMinimapDragging, setIsMinimapDragging] = useState(false);
   
   // Dynamic Bezier packet animation time loop
   const [animTime, setAnimTime] = useState(0);
@@ -151,6 +154,73 @@ export default function NodeGraph() {
 
   const dragStartPosRef = useRef<{ [nodeId: string]: { x: number; y: number } }>({});
   const lastCursorSendRef = useRef<number>(0);
+
+  // Interactive Minimap coordinate mapping calculations
+  const padX = 200;
+  const padY = 200;
+  const nodeXCoords = nodes.map(n => n.x);
+  const nodeYCoords = nodes.map(n => n.y);
+  
+  const minX = nodes.length > 0 ? Math.min(...nodeXCoords) - padX : -200;
+  const maxX = nodes.length > 0 ? Math.max(...nodeXCoords) + padX + NODE_WIDTH : 1400;
+  const minY = nodes.length > 0 ? Math.min(...nodeYCoords) - padY : -200;
+  const maxY = nodes.length > 0 ? Math.max(...nodeYCoords) + padY + NODE_HEIGHT : 1000;
+  
+  const rangeX = Math.max(1, maxX - minX);
+  const rangeY = Math.max(1, maxY - minY);
+
+  // SVG viewport dimension limits
+  const svgWidth = 156;
+  const svgHeight = 84;
+
+  const handleMinimapPointer = (clientX: number, clientY: number) => {
+    const svg = minimapSvgRef.current;
+    if (!svg) return;
+    const rect = svg.getBoundingClientRect();
+    
+    // Convert to relative coordinates inside the SVG viewport
+    const mx = Math.max(0, Math.min(svgWidth, ((clientX - rect.left) / rect.width) * svgWidth));
+    const my = Math.max(0, Math.min(svgHeight, ((clientY - rect.top) / rect.height) * svgHeight));
+    
+    // Map to actual canvas stage dimensions
+    const cx = minX + (mx / svgWidth) * rangeX;
+    const cy = minY + (my / svgHeight) * rangeY;
+    
+    const stageWidth = stageRef.current?.width() || window.innerWidth;
+    const stageHeight = stageRef.current?.height() || window.innerHeight;
+    
+    const targetX = stageWidth / 2 - cx * zoom;
+    const targetY = stageHeight / 2 - cy * zoom;
+    
+    setPan({ x: targetX, y: targetY });
+  };
+
+  const handleMinimapMouseDown = (e: React.MouseEvent<SVGSVGElement>) => {
+    setIsMinimapDragging(true);
+    handleMinimapPointer(e.clientX, e.clientY);
+  };
+
+  // Capture global window pointer movements during active minimap drag
+  useEffect(() => {
+    if (!isMinimapDragging) return;
+    
+    const handleGlobalMouseMove = (e: MouseEvent) => {
+      handleMinimapPointer(e.clientX, e.clientY);
+    };
+    
+    const handleGlobalMouseUp = () => {
+      setIsMinimapDragging(false);
+    };
+    
+    window.addEventListener('mousemove', handleGlobalMouseMove);
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+    
+    return () => {
+      window.removeEventListener('mousemove', handleGlobalMouseMove);
+      window.removeEventListener('mouseup', handleGlobalMouseUp);
+    };
+  }, [isMinimapDragging, minX, minY, rangeX, rangeY, zoom]);
+
 
   // Sync back to single selectedNodeId when selectedNodeIds array changes
   useEffect(() => {
@@ -405,14 +475,37 @@ export default function NodeGraph() {
 
     if (!srcNode || !trgNode) return null;
     
-    // Hide curves if either target node is collapsed
-    if (isNodeCollapsed(edge.source) || isNodeCollapsed(edge.target)) return null;
+    // Reroute edges if nodes are collapsed
+    const sourceGroup = nodeGroups.find(g => g.isCollapsed && g.nodeIds.includes(edge.source));
+    const targetGroup = nodeGroups.find(g => g.isCollapsed && g.nodeIds.includes(edge.target));
 
-    const x0 = srcNode.x + NODE_WIDTH;
-    const y0 = srcNode.y + NODE_HEIGHT / 2;
+    if (sourceGroup && targetGroup && sourceGroup.id === targetGroup.id) {
+      return null;
+    }
 
-    const x1 = trgNode.x;
-    const y1 = trgNode.y + NODE_HEIGHT / 2;
+    let x0 = 0, y0 = 0;
+    if (sourceGroup) {
+      const srcGroupNodes = nodes.filter(n => sourceGroup.nodeIds.includes(n.id));
+      const posX = srcGroupNodes.length > 0 ? srcGroupNodes[0].x : 0;
+      const posY = srcGroupNodes.length > 0 ? srcGroupNodes[0].y : 0;
+      x0 = posX + NODE_WIDTH;
+      y0 = posY + NODE_HEIGHT / 2;
+    } else {
+      x0 = srcNode.x + NODE_WIDTH;
+      y0 = srcNode.y + NODE_HEIGHT / 2;
+    }
+
+    let x1 = 0, y1 = 0;
+    if (targetGroup) {
+      const trgGroupNodes = nodes.filter(n => targetGroup.nodeIds.includes(n.id));
+      const posX = trgGroupNodes.length > 0 ? trgGroupNodes[0].x : 0;
+      const posY = trgGroupNodes.length > 0 ? trgGroupNodes[0].y : 0;
+      x1 = posX;
+      y1 = posY + NODE_HEIGHT / 2;
+    } else {
+      x1 = trgNode.x;
+      y1 = trgNode.y + NODE_HEIGHT / 2;
+    }
 
     const cp1x = x0 + 80;
     const cp1y = y0;
@@ -696,7 +789,60 @@ export default function NodeGraph() {
                 key={group.id}
                 x={posX}
                 y={posY}
+                draggable={userRole !== 'Viewer'}
+                onDragStart={() => {
+                  if (userRole === 'Viewer') return;
+                  const positions: { [id: string]: { x: number; y: number } } = {};
+                  groupNodes.forEach(n => {
+                    positions[n.id] = { x: n.x, y: n.y };
+                  });
+                  dragStartPosRef.current = positions;
+                }}
+                onDragMove={(e) => {
+                  if (userRole === 'Viewer') return;
+                  const startPositions = dragStartPosRef.current;
+                  const firstNodeId = group.nodeIds[0];
+                  const triggerStart = startPositions[firstNodeId];
+                  if (!triggerStart) return;
+
+                  let dx = e.target.x() - triggerStart.x;
+                  let dy = e.target.y() - triggerStart.y;
+
+                  const isAltBypassed = e.evt && e.evt.altKey;
+                  if (!isAltBypassed) {
+                    dx = Math.round(dx / 20) * 20;
+                    dy = Math.round(dy / 20) * 20;
+                  }
+
+                  const targetNodePositions = Object.keys(startPositions).map(id => {
+                    let targetX = startPositions[id].x + dx;
+                    let targetY = startPositions[id].y + dy;
+                    if (!isAltBypassed) {
+                      targetX = Math.round(targetX / 20) * 20;
+                      targetY = Math.round(targetY / 20) * 20;
+                    }
+                    return { id, x: targetX, y: targetY };
+                  });
+
+                  batchMoveNodes(targetNodePositions);
+                }}
+                onDragEnd={(e) => {
+                  if (userRole === 'Viewer') return;
+                  const startPositions = dragStartPosRef.current;
+                  const targets = Object.keys(startPositions);
+                  
+                  targets.forEach(id => {
+                    const node = nodes.find(n => n.id === id);
+                    if (node) {
+                      useCanvasStore.getState().moveNode(id, node.x, node.y);
+                    }
+                  });
+                }}
                 onClick={(e) => {
+                  e.cancelBubble = true;
+                  setSelectedNodeIds(group.nodeIds);
+                }}
+                onDblClick={(e) => {
                   e.cancelBubble = true;
                   toggleGroupCollapse(group.id);
                   setSelectedNodeIds([]);
@@ -830,6 +976,21 @@ export default function NodeGraph() {
                       />
                     </Group>
                   </Group>
+                )}
+
+                {/* Visual Jump focus pulsing highlight */}
+                {highlightedNodeId === node.id && (
+                  <Rect
+                    x={-5}
+                    y={-5}
+                    width={NODE_WIDTH + 10}
+                    height={NODE_HEIGHT + 10}
+                    fill="transparent"
+                    stroke="#ffe082"
+                    strokeWidth={2}
+                    cornerRadius={10}
+                    opacity={0.5 + 0.4 * Math.sin(animTime * 30)}
+                  />
                 )}
 
                 {/* Node Box container */}
@@ -1112,32 +1273,66 @@ export default function NodeGraph() {
           Workspace Minimap
         </span>
         <div className="flex-1 w-full relative">
-          <svg className="w-full h-full bg-[#101113]/40 rounded-lg">
+          <svg 
+            ref={minimapSvgRef}
+            className="w-full h-full bg-[#101113]/40 rounded-lg overflow-hidden cursor-crosshair"
+            onMouseDown={handleMinimapMouseDown}
+          >
             {/* Draw miniature nodes */}
             {nodes.map(n => {
-              // Normalize coordinates to map space viewBox bounds [0, 150] / [0, 70]
-              const x = 10 + (n.x / 1400) * 120;
-              const y = 8 + (n.y / 1000) * 60;
+              const rx = ((n.x - minX) / rangeX) * svgWidth;
+              const ry = ((n.y - minY) / rangeY) * svgHeight;
+              const rw = (NODE_WIDTH / rangeX) * svgWidth;
+              const rh = (NODE_HEIGHT / rangeY) * svgHeight;
+              const isSelected = selectedNodeIds.includes(n.id);
               return (
                 <rect
                   key={n.id}
-                  x={x}
-                  y={y}
-                  width={14}
-                  height={5}
-                  rx={1}
+                  x={rx}
+                  y={ry}
+                  width={rw}
+                  height={rh}
+                  rx={1.5}
                   fill={getNodeColor(n.type)}
-                  opacity={selectedNodeIds.includes(n.id) ? 1.0 : 0.6}
+                  stroke={isSelected ? "#8ab4f8" : "none"}
+                  strokeWidth={isSelected ? 1 : 0}
+                  opacity={isSelected ? 1.0 : 0.6}
                 />
               );
             })}
             
+            {/* Draw active collaborator cursors for collaboration awareness */}
+            {Object.values(collaborators)
+              .filter(c => c.cursor !== null)
+              .map(c => {
+                const cx = ((c.cursor!.x - minX) / rangeX) * svgWidth;
+                const cy = ((c.cursor!.y - minY) / rangeY) * svgHeight;
+                return (
+                  <circle
+                    key={c.clientId}
+                    cx={cx}
+                    cy={cy}
+                    r={3}
+                    fill={c.color}
+                    stroke="#1e1f22"
+                    strokeWidth={0.5}
+                  />
+                );
+              })}
+
             {/* Viewport frame box mapping stage zoom/pan */}
             {(() => {
-              const viewW = Math.max(10, Math.min(130, 130 / zoom));
-              const viewH = Math.max(8, Math.min(60, 60 / zoom));
-              const viewX = Math.max(2, Math.min(130, 10 - (pan.x / (1400 * zoom)) * 120));
-              const viewY = Math.max(2, Math.min(60, 8 - (pan.y / (1000 * zoom)) * 60));
+              const stageWidth = stageRef.current?.width() || window.innerWidth;
+              const stageHeight = stageRef.current?.height() || window.innerHeight;
+              const x0 = -pan.x / zoom;
+              const y0 = -pan.y / zoom;
+              const w = stageWidth / zoom;
+              const h = stageHeight / zoom;
+
+              const viewX = ((x0 - minX) / rangeX) * svgWidth;
+              const viewY = ((y0 - minY) / rangeY) * svgHeight;
+              const viewW = (w / rangeX) * svgWidth;
+              const viewH = (h / rangeY) * svgHeight;
               
               return (
                 <rect
@@ -1148,6 +1343,7 @@ export default function NodeGraph() {
                   fill="none"
                   stroke="#8ab4f8"
                   strokeWidth="1.25"
+                  rx={1}
                   opacity={0.8}
                 />
               );

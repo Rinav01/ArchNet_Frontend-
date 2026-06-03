@@ -24,6 +24,7 @@ import {
 export default function ValidationSidebar() {
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'issues' | 'suggestions' | 'trace' | 'sandbox'>('issues');
+  const [expandedIssueIdx, setExpandedIssueIdx] = useState<number | null>(null);
   
   const { 
     nodes, 
@@ -121,7 +122,10 @@ export default function ValidationSidebar() {
           nodeId: inputNode.id,
           fixLabel: `Resize to 224x224`,
           applyFix: () => {
-            useCanvasStore.getState().updateNodeConfig(inputNode.id, { dim: [224, 224, 3] });
+            useCanvasStore.getState().updateNodeConfig(inputNode.id, { 
+              dim: [224, 224, 3],
+              shape: [null, 3, 224, 224]
+            });
             useCanvasStore.getState().addLog('success', `AutoML Fix applied: Resized Input Layer dimension to 224x224.`);
           }
         });
@@ -255,6 +259,82 @@ export default function ValidationSidebar() {
   };
 
   const autoMLSuggestions = getAutoMLSuggestions();
+  
+  const getIssueMeta = (err: any) => {
+    const isInputShapeError = err.message.toLowerCase().includes("input layer") && err.message.toLowerCase().includes("shape");
+    const isDenseRank = err.category === 'rank' && err.message.toLowerCase().includes("dense");
+    const isCycle = err.category === 'cycle';
+    const isDisconnected = err.category === 'disconnected';
+
+    let explanation = "This block encountered a configuration or alignment mismatch that stops model compilation.";
+    let fixLabel = "Resolve Issue";
+    let hasFix = false;
+    let applyFix = async () => {};
+
+    if (isInputShapeError) {
+      explanation = "Input dimensions are currently unconfigured or empty. The graph tracer needs a base coordinate size (e.g. 224x224 RGB image shape) to propagate channels and height/width grids downstream, helping the PyTorch compiler pre-calculate parameter weights.";
+      fixLabel = "Initialize Standard 224x224 Shape";
+      hasFix = true;
+      applyFix = async () => {
+        const inputNode = nodes.find(n => n.type === 'Input');
+        if (inputNode) {
+          useCanvasStore.getState().updateNodeConfig(inputNode.id, { 
+            dim: [224, 224, 3],
+            shape: [null, 3, 224, 224]
+          });
+          useCanvasStore.getState().addLog('success', "AutoML Fix: Configured [224, 224, 3] dimensions for Input block.");
+          useCanvasStore.getState().triggerCompilation();
+        }
+      };
+    } else if (isDenseRank) {
+      explanation = "Fully connected Dense blocks expect flat 1D vectors [Features]. The preceding Convolutional/Pooling layer outputs a 3D matrix block [Channels, Height, Width]. Connecting them directly leads to rank conflicts.";
+      fixLabel = "Insert Flatten Block";
+      hasFix = true;
+      applyFix = async () => {
+        const store = useCanvasStore.getState();
+        const edge = edges.find(e => e.target === err.nodeId);
+        const src = nodes.find(n => n.id === edge?.source);
+        const tgt = nodes.find(n => n.id === err.nodeId);
+
+        if (edge && src && tgt) {
+          await store.removeEdge(edge.id);
+          const midX = Math.round((src.x + tgt.x) / 2 / 20) * 20;
+          const midY = Math.round((src.y + tgt.y) / 2 / 20) * 20;
+          const flattenId = `node_flatten_${Math.random().toString(36).substr(2, 9)}`;
+          await store.addNode('Flatten', midX, midY, flattenId);
+          await store.addEdge(src.id, flattenId);
+          await store.addEdge(flattenId, tgt.id);
+          store.addLog('success', `AutoML Fix: Inserted Flatten between ${src.name} and ${tgt.name}.`);
+        }
+      };
+    } else if (isCycle) {
+      explanation = "Cycle loops detected in computational connections. Deep feedforward compilers propagate gradients consecutively from inputs to outputs and cannot resolve circular feedbacks.";
+      fixLabel = "Remove Loop Connection";
+      hasFix = true;
+      applyFix = async () => {
+        const store = useCanvasStore.getState();
+        const edge = edges.find(e => e.target === err.nodeId || e.source === err.nodeId);
+        if (edge) {
+          await store.removeEdge(edge.id);
+          store.addLog('success', "AutoML Fix: Removed cycle-inducing connection.");
+        }
+      };
+    } else if (isDisconnected) {
+      explanation = "This block layer is placed on the editor board but not connected to any path originating from the input grid. It will be completely skipped in PyTorch model generation.";
+      fixLabel = "Connect from Upstream Block";
+      hasFix = true;
+      applyFix = async () => {
+        const store = useCanvasStore.getState();
+        const closestNode = nodes.find(n => n.id !== err.nodeId && n.type !== 'Input');
+        if (closestNode) {
+          await store.addEdge(closestNode.id, err.nodeId);
+          store.addLog('success', `AutoML Fix: Linked ${closestNode.name} ➔ ${nodes.find(x => x.id === err.nodeId)?.name}.`);
+        }
+      };
+    }
+
+    return { explanation, fixLabel, hasFix, applyFix };
+  };
 
   const handleIssueClick = (nodeId?: string) => {
     if (nodeId) {
@@ -480,29 +560,66 @@ export default function ValidationSidebar() {
               <div className="space-y-3">
                 {validationErrors.map((err, idx) => {
                   const isError = err.type === 'error';
-                  const levelColor = isError ? 'border-rose-500/30 bg-rose-500/5' : 'border-amber-500/30 bg-amber-500/5';
+                  const isExpanded = expandedIssueIdx === idx;
+                  const levelColor = isError 
+                    ? 'border-rose-500/30 bg-rose-500/5 hover:border-rose-500/40' 
+                    : 'border-amber-500/30 bg-amber-500/5 hover:border-amber-500/40';
                   const iconColor = isError ? 'text-[#f28b82]' : 'text-[#ffe082]';
                   const labelText = isError ? 'ERROR' : 'WARNING';
+                  const meta = getIssueMeta(err);
                   
                   return (
                     <div
                       key={idx}
-                      onClick={() => handleIssueClick(err.nodeId)}
-                      className={`p-3 border rounded-xl flex items-start gap-2.5 transition-all select-text cursor-pointer hover:border-white/10 ${levelColor}`}
+                      onClick={() => {
+                        handleIssueClick(err.nodeId);
+                        setExpandedIssueIdx(isExpanded ? null : idx);
+                      }}
+                      className={`p-3.5 border rounded-xl flex flex-col gap-2.5 transition-all select-text cursor-pointer ${levelColor}`}
                     >
-                      <div className={`mt-0.5 ${iconColor}`}>
-                        {isError ? <XCircle size={14} /> : <AlertTriangle size={14} />}
+                      <div className="flex items-start gap-2.5">
+                        <div className={`mt-0.5 ${iconColor} shrink-0`}>
+                          {isError ? <XCircle size={14} /> : <AlertTriangle size={14} />}
+                        </div>
+                        <div className="space-y-1 min-w-0">
+                          <span className={`text-[8.5px] font-extrabold uppercase px-1.5 py-0.5 rounded tracking-wider ${
+                            isError ? 'bg-[#f28b82]/10 text-[#f28b82]' : 'bg-[#ffe082]/10 text-[#ffe082]'
+                          }`}>
+                            {labelText} ({err.category})
+                          </span>
+                          <p className="text-[10.5px] text-gray-300 font-semibold leading-relaxed break-words">
+                            {err.message}
+                          </p>
+                        </div>
                       </div>
-                      <div className="space-y-1">
-                        <span className={`text-[8.5px] font-extrabold uppercase px-1.5 py-0.5 rounded tracking-wider ${
-                          isError ? 'bg-[#f28b82]/10 text-[#f28b82]' : 'bg-[#ffe082]/10 text-[#ffe082]'
-                        }`}>
-                          {labelText} ({err.category})
-                        </span>
-                        <p className="text-[10.5px] text-gray-300 font-semibold leading-relaxed">
-                          {err.message}
-                        </p>
-                      </div>
+
+                      {/* Expanded Illustrative Explanation & Auto Fix button */}
+                      {isExpanded && (
+                        <div className="border-t border-[#3f4046]/35 pt-3.5 mt-1 space-y-3 animate-in fade-in slide-in-from-top-1 duration-150 text-left">
+                          <div className="bg-black/20 border border-[#3f4046]/35 p-2.5 rounded-lg flex gap-2 items-start">
+                            <Lightbulb size={12} className="shrink-0 text-[#8ab4f8] mt-0.5 animate-pulse" />
+                            <p className="text-[10px] text-[#9aa0a6] font-semibold leading-relaxed leading-normal select-text">
+                              {meta.explanation}
+                            </p>
+                          </div>
+
+                          {meta.hasFix && (
+                            <div className="flex justify-end">
+                              <button
+                                onClick={async (e) => {
+                                  e.stopPropagation(); // Avoid re-collapsing on click
+                                  await meta.applyFix();
+                                  setExpandedIssueIdx(null); // Close card
+                                }}
+                                className="flex items-center gap-1.5 px-3 py-1 bg-amber-500 hover:bg-amber-400 text-[#1e1f22] rounded-lg text-[9px] font-extrabold shadow-sm transition-all cursor-pointer border-none"
+                              >
+                                <Wrench size={10} />
+                                <span>{meta.fixLabel}</span>
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   );
                 })}

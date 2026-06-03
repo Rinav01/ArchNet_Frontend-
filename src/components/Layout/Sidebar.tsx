@@ -9,15 +9,12 @@ import {
   BookOpen, 
   Cpu, 
   Settings, 
-  Plus, 
   HelpCircle, 
   FileText 
 } from 'lucide-react';
-import { useCanvasStore } from '@/store/canvasStore';
 
 export default function Sidebar() {
   const pathname = usePathname();
-  const addNode = useCanvasStore((state) => state.addNode);
 
   const isEditor = pathname.startsWith('/editor');
 
@@ -28,10 +25,6 @@ export default function Sidebar() {
     { name: 'Models', icon: Cpu, path: '/models' },
     { name: 'Settings', icon: Settings, path: '/settings' },
   ];
-
-  const handleQuickAdd = () => {
-    addNode('Input', 150, 150);
-  };
 
   return (
     <aside className={`bg-[#1e1f22] border-r border-[#3f4046] flex flex-col h-screen fixed left-0 top-0 z-20 select-none transition-all duration-300 ${
@@ -98,29 +91,13 @@ export default function Sidebar() {
         })}
       </nav>
 
-      {/* Add New Layer & bottom guides */}
+      {/* Bottom guides */}
       <div className={`border-t border-[#3f4046] w-full flex flex-col items-center gap-4 ${isEditor ? 'p-3' : 'p-4'}`}>
-        {isEditor ? (
-          <button
-            onClick={handleQuickAdd}
-            className="w-10 h-10 flex items-center justify-center bg-[#8ab4f8] hover:bg-[#a8c7fa] text-[#1e1f22] rounded-full shadow-md shadow-black/10 transition-all duration-200 cursor-pointer border-none"
-            title="Quick Add Input Layer"
-          >
-            <Plus size={18} />
-          </button>
-        ) : (
-          <button
-            onClick={handleQuickAdd}
-            className="w-full flex items-center justify-center gap-2 py-2.5 bg-[#8ab4f8] hover:bg-[#a8c7fa] text-[#1e1f22] rounded-full text-sm font-bold shadow-md shadow-black/10 transition-all duration-200"
-          >
-            <Plus size={16} />
-            <span>New Layer</span>
-          </button>
-        )}
-
         <div className={`flex text-xs font-semibold text-[#9aa0a6] ${isEditor ? 'flex-col gap-3 py-1 animate-fade-in' : 'flex-col gap-2 pt-2 w-full'}`}>
           <Link 
             href="/docs" 
+            target="_blank"
+            rel="noopener noreferrer"
             title={isEditor ? "Docs" : undefined}
             className={`flex items-center hover:text-[#e3e3e3] ${isEditor ? 'justify-center p-1' : 'gap-2 py-1'}`}
           >
@@ -128,7 +105,9 @@ export default function Sidebar() {
             {!isEditor && <span>Docs</span>}
           </Link>
           <Link 
-            href="/support" 
+            href="/docs#support" 
+            target="_blank"
+            rel="noopener noreferrer"
             title={isEditor ? "Support" : undefined}
             className={`flex items-center hover:text-[#e3e3e3] ${isEditor ? 'justify-center p-1' : 'gap-2 py-1'}`}
           >

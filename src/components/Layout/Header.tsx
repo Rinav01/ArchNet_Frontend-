@@ -2,8 +2,9 @@
 
 import React from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { Search, Bell, Settings, ArrowLeft, Play, Cpu, Code, Undo, Redo, Zap, Clock, Save, Check, RotateCw, AlertTriangle, Trash2, LogOut } from 'lucide-react';
+import { Search, Bell, Settings, ArrowLeft, Play, Cpu, Code, Undo, Redo, Zap, Clock, Save, Check, RotateCw, AlertTriangle, Trash2, LogOut, Layers } from 'lucide-react';
 import { useProjectStore } from '@/store/projectStore';
+import BlockGuideModal from '@/components/Modals/BlockGuideModal';
 import { useCanvasStore } from '@/store/canvasStore';
 
 interface HeaderProps {
@@ -35,6 +36,7 @@ export default function Header({ onGenerateCode }: HeaderProps) {
   const deleteCheckpoint = useCanvasStore((state) => state.deleteCheckpoint);
 
   const [isHistoryOpen, setIsHistoryOpen] = React.useState(false);
+  const [isBlockGuideOpen, setIsBlockGuideOpen] = React.useState(false);
   const [username, setUsername] = React.useState('SandboxArchitect');
   const [isProfileOpen, setIsProfileOpen] = React.useState(false);
 
@@ -68,9 +70,9 @@ export default function Header({ onGenerateCode }: HeaderProps) {
   };
 
   return (
-    <header className="h-16 border-b border-[#3f4046] bg-[#1e1f22] flex items-center justify-between px-8 sticky top-0 z-30 w-full select-none">
+    <header className="h-16 border-b border-[#3f4046] bg-[#1e1f22] flex items-center justify-between px-4 lg:px-8 sticky top-0 z-30 w-full select-none">
       {/* Left side: Context details */}
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-2 lg:gap-4 min-w-0">
         {isEditor ? (
           <>
             <button 
@@ -80,44 +82,45 @@ export default function Header({ onGenerateCode }: HeaderProps) {
             >
               <ArrowLeft size={18} />
             </button>
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-sm font-semibold text-[#9aa0a6]">Project:</span>
-              <span className="text-sm font-bold text-[#8ab4f8] tracking-wide bg-[#8ab4f8]/10 px-3 py-1 rounded-full border border-[#8ab4f8]/20">
+            <div className="flex items-center gap-1.5 md:gap-2 flex-nowrap shrink-0">
+              <span className="text-sm font-semibold text-[#9aa0a6] hidden lg:inline">Project:</span>
+              <span className="text-sm font-bold text-[#8ab4f8] tracking-wide bg-[#8ab4f8]/10 px-3 py-1 rounded-full border border-[#8ab4f8]/20 truncate max-w-[100px] md:max-w-[150px]">
                 {currentProject?.name || 'ResNet-Mini'}
               </span>
 
               {/* Framework Tag */}
               {currentProject?.framework && (
-                <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-md bg-[#8ab4f8]/10 text-[#8ab4f8] border border-[#8ab4f8]/25">
+                <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-md bg-[#8ab4f8]/10 text-[#8ab4f8] border border-[#8ab4f8]/25 shrink-0">
                   {currentProject.framework}
                 </span>
               )}
 
               {/* Status / Starting Stage Badge */}
               {currentProject?.status && (
-                <span className={`text-[10px] uppercase font-extrabold tracking-wider px-2.5 py-0.5 rounded-full border flex items-center gap-1.5 ${
+                <span className={`text-[10px] uppercase font-extrabold tracking-wider px-2.5 py-0.5 rounded-full border flex items-center gap-1.5 shrink-0 ${
                   currentProject.status === 'Production Ready' ? 'bg-[#81c784]/10 text-[#81c784] border-[#81c784]/25' :
                   currentProject.status === 'Training' ? 'bg-[#ffe082]/10 text-[#ffe082] border-[#ffe082]/25 animate-pulse' :
                   'bg-[#80cbc4]/10 text-[#80cbc4] border-[#80cbc4]/25'
                 }`}>
-                  <span className={`w-1.5 h-1.5 rounded-full ${
+                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
                     currentProject.status === 'Production Ready' ? 'bg-[#81c784]' :
                     currentProject.status === 'Training' ? 'bg-[#ffe082] animate-ping' :
                     'bg-[#80cbc4]'
                   }`}></span>
-                  <span>{currentProject.status}</span>
+                  <span className="hidden sm:inline">{currentProject.status}</span>
                 </span>
               )}
             </div>
             
             {/* Live System Status Badges Block */}
-            <div className="flex items-center gap-2 bg-[#2b2d31]/40 border border-[#3f4046]/50 px-2 py-0.5 rounded-xl">
+            <div className="hidden lg:flex items-center gap-1.5 bg-[#2b2d31]/40 border border-[#3f4046]/50 px-1.5 py-0.5 rounded-xl shrink-0">
               {/* WebSocket Sync Status Indicator */}
               <div className="flex items-center gap-2">
                 {syncStatus === 'connected' && (
-                  <div className="flex items-center gap-1.5 bg-[#81c784]/10 border border-[#81c784]/20 px-2.5 py-0.5 rounded-full text-[11px] font-bold text-[#81c784] shadow-sm select-none">
+                  <div className="flex items-center gap-1.5 bg-[#81c784]/10 border border-[#81c784]/20 px-2 py-0.5 rounded-full text-[11px] font-bold text-[#81c784] shadow-sm select-none">
                     <span className="w-1.5 h-1.5 rounded-full bg-[#81c784] animate-pulse"></span>
-                    <span>Room Synced</span>
+                    <span className="hidden lg:inline">Room Synced</span>
+                    <span className="lg:hidden">Synced</span>
                   </div>
                 )}
                 {syncStatus === 'connecting' && (
@@ -129,7 +132,8 @@ export default function Header({ onGenerateCode }: HeaderProps) {
                 {syncStatus === 'disconnected' && (
                   <div className="flex items-center gap-1.5 bg-[#f28b82]/10 border border-[#f28b82]/20 px-2.5 py-0.5 rounded-full text-[11px] font-bold text-[#f28b82] shadow-sm select-none" title="Using local-first offline fallback">
                     <span className="w-1.5 h-1.5 rounded-full bg-[#f28b82]"></span>
-                    <span>Local Sandbox</span>
+                    <span className="hidden lg:inline">Local Sandbox</span>
+                    <span className="lg:hidden">Sandbox</span>
                   </div>
                 )}
               </div>
@@ -145,7 +149,8 @@ export default function Header({ onGenerateCode }: HeaderProps) {
                 {draftSavedStatus === 'saved' && (
                   <div className="flex items-center gap-1.5 bg-[#81c784]/15 border border-[#81c784]/30 px-2.5 py-0.5 rounded-full text-[11px] font-bold text-[#81c784] shadow-sm select-none" title="All edits saved locally">
                     <Check size={11} className="text-[#81c784]" />
-                    <span>Saved Draft</span>
+                    <span className="hidden lg:inline">Saved Draft</span>
+                    <span className="lg:hidden">Saved</span>
                   </div>
                 )}
                 {draftSavedStatus === 'error' && (
@@ -261,30 +266,30 @@ export default function Header({ onGenerateCode }: HeaderProps) {
             </div>
 
             {/* Enterprise Role Selector Dropdown & Badging */}
-            <div className="flex items-center gap-2 border-l border-[#3f4046] pl-4 ml-1">
+            <div className="hidden sm:flex items-center gap-1.5 border-l border-[#3f4046] pl-2 md:pl-4 ml-0.5 md:ml-1 shrink-0">
               <select
                 value={userRole}
                 onChange={(e) => setUserRole(e.target.value as any)}
-                className="bg-[#2b2d31] border border-[#3f4046] rounded-lg px-2.5 py-1 text-[11px] font-extrabold text-[#e3e3e3] cursor-pointer focus:outline-none focus:border-[#8ab4f8] transition-all"
+                className="bg-[#2b2d31] border border-[#3f4046] rounded-lg px-1.5 md:px-2.5 py-1 text-[11px] font-extrabold text-[#e3e3e3] cursor-pointer focus:outline-none focus:border-[#8ab4f8] transition-all shrink-0"
                 title="Simulate Enterprise Role Access"
               >
-                <option value="Admin">🛡️ Admin Mode</option>
-                <option value="Editor">✍️ Editor Mode</option>
-                <option value="Viewer">🔒 Viewer Mode</option>
+                <option value="Admin">🛡️ Admin</option>
+                <option value="Editor">✍️ Editor</option>
+                <option value="Viewer">🔒 Viewer</option>
               </select>
 
               {userRole === 'Admin' && (
-                <span className="bg-[#b388ff]/10 border border-[#b388ff]/30 px-2 py-0.5 rounded text-[9px] font-black text-[#b388ff] uppercase tracking-wider select-none animate-pulse">
+                <span className="bg-[#b388ff]/10 border border-[#b388ff]/30 px-2 py-0.5 rounded text-[9px] font-black text-[#b388ff] uppercase tracking-wider select-none animate-pulse hidden 2xl:inline shrink-0">
                   Admin Controller
                 </span>
               )}
               {userRole === 'Editor' && (
-                <span className="bg-[#8ab4f8]/10 border border-[#8ab4f8]/20 px-2 py-0.5 rounded text-[9px] font-black text-[#8ab4f8] uppercase tracking-wider select-none">
+                <span className="bg-[#8ab4f8]/10 border border-[#8ab4f8]/20 px-2 py-0.5 rounded text-[9px] font-black text-[#8ab4f8] uppercase tracking-wider select-none hidden 2xl:inline shrink-0">
                   Standard Editor
                 </span>
               )}
               {userRole === 'Viewer' && (
-                <span className="bg-red-500/10 border border-red-500/20 px-2 py-0.5 rounded text-[9px] font-black text-red-400 uppercase tracking-wider select-none">
+                <span className="bg-red-500/10 border border-red-500/20 px-2 py-0.5 rounded text-[9px] font-black text-red-400 uppercase tracking-wider select-none hidden 2xl:inline shrink-0">
                   Viewer Lock
                 </span>
               )}
@@ -313,11 +318,11 @@ export default function Header({ onGenerateCode }: HeaderProps) {
       )}
 
       {/* Right side: Actions, Notification, Settings, Avatar */}
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-1.5 lg:gap-3 shrink-0">
         {/* Forward Pass & Deploy/Code Buttons */}
         {isEditor ? (
           <>
-            <div className="flex items-center gap-1.5 bg-[#2b2d31]/50 border border-[#3f4046] px-2 py-1 rounded-full">
+            <div className="flex items-center gap-1 bg-[#2b2d31]/50 border border-[#3f4046] px-1.5 py-0.5 rounded-full shrink-0">
               <button
                 onClick={undo}
                 disabled={undoStack.length === 0 || userRole === 'Viewer'}
@@ -348,26 +353,45 @@ export default function Header({ onGenerateCode }: HeaderProps) {
             <button
               onClick={runForwardPass}
               disabled={isPlayingAnimation || userRole === 'Viewer'}
-              className={`flex items-center gap-2 px-4 py-2 border rounded-full text-xs font-bold transition-all ${
+              className={`flex items-center gap-1.5 lg:gap-2 px-2.5 lg:px-4 py-2 border rounded-full text-xs font-bold transition-all shrink-0 ${
                 isPlayingAnimation || userRole === 'Viewer'
                   ? 'bg-transparent border-[#3f4046]/40 text-[#5f6368] cursor-not-allowed opacity-50'
                   : 'bg-transparent border-[#3f4046] hover:bg-[#2b2d31] text-[#8ab4f8] hover:text-white cursor-pointer'
               }`}
+              title={isPlayingAnimation ? 'Running...' : userRole === 'Viewer' ? 'Viewer Locked' : 'Run Graph'}
             >
               <Play size={14} className={isPlayingAnimation ? 'animate-pulse text-[#8ab4f8]' : ''} />
-              <span>{isPlayingAnimation ? 'Running...' : userRole === 'Viewer' ? 'Viewer Locked' : 'Run Graph'}</span>
+              <span className="hidden lg:inline-block">
+                <span className="hidden 2xl:inline">{isPlayingAnimation ? 'Running...' : userRole === 'Viewer' ? 'Viewer Locked' : 'Run Graph'}</span>
+                <span className="2xl:hidden">{isPlayingAnimation ? 'Running...' : userRole === 'Viewer' ? 'Locked' : 'Run'}</span>
+              </span>
+            </button>
+            <button
+              onClick={() => setIsBlockGuideOpen(true)}
+              className="flex items-center gap-1.5 lg:gap-2 px-2.5 lg:px-4 py-2 border border-[#3f4046] hover:bg-[#2b2d31] text-[#9aa0a6] hover:text-white rounded-full text-xs font-bold transition-all cursor-pointer bg-transparent shrink-0"
+              title="Illustrative Block Guide"
+            >
+              <Layers size={14} className="text-[#8ab4f8]" />
+              <span className="hidden lg:inline-block">
+                <span className="hidden 2xl:inline">Block Reference</span>
+                <span className="2xl:hidden">Reference</span>
+              </span>
             </button>
             <button
               onClick={onGenerateCode}
               disabled={userRole === 'Viewer'}
-              className={`flex items-center gap-2 px-5 py-2 rounded-full text-xs font-bold shadow-md shadow-black/10 transition-all duration-200 ${
+              className={`flex items-center gap-1.5 lg:gap-2 px-2.5 lg:px-5 py-2 rounded-full text-xs font-bold shadow-md shadow-black/10 transition-all duration-200 shrink-0 ${
                 userRole === 'Viewer'
                   ? 'bg-[#8ab4f8]/20 text-[#9aa0a6] cursor-not-allowed'
                   : 'bg-[#8ab4f8] hover:bg-[#a8c7fa] text-[#1e1f22] cursor-pointer'
               }`}
+              title="Generate Framework Target Code"
             >
               <Code size={14} />
-              <span>Generate PyTorch Code</span>
+              <span className="hidden lg:inline-block">
+                <span className="hidden 2xl:inline">Generate PyTorch Code</span>
+                <span className="2xl:hidden">Generate Code</span>
+              </span>
             </button>
 
             {/* Real-time Overlapping Presence Avatars Group */}
@@ -402,11 +426,7 @@ export default function Header({ onGenerateCode }: HeaderProps) {
               </div>
             )}
           </>
-        ) : (
-          <button className="flex items-center gap-2 px-5 py-2.5 bg-transparent border border-[#3f4046] hover:bg-[#2b2d31] text-[#8ab4f8] rounded-full text-xs font-bold shadow-md shadow-black/5 transition-all">
-            <span>Deploy Model</span>
-          </button>
-        )}
+        ) : null}
 
         <div className="w-[1px] h-6 bg-[#3f4046] mx-1"></div>
 
@@ -458,6 +478,11 @@ export default function Header({ onGenerateCode }: HeaderProps) {
           )}
         </div>
       </div>
+
+      <BlockGuideModal 
+        isOpen={isBlockGuideOpen} 
+        onClose={() => setIsBlockGuideOpen(false)} 
+      />
     </header>
   );
 }

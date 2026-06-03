@@ -3,6 +3,7 @@ export type NodeType = 'Input' | 'Conv2D' | 'MaxPool2D' | 'Flatten' | 'Dense' | 
 export interface NodeConfig {
   // Input specific
   dim?: number[];
+  shape?: (number | null)[];
   
   // Conv2D specific
   filters?: number;
@@ -148,6 +149,13 @@ export interface ModelCheckpoint {
   nodes: CanvasNode[];
   edges: CanvasEdge[];
   nodeGroups: CanvasNodeGroup[];
+}
+
+export interface CustomBlock {
+  id: string;
+  name: string;
+  nodes: CanvasNode[];
+  edges: CanvasEdge[];
 }
 
 export interface AutoMLSuggestion {

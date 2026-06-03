@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { CanvasNode, CanvasEdge, LogItem, NodeType, NodeConfig, ValidationError, CompilationResult, GraphOperation, Collaborator, TrainingJob, CanvasNodeGroup, ModelCheckpoint } from '@/types/canvas';
+import { CanvasNode, CanvasEdge, LogItem, NodeType, NodeConfig, ValidationError, CompilationResult, GraphOperation, Collaborator, TrainingJob, CanvasNodeGroup, ModelCheckpoint, CustomBlock } from '@/types/canvas';
 import dagre from 'dagre';
 import { toast } from './notificationStore';
 import { 
@@ -136,6 +136,13 @@ interface CanvasState {
   deleteCheckpoint: (checkpointId: string) => void;
   loadCheckpoints: (projectId: string) => void;
 
+  // Reusable Custom Blocks State & Actions
+  customBlocks: CustomBlock[];
+  saveCustomBlock: (name: string, nodeIds: string[]) => void;
+  spawnCustomBlock: (blockId: string, targetX: number, targetY: number) => void;
+  deleteCustomBlock: (blockId: string) => void;
+  loadCustomBlocks: () => void;
+
   // Auto-Layout Suggester Engine Actions
   triggerAutoLayout: () => void;
 
@@ -144,6 +151,10 @@ interface CanvasState {
   gpuThrottleLimit: number;
   setClusterPriority: (priority: 'High' | 'Medium' | 'Low') => void;
   setGpuThrottleLimit: (limit: number) => void;
+
+  // Jump-to-node Visual Highlight State & Action
+  highlightedNodeId: string | null;
+  setHighlightedNodeId: (id: string | null) => void;
 }
 
 
@@ -290,6 +301,8 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
     // Admin Allocations State Init
     clusterPriority: 'High',
     gpuThrottleLimit: 80,
+    highlightedNodeId: null,
+    customBlocks: [],
 
     loadGraph: async (projectId) => {
       const isOnline = await useProjectStore.getState().checkBackendStatus();
@@ -380,7 +393,10 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
       
       let config: NodeConfig = {};
       if (type === 'Input') {
-        config = { dim: [224, 224, 3] };
+        config = { 
+          dim: [224, 224, 3],
+          shape: [null, 3, 224, 224]
+        };
       } else if (type === 'Conv2D') {
         config = { filters: 64, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' };
       } else if (type === 'MaxPool2D') {
@@ -944,6 +960,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
     },
 
     setSelectedNodeId: (id) => set({ selectedNodeId: id }),
+    setHighlightedNodeId: (id) => set({ highlightedNodeId: id }),
 
     setZoom: (zoomUpdate) => set((state) => {
       const nextZoom = typeof zoomUpdate === 'function' ? zoomUpdate(state.zoom) : zoomUpdate;
@@ -2479,6 +2496,116 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
       set({ checkpoints: updated });
       localStorage.setItem(`mlbuilder_project_checkpoints_${projectId}`, JSON.stringify(updated));
       get().addLog('info', `Deleted checkpoint snapshot.`);
+    },
+
+    loadCustomBlocks: () => {
+      if (typeof window === 'undefined') return;
+      try {
+        const saved = localStorage.getItem('mlbuilder_custom_blocks');
+        if (saved) {
+          set({ customBlocks: JSON.parse(saved) });
+        } else {
+          set({ customBlocks: [] });
+        }
+      } catch (err) {
+        console.warn('Failed to load custom blocks from localStorage:', err);
+      }
+    },
+
+    saveCustomBlock: (name, nodeIds) => {
+      if (nodeIds.length === 0) return;
+      const { nodes, edges } = get();
+      
+      const targetNodes = nodes.filter(n => nodeIds.includes(n.id));
+      if (targetNodes.length === 0) return;
+
+      const targetEdges = edges.filter(e => nodeIds.includes(e.source) && nodeIds.includes(e.target));
+
+      const newBlock: CustomBlock = {
+        id: 'block_' + Math.random().toString(36).substring(2, 10),
+        name: name || `Block - ${new Date().toLocaleTimeString()}`,
+        nodes: JSON.parse(JSON.stringify(targetNodes)),
+        edges: JSON.parse(JSON.stringify(targetEdges))
+      };
+
+      const updated = [...get().customBlocks, newBlock];
+      set({ customBlocks: updated });
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('mlbuilder_custom_blocks', JSON.stringify(updated));
+      }
+      get().addLog('success', `Saved reusable custom block: "${newBlock.name}" containing ${targetNodes.length} layers.`);
+    },
+
+    spawnCustomBlock: (blockId, targetX, targetY) => {
+      const block = get().customBlocks.find(b => b.id === blockId);
+      if (!block) return;
+
+      const { nodes: blockNodes, edges: blockEdges } = block;
+      if (blockNodes.length === 0) return;
+
+      const NODE_WIDTH = 220;
+      const NODE_HEIGHT = 80;
+      const minX = Math.min(...blockNodes.map(n => n.x));
+      const minY = Math.min(...blockNodes.map(n => n.y));
+      const maxX = Math.max(...blockNodes.map(n => n.x + NODE_WIDTH));
+      const maxY = Math.max(...blockNodes.map(n => n.y + NODE_HEIGHT));
+      
+      const blockCenterX = (minX + maxX) / 2;
+      const blockCenterY = (minY + maxY) / 2;
+
+      const idMap: { [oldId: string]: string } = {};
+      const spawnedNodes = blockNodes.map(node => {
+        const newId = `${node.type.toLowerCase()}_${Math.random().toString(36).substring(2, 10)}`;
+        idMap[node.id] = newId;
+
+        const newX = Math.round((node.x - blockCenterX + targetX) / 20) * 20;
+        const newY = Math.round((node.y - blockCenterY + targetY) / 20) * 20;
+
+        const newName = `${node.type.toUpperCase()}_${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+
+        return {
+          ...node,
+          id: newId,
+          name: newName,
+          x: newX,
+          y: newY
+        };
+      });
+
+      const spawnedEdges = blockEdges
+        .filter(edge => idMap[edge.source] && idMap[edge.target])
+        .map(edge => ({
+          id: `edge_${Math.random().toString(36).substring(2, 10)}`,
+          source: idMap[edge.source],
+          target: idMap[edge.target]
+        }));
+
+      const updatedNodes = [...get().nodes, ...spawnedNodes];
+      const updatedEdges = [...get().edges, ...spawnedEdges];
+      
+      set({
+        nodes: updatedNodes,
+        edges: updatedEdges,
+        selectedNodeIds: spawnedNodes.map(n => n.id),
+        selectedNodeId: spawnedNodes[0]?.id || null
+      });
+
+      get().addLog('success', `Spawned custom block: "${block.name}" with ${spawnedNodes.length} layers.`);
+
+      const groupNodeIds = spawnedNodes.map(n => n.id);
+      get().addNodeGroup(block.name, groupNodeIds);
+
+      get().recalculateShapes();
+      get().triggerAutoSave();
+    },
+
+    deleteCustomBlock: (blockId) => {
+      const updated = get().customBlocks.filter(b => b.id !== blockId);
+      set({ customBlocks: updated });
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('mlbuilder_custom_blocks', JSON.stringify(updated));
+      }
+      get().addLog('info', 'Deleted custom block.');
     },
 
     // Topological Auto-Layout Suggester Engine (Upgraded to Dagre.js)
