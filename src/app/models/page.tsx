@@ -26,16 +26,24 @@ export default function ModelsPage() {
     { name: 'U-Net Decoder', category: 'Image Segmentation', parameters: '31.0M', description: 'Symmetric encoder-decoder topology with feature map skip-connections for spatial precision.', popularity: '91%' },
   ];
 
-  const handleImportModel = (model: PrebuiltModel) => {
-    const newProjId = model.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-    addProject({
+  const handleImportModel = async (model: PrebuiltModel) => {
+    const projectUuid = await addProject({
       name: model.name,
       framework: 'PyTorch',
       status: 'Draft',
     });
     
-    setActiveProjectId(newProjId);
-    router.push(`/editor/${newProjId}`);
+    if (projectUuid) {
+      setActiveProjectId(projectUuid);
+      
+      let templateName = '';
+      if (model.name === 'ResNet-50') templateName = 'ResNet50';
+      else if (model.name === 'MobileNet-V3') templateName = 'MobileNet';
+      else if (model.name === 'Self-Attention Block') templateName = 'ViT';
+      else if (model.name === 'U-Net Decoder') templateName = 'UNet';
+      
+      router.push(`/editor/${projectUuid}?template=${templateName}`);
+    }
   };
 
   return (

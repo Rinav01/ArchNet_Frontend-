@@ -16,13 +16,14 @@ import {
   X,
   Sparkles,
   CloudLightning,
-  Wifi
+  Wifi,
+  Trash2
 } from 'lucide-react';
 import { Project } from '@/types/canvas';
 
 export default function Dashboard() {
   const router = useRouter();
-  const { projects, gpuLoad, gpuCluster, addProject, setActiveProjectId, loadProjects, isOnline } = useProjectStore();
+  const { projects, gpuLoad, gpuCluster, addProject, setActiveProjectId, loadProjects, isOnline, deleteProject, userRole } = useProjectStore();
   const clearLogs = useCanvasStore((state) => state.clearLogs);
   const addLog = useCanvasStore((state) => state.addLog);
 
@@ -304,13 +305,30 @@ export default function Dashboard() {
                       )}
                     </div>
 
-                    <button
-                      onClick={() => handleOpenCanvas(project.id)}
-                      className="flex items-center gap-1.5 px-4 py-2 bg-[#1e1f22] hover:bg-[#8ab4f8]/10 text-xs font-bold text-[#8ab4f8] rounded-full border border-[#3f4046] hover:border-[#8ab4f8]/30 transition-all"
-                    >
-                      <span>Open Canvas</span>
-                      <ArrowRight size={12} />
-                    </button>
+                    <div className="flex items-center gap-2">
+                      {userRole !== 'Viewer' && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (window.confirm(`Are you sure you want to delete the project "${project.name}"?`)) {
+                              deleteProject(project.id);
+                            }
+                          }}
+                          className="p-2.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 hover:border-red-500/40 text-red-400 hover:text-red-300 rounded-full transition-all cursor-pointer"
+                          title="Delete Project"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      )}
+
+                      <button
+                        onClick={() => handleOpenCanvas(project.id)}
+                        className="flex items-center gap-1.5 px-4 py-2 bg-[#1e1f22] hover:bg-[#8ab4f8]/10 text-xs font-bold text-[#8ab4f8] rounded-full border border-[#3f4046] hover:border-[#8ab4f8]/30 transition-all"
+                      >
+                        <span>Open Canvas</span>
+                        <ArrowRight size={12} />
+                      </button>
+                    </div>
                   </div>
                 </div>
               );

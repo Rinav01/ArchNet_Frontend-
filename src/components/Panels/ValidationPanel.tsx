@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { useCanvasStore } from '@/store/canvasStore';
+import { useLayoutStore } from '@/store/layoutStore';
 import { useProjectStore } from '@/store/projectStore';
 import { CanvasNode, CanvasEdge } from '@/types/canvas';
 import { 
@@ -26,7 +27,8 @@ import {
   Gauge,
   Settings,
   Clock,
-  Network
+  Network,
+  RotateCw
 } from 'lucide-react';
 
 export default function ValidationPanel() {
@@ -53,12 +55,22 @@ export default function ValidationPanel() {
     clusterPriority,
     gpuThrottleLimit,
     setClusterPriority,
-    setGpuThrottleLimit
+    setGpuThrottleLimit,
+    trainingBatchSize,
+    trainingLearningRate,
+    trainingOptimizer,
+    trainingScheduler,
+    setTrainingBatchSize,
+    setTrainingLearningRate,
+    setTrainingOptimizer,
+    setTrainingScheduler,
+    restartTraining
   } = useCanvasStore();
 
   const isOnline = useProjectStore((state) => state.isOnline);
   const userRole = useProjectStore((state) => state.userRole);
-  const [activeTab, setActiveTab] = useState<'activity' | 'sandbox' | 'errors' | 'summary' | 'training' | 'benchmark' | 'timeline' | 'infra'>('activity');
+  const activeTab = useLayoutStore((state) => state.activeConsoleTab) as any;
+  const setActiveTab = useLayoutStore((state) => state.setActiveConsoleTab);
   const consoleBottomRef = useRef<HTMLDivElement>(null);
   const [selectedDatasetId, setSelectedDatasetId] = useState<string>('ds_cifar10');
   
@@ -727,7 +739,7 @@ export default function ValidationPanel() {
                     </div>
 
                     {/* Epochs Setup */}
-                    <div className="space-y-1.5">
+                    <div className="space-y-1.5 font-mono">
                       <div className="flex justify-between text-[9.5px] font-extrabold text-[#9aa0a6] uppercase tracking-wider">
                         <span>Training Epoch Cycle Capacity</span>
                         <span className="font-mono text-xs text-white">{trainingEpochs} Epochs</span>
@@ -743,6 +755,80 @@ export default function ValidationPanel() {
                         className="w-full accent-[#8ab4f8] bg-[#2b2d31] h-1 rounded-full cursor-pointer disabled:opacity-50"
                       />
                     </div>
+
+                    {/* Live Tuning Playground Section */}
+                    <div className="mt-3 pt-3 border-t border-[#2b2d31] space-y-3 select-none">
+                      <span className="text-[9.5px] font-extrabold tracking-widest text-[#9aa0a6] uppercase flex items-center gap-1.5">
+                        <Sliders size={11} className="text-amber-400" />
+                        <span>Live Tuning Playground</span>
+                      </span>
+
+                      {/* 2x2 Grid of Tuning Options */}
+                      <div className="grid grid-cols-2 gap-x-3.5 gap-y-2">
+                        {/* Learning Rate Slider */}
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-[8px] font-extrabold text-[#9aa0a6] uppercase tracking-wider">
+                            <span>LR (Rate)</span>
+                            <span className="font-mono text-white text-[9px]">{trainingLearningRate}</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="0.0001"
+                            max="0.01"
+                            step="0.0005"
+                            value={trainingLearningRate}
+                            onChange={(e) => setTrainingLearningRate(Number(e.target.value))}
+                            className="w-full accent-amber-400 bg-[#2b2d31] h-1 rounded-full cursor-pointer"
+                          />
+                        </div>
+
+                        {/* Batch Size Selection */}
+                        <div className="space-y-1 flex flex-col justify-between">
+                          <label className="text-[8px] font-extrabold text-[#9aa0a6] uppercase tracking-wider">Batch Size</label>
+                          <select
+                            value={trainingBatchSize}
+                            onChange={(e) => setTrainingBatchSize(Number(e.target.value))}
+                            className="w-full bg-[#2b2d31] border border-[#3f4046] rounded-lg px-2 py-0.5 text-[10px] text-[#e3e3e3] focus:outline-none focus:border-[#8ab4f8] transition-all font-medium cursor-pointer"
+                          >
+                            <option value={16}>16 samples</option>
+                            <option value={32}>32 samples</option>
+                            <option value={64}>64 batch</option>
+                            <option value={128}>128 batch</option>
+                            <option value={256}>256 batch</option>
+                          </select>
+                        </div>
+
+                        {/* Optimizer Selection */}
+                        <div className="space-y-1 flex flex-col justify-between">
+                          <label className="text-[8px] font-extrabold text-[#9aa0a6] uppercase tracking-wider">Optimizer</label>
+                          <select
+                            value={trainingOptimizer}
+                            onChange={(e) => setTrainingOptimizer(e.target.value as any)}
+                            className="w-full bg-[#2b2d31] border border-[#3f4046] rounded-lg px-2 py-0.5 text-[10px] text-[#e3e3e3] focus:outline-none focus:border-[#8ab4f8] transition-all font-medium cursor-pointer"
+                          >
+                            <option value="Adam">Adam</option>
+                            <option value="SGD">SGD</option>
+                            <option value="RMSprop">RMSprop</option>
+                            <option value="AdamW">AdamW</option>
+                          </select>
+                        </div>
+
+                        {/* Scheduler Selection */}
+                        <div className="space-y-1 flex flex-col justify-between">
+                          <label className="text-[8px] font-extrabold text-[#9aa0a6] uppercase tracking-wider">Scheduler</label>
+                          <select
+                            value={trainingScheduler}
+                            onChange={(e) => setTrainingScheduler(e.target.value as any)}
+                            className="w-full bg-[#2b2d31] border border-[#3f4046] rounded-lg px-2 py-0.5 text-[10px] text-[#e3e3e3] focus:outline-none focus:border-[#8ab4f8] transition-all font-medium cursor-pointer"
+                          >
+                            <option value="None">None</option>
+                            <option value="StepLR">StepLR</option>
+                            <option value="CosineAnnealing">Cosine</option>
+                            <option value="ReduceLROnPlateau">ReduceLROn</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
                   </div>
 
                   {/* Start/Pause/Abort Controls */}
@@ -751,44 +837,75 @@ export default function ValidationPanel() {
                       <>
                         <button
                           onClick={pauseTraining}
-                          className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-[#ffe082]/10 border border-[#ffe082]/20 hover:bg-[#ffe082]/20 text-[#ffe082] rounded-xl text-xs font-bold transition-all cursor-pointer"
+                          className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 bg-[#ffe082]/10 border border-[#ffe082]/20 hover:bg-[#ffe082]/20 text-[#ffe082] rounded-xl text-xs font-bold transition-all cursor-pointer"
+                          title="Pause training run"
                         >
-                          <Pause size={13} />
+                          <Pause size={12} />
                           <span>Pause</span>
                         </button>
                         <button
                           onClick={stopTraining}
-                          className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-[#f28b82]/10 border border-[#f28b82]/20 hover:bg-[#f28b82]/20 text-[#f28b82] rounded-xl text-xs font-bold transition-all cursor-pointer"
+                          className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 bg-[#f28b82]/10 border border-[#f28b82]/20 hover:bg-[#f28b82]/20 text-[#f28b82] rounded-xl text-xs font-bold transition-all cursor-pointer"
+                          title="Abort current training pipeline"
                         >
-                          <Square size={13} />
+                          <Square size={12} />
                           <span>Abort</span>
+                        </button>
+                        <button
+                          onClick={() => restartTraining(selectedDatasetId)}
+                          className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 bg-amber-500/10 border border-amber-500/20 hover:bg-amber-500/20 text-amber-500 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                          title="Restart training from Epoch 0"
+                        >
+                          <RotateCw size={12} />
+                          <span>Restart</span>
                         </button>
                       </>
                     ) : trainingJob?.status === 'PAUSED' ? (
                       <>
                         <button
                           onClick={() => startTraining(selectedDatasetId)}
-                          className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-[#81c784]/15 border border-[#81c784]/30 hover:bg-[#81c784]/25 text-[#81c784] rounded-xl text-xs font-bold transition-all cursor-pointer"
+                          className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 bg-[#81c784]/15 border border-[#81c784]/30 hover:bg-[#81c784]/25 text-[#81c784] rounded-xl text-xs font-bold transition-all cursor-pointer"
+                          title="Resume training"
                         >
-                          <Play size={13} />
+                          <Play size={12} />
                           <span>Resume</span>
                         </button>
                         <button
                           onClick={stopTraining}
-                          className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-[#f28b82]/10 border border-[#f28b82]/20 hover:bg-[#f28b82]/20 text-[#f28b82] rounded-xl text-xs font-bold transition-all cursor-pointer"
+                          className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 bg-[#f28b82]/10 border border-[#f28b82]/20 hover:bg-[#f28b82]/20 text-[#f28b82] rounded-xl text-xs font-bold transition-all cursor-pointer"
+                          title="Abort current training pipeline"
                         >
-                          <Square size={13} />
+                          <Square size={12} />
                           <span>Abort</span>
+                        </button>
+                        <button
+                          onClick={() => restartTraining(selectedDatasetId)}
+                          className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 bg-amber-500/10 border border-amber-500/20 hover:bg-amber-500/20 text-amber-500 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                          title="Restart training from Epoch 0"
+                        >
+                          <RotateCw size={12} />
+                          <span>Restart</span>
                         </button>
                       </>
                     ) : (
-                      <button
-                        onClick={() => startTraining(selectedDatasetId)}
-                        className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-[#8ab4f8] hover:bg-[#a8c7fa] text-[#1e1f22] rounded-xl text-xs font-extrabold shadow-sm transition-all cursor-pointer border-none"
-                      >
-                        <Play size={13} className="fill-current" />
-                        <span>Launch Pipeline Run</span>
-                      </button>
+                      <>
+                        <button
+                          onClick={() => startTraining(selectedDatasetId)}
+                          className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-[#8ab4f8] hover:bg-[#a8c7fa] text-[#1e1f22] rounded-xl text-xs font-extrabold shadow-sm transition-all cursor-pointer border-none"
+                        >
+                          <Play size={12} className="fill-current" />
+                          <span>Launch Pipeline Run</span>
+                        </button>
+                        {(trainingJob?.status === 'COMPLETED' || trainingJob?.status === 'STOPPED' || trainingJob?.status === 'FAILED') && (
+                          <button
+                            onClick={() => restartTraining(selectedDatasetId)}
+                            className="px-3 py-2 bg-[#2b2d31] hover:bg-[#313338] border border-[#3f4046] text-[#9aa0a6] hover:text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
+                            title="Restart pipeline run from scratch"
+                          >
+                            <RotateCw size={12} />
+                          </button>
+                        )}
+                      </>
                     )}
                   </div>
                 </div>

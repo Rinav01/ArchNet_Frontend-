@@ -3,7 +3,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useCanvasStore } from '@/store/canvasStore';
 import { useProjectStore } from '@/store/projectStore';
-import { Search, Sparkles, Play, Code, Cpu, Shield, HelpCircle, ZoomIn, Undo, Redo, Layers, BarChart2, Activity } from 'lucide-react';
+import { useLayoutStore } from '@/store/layoutStore';
+import { Search, Sparkles, Play, Code, Cpu, Shield, HelpCircle, ZoomIn, Undo, Redo, Layers, BarChart2, Activity, Sliders, Terminal, RotateCw, GitCompare } from 'lucide-react';
 
 interface CommandOption {
   id: string;
@@ -18,9 +19,10 @@ interface CommandPaletteProps {
   isOpen: boolean;
   onClose: () => void;
   onGenerateCode: () => void;
+  onCompareVersions: () => void;
 }
 
-export default function CommandPalette({ isOpen, onClose, onGenerateCode }: CommandPaletteProps) {
+export default function CommandPalette({ isOpen, onClose, onGenerateCode, onCompareVersions }: CommandPaletteProps) {
   const [search, setSearch] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -39,6 +41,8 @@ export default function CommandPalette({ isOpen, onClose, onGenerateCode }: Comm
   } = useCanvasStore();
 
   const userRole = useProjectStore((state) => state.userRole);
+  const togglePanel = useLayoutStore((state) => state.togglePanel);
+  const resetLayout = useLayoutStore((state) => state.resetLayout);
 
   useEffect(() => {
     if (isOpen) {
@@ -53,6 +57,51 @@ export default function CommandPalette({ isOpen, onClose, onGenerateCode }: Comm
   const spawnY = 220;
 
   const commands: CommandOption[] = [
+    {
+      id: 'reset-layout',
+      name: 'Reset Window Layout (All Panels)',
+      category: 'Window Layout',
+      icon: RotateCw,
+      action: () => {
+        resetLayout();
+      },
+    },
+    {
+      id: 'toggle-library',
+      name: 'Toggle Panel: Layer Library',
+      category: 'Window Layout',
+      icon: Layers,
+      action: () => {
+        togglePanel('library');
+      },
+    },
+    {
+      id: 'toggle-inspector',
+      name: 'Toggle Panel: Hyperparameter Inspector',
+      category: 'Window Layout',
+      icon: Sliders,
+      action: () => {
+        togglePanel('inspector');
+      },
+    },
+    {
+      id: 'toggle-console',
+      name: 'Toggle Panel: IDE Terminal Console',
+      category: 'Window Layout',
+      icon: Terminal,
+      action: () => {
+        togglePanel('console');
+      },
+    },
+    {
+      id: 'toggle-diagnostics',
+      name: 'Toggle Panel: Diagnostics & AutoML',
+      category: 'Window Layout',
+      icon: Activity,
+      action: () => {
+        togglePanel('diagnostics');
+      },
+    },
     {
       id: 'run-forward',
       name: 'Run Forward Pass & Compile',
@@ -71,6 +120,16 @@ export default function CommandPalette({ isOpen, onClose, onGenerateCode }: Comm
       icon: Code,
       action: () => {
         onGenerateCode();
+      },
+    },
+    {
+      id: 'compare-versions',
+      name: 'Compare Architecture Versions (Diff Viewer)',
+      category: 'Compiler',
+      shortcut: 'Ctrl + Shift + D',
+      icon: GitCompare,
+      action: () => {
+        onCompareVersions();
       },
     },
     {

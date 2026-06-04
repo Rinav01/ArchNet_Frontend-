@@ -84,7 +84,7 @@ export interface CompilationResult {
 
 export interface GraphOperation {
   id: string;
-  type: 'ADD_NODE' | 'REMOVE_NODE' | 'UPDATE_CONFIG' | 'UPDATE_NAME' | 'ADD_EDGE' | 'REMOVE_EDGE' | 'MOVE_NODE';
+  type: 'ADD_NODE' | 'REMOVE_NODE' | 'UPDATE_CONFIG' | 'UPDATE_NAME' | 'ADD_EDGE' | 'REMOVE_EDGE' | 'MOVE_NODE' | 'SET_GRAPH';
   payload: {
     nodeId?: string;
     node?: CanvasNode;
@@ -99,6 +99,12 @@ export interface GraphOperation {
     newX?: number;
     newY?: number;
     batchNodes?: { id: string; oldX: number; oldY: number; newX: number; newY: number }[];
+    oldNodes?: CanvasNode[];
+    newNodes?: CanvasNode[];
+    oldEdges?: CanvasEdge[];
+    newEdges?: CanvasEdge[];
+    oldNodeGroups?: CanvasNodeGroup[];
+    newNodeGroups?: CanvasNodeGroup[];
   };
 }
 

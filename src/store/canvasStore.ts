@@ -112,6 +112,15 @@ interface CanvasState {
   startTraining: (datasetId?: string | null) => Promise<void>;
   pauseTraining: () => void;
   stopTraining: () => void;
+  trainingBatchSize: number;
+  trainingLearningRate: number;
+  trainingOptimizer: 'Adam' | 'SGD' | 'RMSprop' | 'AdamW';
+  trainingScheduler: 'None' | 'StepLR' | 'CosineAnnealing' | 'ReduceLROnPlateau';
+  setTrainingBatchSize: (size: number) => void;
+  setTrainingLearningRate: (lr: number) => void;
+  setTrainingOptimizer: (opt: 'Adam' | 'SGD' | 'RMSprop' | 'AdamW') => void;
+  setTrainingScheduler: (sched: 'None' | 'StepLR' | 'CosineAnnealing' | 'ReduceLROnPlateau') => void;
+  restartTraining: (datasetId?: string | null) => Promise<void>;
 
   // Advanced Graph Editing UX State
   selectedNodeIds: string[];
@@ -145,6 +154,7 @@ interface CanvasState {
 
   // Auto-Layout Suggester Engine Actions
   triggerAutoLayout: () => void;
+  loadPrebuiltTemplate: (templateName: string) => Promise<void>;
 
   // Admin Allocations State & Actions
   clusterPriority: 'High' | 'Medium' | 'Low';
@@ -155,6 +165,8 @@ interface CanvasState {
   // Jump-to-node Visual Highlight State & Action
   highlightedNodeId: string | null;
   setHighlightedNodeId: (id: string | null) => void;
+  heatmapMode: 'none' | 'flops' | 'memory' | 'latency';
+  setHeatmapMode: (mode: 'none' | 'flops' | 'memory' | 'latency') => void;
 }
 
 
@@ -251,6 +263,17 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
     return inputShape;
   };
 
+  const generateUUID = () => {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+      return crypto.randomUUID();
+    }
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const r = (Math.random() * 16) | 0;
+      const v = c === 'x' ? r : (r & 0x3) | 0x8;
+      return v.toString(16);
+    });
+  };
+
   const getFormattedTime = () => {
     const now = new Date();
     return now.toTimeString().split(' ')[0];
@@ -289,6 +312,10 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
     trainingProvider: 'local',
     trainingEpochs: 10,
     datasets: [],
+    trainingBatchSize: 32,
+    trainingLearningRate: 0.001,
+    trainingOptimizer: 'Adam',
+    trainingScheduler: 'None',
 
     // Advanced Graph Editing UX State Init
     selectedNodeIds: [],
@@ -302,6 +329,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
     clusterPriority: 'High',
     gpuThrottleLimit: 80,
     highlightedNodeId: null,
+    heatmapMode: 'none',
     customBlocks: [],
 
     loadGraph: async (projectId) => {
@@ -961,6 +989,10 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
 
     setSelectedNodeId: (id) => set({ selectedNodeId: id }),
     setHighlightedNodeId: (id) => set({ highlightedNodeId: id }),
+    setHeatmapMode: (mode) => set((state) => {
+      state.addLog('info', `Changed execution heatmap mode to: ${mode.toUpperCase()}`);
+      return { heatmapMode: mode };
+    }),
 
     setZoom: (zoomUpdate) => set((state) => {
       const nextZoom = typeof zoomUpdate === 'function' ? zoomUpdate(state.zoom) : zoomUpdate;
@@ -1386,6 +1418,18 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
           case 'REMOVE_NODE': {
             const oldNode = op.payload.node;
             if (oldNode) {
+              const isOnline = useProjectStore.getState().isOnline;
+              if (!isOnline) {
+                // Offline fallback - restore node and edges locally
+                const newNode = { ...oldNode };
+                const restoredEdges = op.payload.edges || [];
+                set(state => ({
+                  nodes: [...state.nodes, newNode],
+                  edges: [...state.edges, ...restoredEdges]
+                }));
+                break;
+              }
+
               const data = await graphqlRequest(ADD_NODE, {
                 projectId: activeProjId,
                 type: oldNode.type,
@@ -1455,6 +1499,21 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
           case 'REMOVE_EDGE': {
             const oldEdge = op.payload.edge;
             if (oldEdge) {
+              const isOnline = useProjectStore.getState().isOnline;
+              if (!isOnline) {
+                // Offline fallback - restore edge locally
+                const newEdge: CanvasEdge = {
+                  id: oldEdge.id || `edge_${Math.random().toString(36).substring(2, 11)}`,
+                  source: oldEdge.source,
+                  target: oldEdge.target,
+                };
+                set(state => ({
+                  edges: [...state.edges, newEdge],
+                }));
+                op.payload.edge = newEdge;
+                break;
+              }
+
               const edgeData = await graphqlRequest(ADD_EDGE, {
                 projectId: activeProjId,
                 fromNodeId: oldEdge.source,
@@ -1497,6 +1556,18 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
             }
             break;
           }
+          case 'SET_GRAPH': {
+            if (op.payload.oldNodes && op.payload.oldEdges && op.payload.oldNodeGroups) {
+              set({
+                nodes: op.payload.oldNodes,
+                edges: op.payload.oldEdges,
+                nodeGroups: op.payload.oldNodeGroups,
+                selectedNodeIds: [],
+                selectedNodeId: null
+              });
+            }
+            break;
+          }
         }
 
         set((state) => ({
@@ -1525,6 +1596,14 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
           case 'ADD_NODE': {
             const oldNode = op.payload.node;
             if (oldNode) {
+              const isOnline = useProjectStore.getState().isOnline;
+              if (!isOnline) {
+                // Offline fallback - add node locally
+                const newNode = { ...oldNode };
+                set(state => ({ nodes: [...state.nodes, newNode] }));
+                break;
+              }
+
               const data = await graphqlRequest(ADD_NODE, {
                 projectId: activeProjId,
                 type: oldNode.type,
@@ -1559,6 +1638,14 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
           case 'ADD_EDGE': {
             const oldEdge = op.payload.edge;
             if (oldEdge) {
+              const isOnline = useProjectStore.getState().isOnline;
+              if (!isOnline) {
+                // Offline fallback - add edge locally
+                const newEdge = { ...oldEdge };
+                set(state => ({ edges: [...state.edges, newEdge] }));
+                break;
+              }
+
               const edgeData = await graphqlRequest(ADD_EDGE, {
                 projectId: activeProjId,
                 fromNodeId: oldEdge.source,
@@ -1598,6 +1685,18 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
               });
             } else if (op.payload.nodeId && op.payload.newX !== undefined && op.payload.newY !== undefined) {
               get().moveNode(op.payload.nodeId, op.payload.newX, op.payload.newY, true);
+            }
+            break;
+          }
+          case 'SET_GRAPH': {
+            if (op.payload.newNodes && op.payload.newEdges && op.payload.newNodeGroups) {
+              set({
+                nodes: op.payload.newNodes,
+                edges: op.payload.newEdges,
+                nodeGroups: op.payload.newNodeGroups,
+                selectedNodeIds: [],
+                selectedNodeId: null
+              });
             }
             break;
           }
@@ -1955,6 +2054,34 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
       set({ trainingEpochs: epochs });
     },
 
+    setTrainingBatchSize: (size) => {
+      set({ trainingBatchSize: size });
+      get().addLog('info', `[Tuning] Batch size adjusted to: ${size}`);
+    },
+
+    setTrainingLearningRate: (lr) => {
+      set({ trainingLearningRate: lr });
+      get().addLog('info', `[Tuning] Learning rate live-tuned to: ${lr}`);
+    },
+
+    setTrainingOptimizer: (opt) => {
+      set({ trainingOptimizer: opt });
+      get().addLog('info', `[Tuning] Optimizer updated to: ${opt}`);
+    },
+
+    setTrainingScheduler: (sched) => {
+      set({ trainingScheduler: sched });
+      get().addLog('info', `[Tuning] LR Scheduler set to: ${sched}`);
+    },
+
+    restartTraining: async (datasetId = null) => {
+      get().addLog('warning', `Restarting training pipeline execution with current parameters...`);
+      get().stopTraining();
+      setTimeout(() => {
+        get().startTraining(datasetId);
+      }, 300);
+    },
+
     loadDatasets: async () => {
       const isOnline = useProjectStore.getState().isOnline;
       if (isOnline) {
@@ -2170,9 +2297,14 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
           return;
         }
         
-        // Exponential decay for loss and sigmoidal climb for accuracy
-        const decay = 0.08 + Math.random() * 0.08;
-        const growth = 0.05 + Math.random() * 0.07;
+        // Dynamic convergence based on live learning rate tuning (base LR is 0.001)
+        const lrFactor = get().trainingLearningRate / 0.001;
+        const baseDecay = 0.08 + Math.random() * 0.08;
+        const baseGrowth = 0.05 + Math.random() * 0.07;
+        
+        // Scale curves based on learning rate updates
+        const decay = Math.min(0.4, baseDecay * Math.sqrt(lrFactor));
+        const growth = Math.min(0.3, baseGrowth * Math.sqrt(lrFactor));
         
         currentLoss = Math.max(0.015, currentLoss * (1 - decay));
         currentAcc = Math.min(0.992, currentAcc + (1 - currentAcc) * growth);
@@ -2681,6 +2813,522 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
       } catch (err) {
         console.error('Dagre layout computation failed:', err);
         get().addLog('error', `Auto-Layout Error: Dagre solver failed.`);
+      }
+    },
+
+    loadPrebuiltTemplate: async (templateName) => {
+      const oldNodes = JSON.parse(JSON.stringify(get().nodes));
+      const oldEdges = JSON.parse(JSON.stringify(get().edges));
+      const oldNodeGroups = JSON.parse(JSON.stringify(get().nodeGroups));
+
+      let newNodes: CanvasNode[] = [];
+      let newEdges: CanvasEdge[] = [];
+      let newNodeGroups: CanvasNodeGroup[] = [];
+
+      const time = getFormattedTime();
+
+      if (templateName === 'ResNet50') {
+        const inputId = generateUUID();
+        const convStemId = generateUUID();
+        const bnStemId = generateUUID();
+        const poolStemId = generateUUID();
+
+        const conv1a = generateUUID();
+        const bn1a = generateUUID();
+        const conv1b = generateUUID();
+        const bn1b = generateUUID();
+        const conv1c = generateUUID();
+        const bn1c = generateUUID();
+        const conv1short = generateUUID();
+        const bn1short = generateUUID();
+        const conv1merge = generateUUID();
+
+        const conv2a = generateUUID();
+        const bn2a = generateUUID();
+        const conv2b = generateUUID();
+        const bn2b = generateUUID();
+        const conv2c = generateUUID();
+        const bn2c = generateUUID();
+        const conv2merge = generateUUID();
+
+        const poolGlobal = generateUUID();
+        const flatten = generateUUID();
+        const classifier = generateUUID();
+
+        newNodes = [
+          { id: inputId, type: 'Input', name: 'INPUT_IMAGE', x: 100, y: 300, inputShape: [], outputShape: [224, 224, 3], config: { dim: [224, 224, 3] } },
+          { id: convStemId, type: 'Conv2D', name: 'CONV_STEM', x: 280, y: 300, inputShape: [], outputShape: [], config: { filters: 64, kernelSize: 7, stride: 2, padding: 'same', activation: 'ReLU' } },
+          { id: bnStemId, type: 'BatchNorm2D', name: 'BN_STEM', x: 460, y: 300, inputShape: [], outputShape: [], config: {} },
+          { id: poolStemId, type: 'MaxPool2D', name: 'POOL_STEM', x: 640, y: 300, inputShape: [], outputShape: [], config: { poolSize: 3 } },
+
+          // Block 1 (Conv Block)
+          { id: conv1a, type: 'Conv2D', name: 'RES1_CONV_A', x: 820, y: 200, inputShape: [], outputShape: [], config: { filters: 64, kernelSize: 1, stride: 1, padding: 'same', activation: 'ReLU' } },
+          { id: bn1a, type: 'BatchNorm2D', name: 'RES1_BN_A', x: 1000, y: 200, inputShape: [], outputShape: [], config: {} },
+          { id: conv1b, type: 'Conv2D', name: 'RES1_CONV_B', x: 1180, y: 200, inputShape: [], outputShape: [], config: { filters: 64, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' } },
+          { id: bn1b, type: 'BatchNorm2D', name: 'RES1_BN_B', x: 1360, y: 200, inputShape: [], outputShape: [], config: {} },
+          { id: conv1c, type: 'Conv2D', name: 'RES1_CONV_C', x: 1540, y: 200, inputShape: [], outputShape: [], config: { filters: 256, kernelSize: 1, stride: 1, padding: 'same', activation: 'None' } },
+          { id: bn1c, type: 'BatchNorm2D', name: 'RES1_BN_C', x: 1720, y: 200, inputShape: [], outputShape: [], config: {} },
+          { id: conv1short, type: 'Conv2D', name: 'RES1_CONV_SHORT', x: 1180, y: 400, inputShape: [], outputShape: [], config: { filters: 256, kernelSize: 1, stride: 1, padding: 'same', activation: 'None' } },
+          { id: bn1short, type: 'BatchNorm2D', name: 'RES1_BN_SHORT', x: 1360, y: 400, inputShape: [], outputShape: [], config: {} },
+          { id: conv1merge, type: 'Conv2D', name: 'RES1_MERGE_ADD', x: 1900, y: 300, inputShape: [], outputShape: [], config: { filters: 256, kernelSize: 1, stride: 1, padding: 'same', activation: 'ReLU' } },
+
+          // Block 2 (Identity Block)
+          { id: conv2a, type: 'Conv2D', name: 'RES2_CONV_A', x: 2080, y: 200, inputShape: [], outputShape: [], config: { filters: 64, kernelSize: 1, stride: 1, padding: 'same', activation: 'ReLU' } },
+          { id: bn2a, type: 'BatchNorm2D', name: 'RES2_BN_A', x: 2260, y: 200, inputShape: [], outputShape: [], config: {} },
+          { id: conv2b, type: 'Conv2D', name: 'RES2_CONV_B', x: 2440, y: 200, inputShape: [], outputShape: [], config: { filters: 64, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' } },
+          { id: bn2b, type: 'BatchNorm2D', name: 'RES2_BN_B', x: 2620, y: 200, inputShape: [], outputShape: [], config: {} },
+          { id: conv2c, type: 'Conv2D', name: 'RES2_CONV_C', x: 2800, y: 200, inputShape: [], outputShape: [], config: { filters: 256, kernelSize: 1, stride: 1, padding: 'same', activation: 'None' } },
+          { id: bn2c, type: 'BatchNorm2D', name: 'RES2_BN_C', x: 2980, y: 200, inputShape: [], outputShape: [], config: {} },
+          { id: conv2merge, type: 'Conv2D', name: 'RES2_MERGE_ADD', x: 3160, y: 300, inputShape: [], outputShape: [], config: { filters: 256, kernelSize: 1, stride: 1, padding: 'same', activation: 'ReLU' } },
+
+          // Head
+          { id: poolGlobal, type: 'MaxPool2D', name: 'AVG_POOL_GLOBAL', x: 3340, y: 300, inputShape: [], outputShape: [], config: { poolSize: 7 } },
+          { id: flatten, type: 'Flatten', name: 'FLATTEN_HEAD', x: 3520, y: 300, inputShape: [], outputShape: [], config: {} },
+          { id: classifier, type: 'Dense', name: 'DENSE_CLASSIFIER', x: 3700, y: 300, inputShape: [], outputShape: [], config: { units: 1000 } }
+        ];
+
+        newEdges = [
+          { id: generateUUID(), source: inputId, target: convStemId },
+          { id: generateUUID(), source: convStemId, target: bnStemId },
+          { id: generateUUID(), source: bnStemId, target: poolStemId },
+
+          // Block 1 branch
+          { id: generateUUID(), source: poolStemId, target: conv1a },
+          { id: generateUUID(), source: conv1a, target: bn1a },
+          { id: generateUUID(), source: bn1a, target: conv1b },
+          { id: generateUUID(), source: conv1b, target: bn1b },
+          { id: generateUUID(), source: bn1b, target: conv1c },
+          { id: generateUUID(), source: conv1c, target: bn1c },
+          { id: generateUUID(), source: bn1c, target: conv1merge },
+
+          // Block 1 shortcut
+          { id: generateUUID(), source: poolStemId, target: conv1short },
+          { id: generateUUID(), source: conv1short, target: bn1short },
+          { id: generateUUID(), source: bn1short, target: conv1merge },
+
+          // Block 2 branch
+          { id: generateUUID(), source: conv1merge, target: conv2a },
+          { id: generateUUID(), source: conv2a, target: bn2a },
+          { id: generateUUID(), source: bn2a, target: conv2b },
+          { id: generateUUID(), source: conv2b, target: bn2b },
+          { id: generateUUID(), source: bn2b, target: conv2c },
+          { id: generateUUID(), source: conv2c, target: bn2c },
+          { id: generateUUID(), source: bn2c, target: conv2merge },
+
+          // Block 2 shortcut
+          { id: generateUUID(), source: conv1merge, target: conv2merge },
+
+          // Head connections
+          { id: generateUUID(), source: conv2merge, target: poolGlobal },
+          { id: generateUUID(), source: poolGlobal, target: flatten },
+          { id: generateUUID(), source: flatten, target: classifier }
+        ];
+
+        newNodeGroups = [
+          { id: generateUUID(), name: 'ResNet Stem', color: '#8ab4f8', nodeIds: [convStemId, bnStemId, poolStemId] },
+          { id: generateUUID(), name: 'Residual Block 1 (Conv)', color: '#ffe082', nodeIds: [conv1a, bn1a, conv1b, bn1b, conv1c, bn1c, conv1short, bn1short, conv1merge] },
+          { id: generateUUID(), name: 'Residual Block 2 (Identity)', color: '#81c784', nodeIds: [conv2a, bn2a, conv2b, bn2b, conv2c, bn2c, conv2merge] },
+          { id: generateUUID(), name: 'Classification Head', color: '#c5a3ff', nodeIds: [poolGlobal, flatten, classifier] }
+        ];
+      } else if (templateName === 'ViT') {
+        const inputId = generateUUID();
+        const patchConvId = generateUUID();
+        const patchFlatId = generateUUID();
+
+        const norm1 = generateUUID();
+        const denseQkv = generateUUID();
+        const denseAttnOut = generateUUID();
+        const dropoutAttn = generateUUID();
+        const attnMerge = generateUUID();
+
+        const norm2 = generateUUID();
+        const denseMlp1 = generateUUID();
+        const denseMlp2 = generateUUID();
+        const dropoutMlp = generateUUID();
+        const mlpMerge = generateUUID();
+
+        const headFlat = generateUUID();
+        const classifier = generateUUID();
+
+        newNodes = [
+          { id: inputId, type: 'Input', name: 'INPUT_IMAGE', x: 100, y: 300, inputShape: [], outputShape: [224, 224, 3], config: { dim: [224, 224, 3] } },
+          { id: patchConvId, type: 'Conv2D', name: 'PATCH_PROJECTION', x: 280, y: 300, inputShape: [], outputShape: [], config: { filters: 768, kernelSize: 16, stride: 16, padding: 'valid', activation: 'None' } },
+          { id: patchFlatId, type: 'Flatten', name: 'FLATTEN_PATCHES', x: 460, y: 300, inputShape: [], outputShape: [], config: {} },
+
+          // Transformer Encoder Self Attention
+          { id: norm1, type: 'BatchNorm2D', name: 'ATTN_LAYERNORM', x: 640, y: 200, inputShape: [], outputShape: [], config: {} },
+          { id: denseQkv, type: 'Dense', name: 'QKV_PROJECTION', x: 820, y: 200, inputShape: [], outputShape: [], config: { units: 768 } },
+          { id: denseAttnOut, type: 'Dense', name: 'ATTN_OUT_PROJ', x: 1000, y: 200, inputShape: [], outputShape: [], config: { units: 768 } },
+          { id: dropoutAttn, type: 'Dropout', name: 'ATTN_DROPOUT', x: 1180, y: 200, inputShape: [], outputShape: [], config: { rate: 0.1 } },
+          { id: attnMerge, type: 'Conv2D', name: 'ATTN_RESIDUAL_ADD', x: 1360, y: 300, inputShape: [], outputShape: [], config: { filters: 768, kernelSize: 1, stride: 1, padding: 'same', activation: 'None' } },
+
+          // MLP
+          { id: norm2, type: 'BatchNorm2D', name: 'MLP_LAYERNORM', x: 1540, y: 200, inputShape: [], outputShape: [], config: {} },
+          { id: denseMlp1, type: 'Dense', name: 'MLP_DENSE_HIDE', x: 1720, y: 200, inputShape: [], outputShape: [], config: { units: 3072 } },
+          { id: denseMlp2, type: 'Dense', name: 'MLP_DENSE_OUT', x: 1900, y: 200, inputShape: [], outputShape: [], config: { units: 768 } },
+          { id: dropoutMlp, type: 'Dropout', name: 'MLP_DROPOUT', x: 2080, y: 200, inputShape: [], outputShape: [], config: { rate: 0.1 } },
+          { id: mlpMerge, type: 'Conv2D', name: 'MLP_RESIDUAL_ADD', x: 2260, y: 300, inputShape: [], outputShape: [], config: { filters: 768, kernelSize: 1, stride: 1, padding: 'same', activation: 'None' } },
+
+          // Classifier Head
+          { id: headFlat, type: 'Flatten', name: 'FLATTEN_TOKENS', x: 2440, y: 300, inputShape: [], outputShape: [], config: {} },
+          { id: classifier, type: 'Dense', name: 'DENSE_CLASSIFIER', x: 2620, y: 300, inputShape: [], outputShape: [], config: { units: 1000 } }
+        ];
+
+        newEdges = [
+          { id: generateUUID(), source: inputId, target: patchConvId },
+          { id: generateUUID(), source: patchConvId, target: patchFlatId },
+
+          // Attn Branch
+          { id: generateUUID(), source: patchFlatId, target: norm1 },
+          { id: generateUUID(), source: norm1, target: denseQkv },
+          { id: generateUUID(), source: denseQkv, target: denseAttnOut },
+          { id: generateUUID(), source: denseAttnOut, target: dropoutAttn },
+          { id: generateUUID(), source: dropoutAttn, target: attnMerge },
+          // Attn shortcut
+          { id: generateUUID(), source: patchFlatId, target: attnMerge },
+
+          // MLP Branch
+          { id: generateUUID(), source: attnMerge, target: norm2 },
+          { id: generateUUID(), source: norm2, target: denseMlp1 },
+          { id: generateUUID(), source: denseMlp1, target: denseMlp2 },
+          { id: generateUUID(), source: denseMlp2, target: dropoutMlp },
+          { id: generateUUID(), source: dropoutMlp, target: mlpMerge },
+          // MLP shortcut
+          { id: generateUUID(), source: attnMerge, target: mlpMerge },
+
+          // Head connections
+          { id: generateUUID(), source: mlpMerge, target: headFlat },
+          { id: generateUUID(), source: headFlat, target: classifier }
+        ];
+
+        newNodeGroups = [
+          { id: generateUUID(), name: 'Patch Projection', color: '#8ab4f8', nodeIds: [patchConvId, patchFlatId] },
+          { id: generateUUID(), name: 'Transformer Block 1 (Self Attention)', color: '#ffe082', nodeIds: [norm1, denseQkv, denseAttnOut, dropoutAttn, attnMerge] },
+          { id: generateUUID(), name: 'Transformer Block 1 (MLP)', color: '#81c784', nodeIds: [norm2, denseMlp1, denseMlp2, dropoutMlp, mlpMerge] },
+          { id: generateUUID(), name: 'Classification Head', color: '#c5a3ff', nodeIds: [headFlat, classifier] }
+        ];
+      } else if (templateName === 'UNet') {
+        const inputId = generateUUID();
+        const convEnc1 = generateUUID();
+        const poolEnc1 = generateUUID();
+        const convEnc2 = generateUUID();
+        const poolEnc2 = generateUUID();
+
+        const convBottle = generateUUID();
+
+        const dec2Up = generateUUID();
+        const dec2Conv1 = generateUUID();
+        const dec2Bn1 = generateUUID();
+        const dec2Conv2 = generateUUID();
+        const dec2Bn2 = generateUUID();
+
+        const dec1Up = generateUUID();
+        const dec1Conv1 = generateUUID();
+        const dec1Bn1 = generateUUID();
+        const dec1Conv2 = generateUUID();
+        const dec1Bn2 = generateUUID();
+
+        const convOut = generateUUID();
+
+        newNodes = [
+          { id: inputId, type: 'Input', name: 'INPUT_IMAGE', x: 100, y: 300, inputShape: [], outputShape: [256, 256, 3], config: { dim: [256, 256, 3] } },
+
+          // Encoder
+          { id: convEnc1, type: 'Conv2D', name: 'ENC1_CONV_64', x: 280, y: 300, inputShape: [], outputShape: [], config: { filters: 64, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' } },
+          { id: poolEnc1, type: 'MaxPool2D', name: 'ENC1_MAXPOOL', x: 460, y: 300, inputShape: [], outputShape: [], config: { poolSize: 2 } },
+          { id: convEnc2, type: 'Conv2D', name: 'ENC2_CONV_128', x: 640, y: 450, inputShape: [], outputShape: [], config: { filters: 128, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' } },
+          { id: poolEnc2, type: 'MaxPool2D', name: 'ENC2_MAXPOOL', x: 820, y: 450, inputShape: [], outputShape: [], config: { poolSize: 2 } },
+
+          // Bottleneck
+          { id: convBottle, type: 'Conv2D', name: 'BOTTLENECK_CONV', x: 1000, y: 600, inputShape: [], outputShape: [], config: { filters: 256, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' } },
+
+          // Decoder Stage 2
+          { id: dec2Up, type: 'Conv2D', name: 'DEC2_UP_CONV', x: 1180, y: 450, inputShape: [], outputShape: [], config: { filters: 128, kernelSize: 2, stride: 1, padding: 'same', activation: 'ReLU' } },
+          { id: dec2Conv1, type: 'Conv2D', name: 'DEC2_CONV_1', x: 1360, y: 450, inputShape: [], outputShape: [], config: { filters: 128, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' } },
+          { id: dec2Bn1, type: 'BatchNorm2D', name: 'DEC2_BN_1', x: 1540, y: 450, inputShape: [], outputShape: [], config: {} },
+          { id: dec2Conv2, type: 'Conv2D', name: 'DEC2_CONV_2', x: 1720, y: 450, inputShape: [], outputShape: [], config: { filters: 128, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' } },
+          { id: dec2Bn2, type: 'BatchNorm2D', name: 'DEC2_BN_2', x: 1900, y: 450, inputShape: [], outputShape: [], config: {} },
+
+          // Decoder Stage 1
+          { id: dec1Up, type: 'Conv2D', name: 'DEC1_UP_CONV', x: 2080, y: 300, inputShape: [], outputShape: [], config: { filters: 64, kernelSize: 2, stride: 1, padding: 'same', activation: 'ReLU' } },
+          { id: dec1Conv1, type: 'Conv2D', name: 'DEC1_CONV_1', x: 2260, y: 300, inputShape: [], outputShape: [], config: { filters: 64, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' } },
+          { id: dec1Bn1, type: 'BatchNorm2D', name: 'DEC1_BN_1', x: 2440, y: 300, inputShape: [], outputShape: [], config: {} },
+          { id: dec1Conv2, type: 'Conv2D', name: 'DEC1_CONV_2', x: 2620, y: 300, inputShape: [], outputShape: [], config: { filters: 64, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' } },
+          { id: dec1Bn2, type: 'BatchNorm2D', name: 'DEC1_BN_2', x: 2800, y: 300, inputShape: [], outputShape: [], config: {} },
+
+          // Head
+          { id: convOut, type: 'Conv2D', name: 'OUTPUT_SEG_MASK', x: 2980, y: 300, inputShape: [], outputShape: [], config: { filters: 2, kernelSize: 1, stride: 1, padding: 'same', activation: 'Softmax' } }
+        ];
+
+        newEdges = [
+          { id: generateUUID(), source: inputId, target: convEnc1 },
+          { id: generateUUID(), source: convEnc1, target: poolEnc1 },
+          { id: generateUUID(), source: poolEnc1, target: convEnc2 },
+          { id: generateUUID(), source: convEnc2, target: poolEnc2 },
+          { id: generateUUID(), source: poolEnc2, target: convBottle },
+
+          // Dec 2 connects bottleneck + Enc 2 skip
+          { id: generateUUID(), source: convBottle, target: dec2Up },
+          { id: generateUUID(), source: dec2Up, target: dec2Conv1 },
+          { id: generateUUID(), source: convEnc2, target: dec2Conv1 },
+          { id: generateUUID(), source: dec2Conv1, target: dec2Bn1 },
+          { id: generateUUID(), source: dec2Bn1, target: dec2Conv2 },
+          { id: generateUUID(), source: dec2Conv2, target: dec2Bn2 },
+
+          // Dec 1 connects Dec 2 + Enc 1 skip
+          { id: generateUUID(), source: dec2Bn2, target: dec1Up },
+          { id: generateUUID(), source: dec1Up, target: dec1Conv1 },
+          { id: generateUUID(), source: convEnc1, target: dec1Conv1 },
+          { id: generateUUID(), source: dec1Conv1, target: dec1Bn1 },
+          { id: generateUUID(), source: dec1Bn1, target: dec1Conv2 },
+          { id: generateUUID(), source: dec1Conv2, target: dec1Bn2 },
+
+          // Output
+          { id: generateUUID(), source: dec1Bn2, target: convOut }
+        ];
+
+        newNodeGroups = [
+          { id: generateUUID(), name: 'Encoder Stage 1', color: '#8ab4f8', nodeIds: [convEnc1, poolEnc1] },
+          { id: generateUUID(), name: 'Encoder Stage 2', color: '#ffe082', nodeIds: [convEnc2, poolEnc2] },
+          { id: generateUUID(), name: 'UNet Bottleneck', color: '#80cbc4', nodeIds: [convBottle] },
+          { id: generateUUID(), name: 'Decoder Stage 2', color: '#81c784', nodeIds: [dec2Up, dec2Conv1, dec2Bn1, dec2Conv2, dec2Bn2] },
+          { id: generateUUID(), name: 'Decoder Stage 1', color: '#c5a3ff', nodeIds: [dec1Up, dec1Conv1, dec1Bn1, dec1Conv2, dec1Bn2] },
+          { id: generateUUID(), name: 'Segmentation Head', color: '#ffe082', nodeIds: [convOut] }
+        ];
+      } else if (templateName === 'MobileNet') {
+        const inputId = generateUUID();
+        const convStemId = generateUUID();
+        const bnStemId = generateUUID();
+
+        const convDw1 = generateUUID();
+        const bnDw1 = generateUUID();
+        const convPw1 = generateUUID();
+        const bnPw1 = generateUUID();
+
+        const convDw2 = generateUUID();
+        const bnDw2 = generateUUID();
+        const convPw2 = generateUUID();
+        const bnPw2 = generateUUID();
+
+        // Attention block
+        const attnNorm = generateUUID();
+        const attnQkv = generateUUID();
+        const attnOut = generateUUID();
+        const attnDrop = generateUUID();
+        const attnAdd = generateUUID();
+
+        const poolGlobal = generateUUID();
+        const flatten = generateUUID();
+        const classifier = generateUUID();
+
+        newNodes = [
+          { id: inputId, type: 'Input', name: 'INPUT_IMAGE', x: 100, y: 300, inputShape: [], outputShape: [224, 224, 3], config: { dim: [224, 224, 3] } },
+          { id: convStemId, type: 'Conv2D', name: 'STEM_CONV_32', x: 280, y: 300, inputShape: [], outputShape: [], config: { filters: 32, kernelSize: 3, stride: 2, padding: 'same', activation: 'ReLU' } },
+          { id: bnStemId, type: 'BatchNorm2D', name: 'STEM_BN', x: 460, y: 300, inputShape: [], outputShape: [], config: {} },
+
+          // Separable Block 1
+          { id: convDw1, type: 'Conv2D', name: 'DW_CONV_1', x: 640, y: 300, inputShape: [], outputShape: [], config: { filters: 32, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' } },
+          { id: bnDw1, type: 'BatchNorm2D', name: 'DW_BN_1', x: 820, y: 300, inputShape: [], outputShape: [], config: {} },
+          { id: convPw1, type: 'Conv2D', name: 'PW_CONV_1', x: 1000, y: 300, inputShape: [], outputShape: [], config: { filters: 64, kernelSize: 1, stride: 1, padding: 'same', activation: 'ReLU' } },
+          { id: bnPw1, type: 'BatchNorm2D', name: 'PW_BN_1', x: 1180, y: 300, inputShape: [], outputShape: [], config: {} },
+
+          // Separable Block 2
+          { id: convDw2, type: 'Conv2D', name: 'DW_CONV_2', x: 1360, y: 300, inputShape: [], outputShape: [], config: { filters: 64, kernelSize: 3, stride: 2, padding: 'same', activation: 'ReLU' } },
+          { id: bnDw2, type: 'BatchNorm2D', name: 'DW_BN_2', x: 1540, y: 300, inputShape: [], outputShape: [], config: {} },
+          { id: convPw2, type: 'Conv2D', name: 'PW_CONV_2', x: 1720, y: 300, inputShape: [], outputShape: [], config: { filters: 128, kernelSize: 1, stride: 1, padding: 'same', activation: 'ReLU' } },
+          { id: bnPw2, type: 'BatchNorm2D', name: 'PW_BN_2', x: 1900, y: 300, inputShape: [], outputShape: [], config: {} },
+
+          // Attention Block
+          { id: attnNorm, type: 'BatchNorm2D', name: 'ATTN_LAYERNORM', x: 2080, y: 300, inputShape: [], outputShape: [], config: {} },
+          { id: attnQkv, type: 'Dense', name: 'ATTN_QKV_PROJ', x: 2260, y: 200, inputShape: [], outputShape: [], config: { units: 128 } },
+          { id: attnOut, type: 'Dense', name: 'ATTN_OUT_PROJ', x: 2440, y: 200, inputShape: [], outputShape: [], config: { units: 128 } },
+          { id: attnDrop, type: 'Dropout', name: 'ATTN_DROPOUT', x: 2620, y: 200, inputShape: [], outputShape: [], config: { rate: 0.1 } },
+          { id: attnAdd, type: 'Conv2D', name: 'ATTN_RESIDUAL_ADD', x: 2800, y: 300, inputShape: [], outputShape: [], config: { filters: 128, kernelSize: 1, stride: 1, padding: 'same', activation: 'None' } },
+
+          // Head
+          { id: poolGlobal, type: 'MaxPool2D', name: 'AVG_POOL_GLOBAL', x: 2980, y: 300, inputShape: [], outputShape: [], config: { poolSize: 7 } },
+          { id: flatten, type: 'Flatten', name: 'FLATTEN_HEAD', x: 3160, y: 300, inputShape: [], outputShape: [], config: {} },
+          { id: classifier, type: 'Dense', name: 'DENSE_CLASSIFIER', x: 3340, y: 300, inputShape: [], outputShape: [], config: { units: 1000 } }
+        ];
+
+        newEdges = [
+          { id: generateUUID(), source: inputId, target: convStemId },
+          { id: generateUUID(), source: convStemId, target: bnStemId },
+          { id: generateUUID(), source: bnStemId, target: convDw1 },
+
+          // Block 1
+          { id: generateUUID(), source: convDw1, target: bnDw1 },
+          { id: generateUUID(), source: bnDw1, target: convPw1 },
+          { id: generateUUID(), source: convPw1, target: bnPw1 },
+          { id: generateUUID(), source: bnPw1, target: convDw2 },
+
+          // Block 2
+          { id: generateUUID(), source: convDw2, target: bnDw2 },
+          { id: generateUUID(), source: bnDw2, target: convPw2 },
+          { id: generateUUID(), source: convPw2, target: bnPw2 },
+
+          // Attention Branch
+          { id: generateUUID(), source: bnPw2, target: attnNorm },
+          { id: generateUUID(), source: attnNorm, target: attnQkv },
+          { id: generateUUID(), source: attnQkv, target: attnOut },
+          { id: generateUUID(), source: attnOut, target: attnDrop },
+          { id: generateUUID(), source: attnDrop, target: attnAdd },
+          // Attention Shortcut
+          { id: generateUUID(), source: bnPw2, target: attnAdd },
+
+          // Head
+          { id: generateUUID(), source: attnAdd, target: poolGlobal },
+          { id: generateUUID(), source: poolGlobal, target: flatten },
+          { id: generateUUID(), source: flatten, target: classifier }
+        ];
+
+        newNodeGroups = [
+          { id: generateUUID(), name: 'Stem Block', color: '#8ab4f8', nodeIds: [convStemId, bnStemId] },
+          { id: generateUUID(), name: 'Separable Block 1', color: '#ffe082', nodeIds: [convDw1, bnDw1, convPw1, bnPw1] },
+          { id: generateUUID(), name: 'Separable Block 2', color: '#81c784', nodeIds: [convDw2, bnDw2, convPw2, bnPw2] },
+          { id: generateUUID(), name: 'MobileNet Attention Block', color: '#ffe082', nodeIds: [attnNorm, attnQkv, attnOut, attnDrop, attnAdd] },
+          { id: generateUUID(), name: 'Classifier Head', color: '#c5a3ff', nodeIds: [poolGlobal, flatten, classifier] }
+        ];
+      } else {
+        return;
+      }
+
+      get().pushOperation({
+        type: 'SET_GRAPH',
+        payload: {
+          oldNodes,
+          oldEdges,
+          oldNodeGroups,
+          newNodes,
+          newEdges,
+          newNodeGroups
+        }
+      });
+
+      set({
+        nodes: newNodes,
+        edges: newEdges,
+        nodeGroups: newNodeGroups,
+        selectedNodeIds: [],
+        selectedNodeId: null
+      });
+
+      get().recalculateShapes();
+      get().addLog('success', `Marketplace Import: Successfully imported prebuilt ${templateName} template into visual canvas.`);
+      toast.success('Template Loaded', `Visual workspace populated with prebuilt ${templateName} layout.`);
+
+      const syncWithDatabase = async () => {
+        const activeProjId = useProjectStore.getState().activeProjectId;
+        if (!activeProjId) return;
+
+        // Poll for WebSocket connection readiness up to 15 times (3 seconds)
+        let attempts = 0;
+        while (get().syncStatus !== 'connected' && attempts < 15) {
+          await new Promise(resolve => setTimeout(resolve, 200));
+          attempts++;
+        }
+
+        const ws = get().ws;
+        const isWsConnected = get().syncStatus === 'connected' && ws && ws.readyState === WebSocket.OPEN;
+
+        if (isWsConnected) {
+          // 1. Delete all old nodes (backend cascades to edges)
+          oldNodes.forEach((n: CanvasNode) => {
+            ws.send(JSON.stringify({
+              type: 'operation',
+              op: {
+                action: 'DELETE_NODE',
+                payload: { node_id: n.id },
+                timestamp: Date.now() / 1000
+              }
+            }));
+          });
+
+          // 2. Add new nodes
+          newNodes.forEach((n: CanvasNode) => {
+            ws.send(JSON.stringify({
+              type: 'operation',
+              op: {
+                action: 'ADD_NODE',
+                payload: {
+                  node_id: n.id,
+                  type: n.type,
+                  label: n.name,
+                  position_x: n.x,
+                  position_y: n.y,
+                  config: n.config
+                },
+                timestamp: Date.now() / 1000
+              }
+            }));
+          });
+
+          // 3. Add new edges
+          newEdges.forEach((e: CanvasEdge) => {
+            ws.send(JSON.stringify({
+              type: 'operation',
+              op: {
+                action: 'ADD_EDGE',
+                payload: {
+                  edge_id: e.id,
+                  from_node_id: e.source,
+                  to_node_id: e.target
+                },
+                timestamp: Date.now() / 1000
+              }
+            }));
+          });
+
+          get().addLog('success', `Database Synced: Pushed ${newNodes.length} nodes & ${newEdges.length} edges via WebSocket.`);
+        } else {
+          // Fallback to GraphQL if WS is still not connected
+          get().addLog('warning', 'WebSocket sync unavailable. Syncing template via GraphQL...');
+          try {
+            // Delete old nodes
+            for (const n of oldNodes) {
+              await graphqlRequest(DELETE_NODE, { projectId: activeProjId, nodeId: n.id });
+            }
+            
+            // Map old client IDs to new database UUIDs
+            const oldToNewIdMap = new Map<string, string>();
+            for (const n of newNodes) {
+              const res = await graphqlRequest(ADD_NODE, {
+                projectId: activeProjId,
+                type: n.type,
+                label: n.name,
+                position: { x: n.x, y: n.y },
+                config: n.config
+              });
+              if (res && res.addNode) {
+                oldToNewIdMap.set(n.id, res.addNode.id);
+              }
+            }
+
+            // Add new edges
+            for (const e of newEdges) {
+              const newSource = oldToNewIdMap.get(e.source);
+              const newTarget = oldToNewIdMap.get(e.target);
+              if (newSource && newTarget) {
+                await graphqlRequest(ADD_EDGE, {
+                  projectId: activeProjId,
+                  fromNodeId: newSource,
+                  toNodeId: newTarget
+                });
+              }
+            }
+
+            // Since GraphQL mutations generated new database IDs, reload graph to align client IDs
+            await get().loadGraph(activeProjId);
+            get().addLog('success', `GraphQL Synced: Template saved successfully.`);
+          } catch (err: any) {
+            console.error('GraphQL template sync failed:', err);
+            get().addLog('error', `Database Sync Error: Failed to save template. ${err.message || err}`);
+          }
+        }
+      };
+
+      if (useProjectStore.getState().isOnline) {
+        syncWithDatabase();
       }
     },
 

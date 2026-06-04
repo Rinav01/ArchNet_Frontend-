@@ -11,9 +11,10 @@ import { Loader2 } from 'lucide-react';
 interface MainLayoutProps {
   children: React.ReactNode;
   onGenerateCode?: () => void;
+  onCompareVersions?: () => void;
 }
 
-export default function MainLayout({ children, onGenerateCode }: MainLayoutProps) {
+export default function MainLayout({ children, onGenerateCode, onCompareVersions }: MainLayoutProps) {
   const pathname = usePathname();
   const router = useRouter();
   const isOnline = useProjectStore((state) => state.isOnline);
@@ -59,7 +60,7 @@ export default function MainLayout({ children, onGenerateCode }: MainLayoutProps
       
       {/* Main Content Area */}
       <div className={`flex-1 ${isEditor ? 'pl-0' : 'pl-64'} flex flex-col h-screen overflow-hidden relative z-10 transition-all duration-300`}>
-        <Header onGenerateCode={onGenerateCode} />
+        <Header onGenerateCode={onGenerateCode} onCompareVersions={onCompareVersions} />
         <main className="flex-1 overflow-y-auto relative">
           {children}
         </main>

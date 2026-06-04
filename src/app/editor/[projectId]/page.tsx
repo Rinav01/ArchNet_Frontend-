@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import MainLayout from '@/components/Layout/MainLayout';
 import LayerLibrary from '@/components/Panels/LayerLibrary';
 import ConfigPanel from '@/components/Panels/ConfigPanel';
@@ -12,6 +12,9 @@ import CodePreviewModal from '@/components/Modals/CodePreviewModal';
 import ErrorBoundary from '@/components/Common/ErrorBoundary';
 import CommandPalette from '@/components/Modals/CommandPalette';
 import GraphSearch from '@/components/Modals/GraphSearch';
+import DiffViewerModal from '@/components/Modals/DiffViewerModal';
+import DockablePanel from '@/components/Common/DockablePanel';
+import { useLayoutStore } from '@/store/layoutStore';
 import { useCanvasStore } from '@/store/canvasStore';
 import { useProjectStore } from '@/store/projectStore';
 import { 
@@ -20,7 +23,6 @@ import {
   Maximize2, 
   Play, 
   Plus, 
-  Cpu,
   AlignLeft, 
   AlignVerticalJustifyStart, 
   Columns, 
@@ -33,7 +35,9 @@ import {
 
 export default function EditorPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const projectId = params.projectId as string;
+  const templateName = searchParams.get('template');
   
   const { 
     nodes, 
@@ -55,17 +59,24 @@ export default function EditorPage() {
     triggerAutoLayout,
     showStatsOverlay,
     toggleStatsOverlay,
+    heatmapMode,
     saveCustomBlock,
     loadCustomBlocks,
+    loadPrebuiltTemplate,
   } = useCanvasStore();
+  
   const setActiveProjectId = useProjectStore((state) => state.setActiveProjectId);
   const loadProjects = useProjectStore((state) => state.loadProjects);
   const userRole = useProjectStore((state) => state.userRole);
+
+  const panels = useLayoutStore((state) => state.panels);
+  const dockPreview = useLayoutStore((state) => state.dockPreview);
 
   // Modals state
   const [isCodeModalOpen, setIsCodeModalOpen] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isGraphSearchOpen, setIsGraphSearchOpen] = useState(false);
+  const [isDiffModalOpen, setIsDiffModalOpen] = useState(false);
 
   // Keyboard shortcut listener for Undo / Redo and Modals (Command Palette / Graph Search)
   useEffect(() => {
@@ -78,6 +89,10 @@ export default function EditorPage() {
         } else if (e.key.toLowerCase() === 'k') {
           e.preventDefault();
           setIsGraphSearchOpen(prev => !prev);
+          return;
+        } else if (e.shiftKey && e.key.toLowerCase() === 'd') {
+          e.preventDefault();
+          setIsDiffModalOpen(prev => !prev);
           return;
         }
       }
@@ -112,14 +127,22 @@ export default function EditorPage() {
     if (projectId) {
       setActiveProjectId(projectId);
       loadProjects();
-      loadGraph(projectId);
+      loadGraph(projectId).then(() => {
+        if (templateName) {
+          loadPrebuiltTemplate(templateName);
+          // Remove the query parameter from the URL to avoid reloading on refresh
+          const url = new URL(window.location.href);
+          url.searchParams.delete('template');
+          window.history.replaceState({}, '', url.pathname + url.search);
+        }
+      });
       connectCollaboration(projectId);
       loadCustomBlocks();
     }
     return () => {
       disconnectCollaboration();
     };
-  }, [projectId, setActiveProjectId, loadProjects, loadGraph, connectCollaboration, disconnectCollaboration, loadCustomBlocks]);
+  }, [projectId, templateName, setActiveProjectId, loadProjects, loadGraph, loadPrebuiltTemplate, connectCollaboration, disconnectCollaboration, loadCustomBlocks]);
 
   const handleZoomIn = () => setZoom(z => z + 0.1);
   const handleZoomOut = () => setZoom(z => z - 0.1);
@@ -129,22 +152,70 @@ export default function EditorPage() {
   };
 
   const handleFloatingAdd = () => {
-    // Quickly spawn a new Conv2D node
     addNode('Conv2D', 300, 200);
   };
 
-  return (
-    <MainLayout onGenerateCode={() => setIsCodeModalOpen(true)}>
-      <div className="flex h-[calc(100vh-4rem)] overflow-hidden relative z-10 select-none">
-        
-        {/* Left inner Sidebar: Layer Library */}
-        <ErrorBoundary name="Layer Library Sidebar">
-          <LayerLibrary />
-        </ErrorBoundary>
+  // Group docked and floating panels
+  const leftDock = Object.values(panels).filter(p => p.isOpen && !p.isFloating && p.dockPosition === 'left');
+  const rightDock = Object.values(panels).filter(p => p.isOpen && !p.isFloating && p.dockPosition === 'right');
+  const bottomDock = Object.values(panels).filter(p => p.isOpen && !p.isFloating && p.dockPosition === 'bottom');
+  const floating = Object.values(panels).filter(p => p.isOpen && p.isFloating);
 
-        {/* Middle Area: Canvas + Toolbar + Bottom Console Monitor */}
-        <div className="flex-1 flex flex-col h-full relative overflow-hidden bg-[#090a0f]">
-          
+  // Render individual panel content enclosed in ErrorBoundaries
+  const renderPanelContent = (panelId: string) => {
+    switch (panelId) {
+      case 'library':
+        return (
+          <ErrorBoundary name="Layer Library Sidebar">
+            <LayerLibrary />
+          </ErrorBoundary>
+        );
+      case 'inspector':
+        return (
+          <ErrorBoundary name="Inspector Config Panel">
+            <ConfigPanel />
+          </ErrorBoundary>
+        );
+      case 'console':
+        return (
+          <ErrorBoundary name="IDE Console Panel">
+            <ValidationPanel />
+          </ErrorBoundary>
+        );
+      case 'diagnostics':
+        return (
+          <ErrorBoundary name="Diagnostics Sidebar">
+            <ValidationSidebar />
+          </ErrorBoundary>
+        );
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <MainLayout onGenerateCode={() => setIsCodeModalOpen(true)} onCompareVersions={() => setIsDiffModalOpen(true)}>
+      <div className="flex h-[calc(100vh-4rem)] overflow-hidden relative z-10 select-none bg-[#090a0f] w-full">
+        
+        {/* 1. LEFT DOCK COLUMN CONTAINER */}
+        {leftDock.length > 0 && (
+          <div className="flex flex-col h-full shrink-0 border-r border-[#3f4046] relative z-20">
+            {leftDock.map((p) => (
+              <div 
+                key={p.id} 
+                style={{ height: `${100 / leftDock.length}%`, width: p.width }} 
+                className="relative border-b border-[#3f4046]/50 last:border-b-0"
+              >
+                <DockablePanel id={p.id}>
+                  {renderPanelContent(p.id)}
+                </DockablePanel>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* 2. MIDDLE AREA: CANVAS + BOTTOM DOCK ROW */}
+        <div className="flex-1 flex flex-col h-full relative overflow-hidden min-w-0">
           {/* Main Visual interactive canvas wrapper */}
           <div className="flex-1 relative w-full h-full overflow-hidden">
             <ErrorBoundary name="Visual Canvas Stage">
@@ -297,6 +368,54 @@ export default function EditorPage() {
                   <BarChart2 size={12} />
                   <span>Stats</span>
                 </button>
+
+                {/* Heatmap Mode Selector */}
+                <div className="w-[1px] h-4 bg-[#3f4046] mx-1"></div>
+                <div className="flex items-center gap-1 bg-[#2b2d31]/40 border border-[#3f4046] rounded-full p-0.5 shrink-0">
+                  <button
+                    onClick={() => useCanvasStore.getState().setHeatmapMode('none')}
+                    className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold transition-all cursor-pointer ${
+                      heatmapMode === 'none'
+                        ? 'bg-[#3f4046] text-white'
+                        : 'text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    No Heat
+                  </button>
+                  <button
+                    onClick={() => useCanvasStore.getState().setHeatmapMode('flops')}
+                    className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold transition-all cursor-pointer ${
+                      heatmapMode === 'flops'
+                        ? 'bg-[#ff4d4d]/20 text-[#ff4d4d] border border-[#ff4d4d]/30 font-bold'
+                        : 'text-gray-400 hover:text-white font-medium'
+                    }`}
+                    title="Visualize Hot Nodes (FLOPs compute-heavy)"
+                  >
+                    🔥 Compute
+                  </button>
+                  <button
+                    onClick={() => useCanvasStore.getState().setHeatmapMode('memory')}
+                    className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold transition-all cursor-pointer ${
+                      heatmapMode === 'memory'
+                        ? 'bg-[#c5a3ff]/20 text-[#c5a3ff] border border-[#c5a3ff]/30 font-bold'
+                        : 'text-gray-400 hover:text-white font-medium'
+                    }`}
+                    title="Visualize Memory Heavy Nodes (VRAM allocation)"
+                  >
+                    💾 Memory
+                  </button>
+                  <button
+                    onClick={() => useCanvasStore.getState().setHeatmapMode('latency')}
+                    className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold transition-all cursor-pointer ${
+                      heatmapMode === 'latency'
+                        ? 'bg-[#ffe082]/20 text-[#ffe082] border border-[#ffe082]/30 font-bold'
+                        : 'text-gray-400 hover:text-white font-medium'
+                    }`}
+                    title="Visualize Latency Bottlenecks"
+                  >
+                    ⚡ Latency
+                  </button>
+                </div>
               </div>
 
               {/* Viewport Control & Play Action Pill */}
@@ -351,44 +470,84 @@ export default function EditorPage() {
             </button>
           </div>
 
-          {/* Bottom Console Monitor Panel */}
-          <ErrorBoundary name="IDE Console Panel">
-            <ValidationPanel />
-          </ErrorBoundary>
+          {/* BOTTOM DOCK ROW */}
+          {bottomDock.length > 0 && (
+            <div className="w-full flex shrink-0 border-t border-[#3f4046] relative z-20">
+              {bottomDock.map((p) => (
+                <div 
+                  key={p.id} 
+                  style={{ height: p.height }} 
+                  className="w-full relative"
+                >
+                  <DockablePanel id={p.id}>
+                    {renderPanelContent(p.id)}
+                  </DockablePanel>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
-        {/* Right side Panel: Hyperparameters Config Inspector */}
-        <ErrorBoundary name="Inspector Config Panel">
-          <ConfigPanel />
-        </ErrorBoundary>
+        {/* 3. RIGHT DOCK COLUMN CONTAINER */}
+        {rightDock.length > 0 && (
+          <div className="flex flex-col h-full shrink-0 border-l border-[#3f4046] relative z-20 animate-in slide-in-from-right duration-250">
+            {rightDock.map((p) => (
+              <div 
+                key={p.id} 
+                style={{ height: `${100 / rightDock.length}%`, width: p.width }} 
+                className="relative border-b border-[#3f4046]/50 last:border-b-0"
+              >
+                <DockablePanel id={p.id}>
+                  {renderPanelContent(p.id)}
+                </DockablePanel>
+              </div>
+            ))}
+          </div>
+        )}
 
-        {/* Validation & Compilation Sandbox Sidebar */}
-        <ErrorBoundary name="Diagnostics Sidebar">
-          <ValidationSidebar />
-        </ErrorBoundary>
+        {/* 4. FLOATING PANELS OVERLAYS */}
+        {floating.map((p) => (
+          <DockablePanel key={p.id} id={p.id}>
+            {renderPanelContent(p.id)}
+          </DockablePanel>
+        ))}
 
-        {/* Floating Code Preview Modal */}
-        <CodePreviewModal
-          isOpen={isCodeModalOpen}
-          onClose={() => setIsCodeModalOpen(false)}
-          nodes={nodes}
-          edges={edges}
-        />
-
-        {/* Global Command Palette dialog */}
-        <CommandPalette
-          isOpen={isCommandPaletteOpen}
-          onClose={() => setIsCommandPaletteOpen(false)}
-          onGenerateCode={() => setIsCodeModalOpen(true)}
-        />
-
-        {/* Jump-to-node search dialog */}
-        <GraphSearch
-          isOpen={isGraphSearchOpen}
-          onClose={() => setIsGraphSearchOpen(false)}
-        />
-
+        {/* 5. VISUAL DOCK PREVIEW OVERLAYS */}
+        {dockPreview === 'left' && (
+          <div className="absolute left-0 top-0 bottom-0 w-32 bg-[#8ab4f8]/15 border-r border-[#8ab4f8] backdrop-blur-[2px] z-[999] pointer-events-none animate-pulse" />
+        )}
+        {dockPreview === 'right' && (
+          <div className="absolute right-0 top-0 bottom-0 w-32 bg-[#8ab4f8]/15 border-l border-[#8ab4f8] backdrop-blur-[2px] z-[999] pointer-events-none animate-pulse" />
+        )}
+        {dockPreview === 'bottom' && (
+          <div className="absolute bottom-0 left-0 right-0 h-32 bg-[#8ab4f8]/15 border-t border-[#8ab4f8] backdrop-blur-[2px] z-[999] pointer-events-none animate-pulse" />
+        )}
       </div>
+
+      {/* Floating Code Preview Modal */}
+      <CodePreviewModal
+        isOpen={isCodeModalOpen}
+        onClose={() => setIsCodeModalOpen(false)}
+        nodes={nodes}
+        edges={edges}
+      />
+
+      <CommandPalette
+        isOpen={isCommandPaletteOpen}
+        onClose={() => setIsCommandPaletteOpen(false)}
+        onGenerateCode={() => setIsCodeModalOpen(true)}
+        onCompareVersions={() => setIsDiffModalOpen(true)}
+      />
+
+      <GraphSearch
+        isOpen={isGraphSearchOpen}
+        onClose={() => setIsGraphSearchOpen(false)}
+      />
+
+      <DiffViewerModal
+        isOpen={isDiffModalOpen}
+        onClose={() => setIsDiffModalOpen(false)}
+      />
     </MainLayout>
   );
 }

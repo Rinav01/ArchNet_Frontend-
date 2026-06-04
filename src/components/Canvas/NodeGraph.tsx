@@ -44,6 +44,7 @@ const getNodeStats = (node: CanvasNode) => {
   let flops = 0;
   let params = 0;
   let memory = 0; // weights in bytes
+  let latency = 0.05; // Base latency in ms for inputs/flatten/etc.
   let actSize = node.outputShape && node.outputShape.length > 0 ? `[${node.outputShape.join(', ')}]` : 'N/A';
 
   if (node.type === 'Conv2D') {
@@ -55,6 +56,7 @@ const getNodeStats = (node: CanvasNode) => {
 
     flops = 2 * kernel * kernel * inputChannels * outputFilters * outH * outW;
     params = (inputChannels * kernel * kernel + 1) * outputFilters;
+    latency = flops / 1.2e7 + 0.3; // estimated duration in ms
   } else if (node.type === 'Dense') {
     const inputFeatures = node.inputShape.length > 0 ? node.inputShape[0] : 0;
     const outputUnits = node.config.units || 10;
@@ -62,7 +64,10 @@ const getNodeStats = (node: CanvasNode) => {
     if (inputFeatures > 0) {
       flops = 2 * inputFeatures * outputUnits;
       params = (inputFeatures + 1) * outputUnits;
+      latency = flops / 5e5 + 0.1; // estimated duration in ms
     }
+  } else if (node.type === 'MaxPool2D') {
+    latency = 0.25;
   }
 
   memory = params * 4; // float32 memory weight size
@@ -85,8 +90,57 @@ const getNodeStats = (node: CanvasNode) => {
     flops: formatNumber(flops, 'FLOPs'),
     params: formatNumber(params, 'Params'),
     memory: formatBytes(memory),
+    latency: `${latency.toFixed(2)}ms`,
     actSize
   };
+};
+
+const getNodeBenchmarkMetrics = (node: CanvasNode) => {
+  let flops = 0;
+  let params = 0;
+  let vram = 0;
+  let latency = 0.05;
+
+  if (node.type === 'Conv2D') {
+    const inputChannels = node.inputShape.length >= 3 ? node.inputShape[2] : 3;
+    const outputFilters = node.config.filters || 64;
+    const kernel = node.config.kernelSize || 3;
+    const outH = node.outputShape.length >= 2 ? node.outputShape[0] : 224;
+    const outW = node.outputShape.length >= 2 ? node.outputShape[1] : 224;
+
+    flops = 2 * kernel * kernel * inputChannels * outputFilters * outH * outW;
+    params = (inputChannels * kernel * kernel + 1) * outputFilters;
+    latency = flops / 1.2e7 + 0.3;
+  } else if (node.type === 'Dense') {
+    const inputFeatures = node.inputShape.length > 0 ? node.inputShape[0] : 0;
+    const outputUnits = node.config.units || 10;
+
+    if (inputFeatures > 0) {
+      flops = 2 * inputFeatures * outputUnits;
+      params = (inputFeatures + 1) * outputUnits;
+      latency = flops / 5e5 + 0.1;
+    }
+  } else if (node.type === 'MaxPool2D') {
+    latency = 0.25;
+  } else if (node.type === 'Flatten') {
+    latency = 0.1;
+  } else if (node.type === 'BatchNorm2D') {
+    latency = 0.15;
+  } else if (node.type === 'Dropout') {
+    latency = 0.05;
+  }
+
+  const BATCH_SIZE = 32;
+  const weightsMemory = params * 4;
+  let activationElements = 0;
+  if (node.outputShape && node.outputShape.length > 0) {
+    activationElements = node.outputShape.reduce((a, b) => a * b, 1);
+  }
+  const activationMemory = activationElements * BATCH_SIZE * 4;
+  const optimizerMemory = params * 2 * 4;
+  vram = weightsMemory + activationMemory + optimizerMemory;
+
+  return { flops, params, vram, latency };
 };
 
 export default function NodeGraph() {
@@ -113,6 +167,7 @@ export default function NodeGraph() {
     collaborators,
     sendCursorPosition,
     sendSelection,
+    heatmapMode,
 
     // Advanced Graph Editing UX State & Actions
     selectedNodeIds,
@@ -126,21 +181,101 @@ export default function NodeGraph() {
     triggerAutoLayout
   } = useCanvasStore();
 
+  const maxMetrics = React.useMemo(() => {
+    let maxFlops = 0;
+    let maxVram = 0;
+    let maxLatency = 0;
+
+    nodes.forEach(node => {
+      const { flops, vram, latency } = getNodeBenchmarkMetrics(node);
+      if (flops > maxFlops) maxFlops = flops;
+      if (vram > maxVram) maxVram = vram;
+      if (latency > maxLatency) maxLatency = latency;
+    });
+
+    return { flops: maxFlops, vram: maxVram, latency: maxLatency };
+  }, [nodes]);
+
   const stageRef = useRef<any>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   const minimapSvgRef = useRef<SVGSVGElement | null>(null);
   const [isMinimapDragging, setIsMinimapDragging] = useState(false);
+
+  // Dynamically update stage dimensions to fill visible container space without hardcoded offsets (throttled to 30 FPS to maintain fluid panel resizing)
+  useEffect(() => {
+    if (!containerRef.current) return;
+    
+    let timeoutId: any = null;
+    let lastExecution = 0;
+    
+    const handleResize = () => {
+      if (containerRef.current) {
+        setDimensions({
+          width: containerRef.current.clientWidth,
+          height: containerRef.current.clientHeight
+        });
+      }
+    };
+    
+    const throttledResize = () => {
+      const now = Date.now();
+      const throttleInterval = 32; // Limit updates to ~30 FPS during panel drag-resize
+      
+      if (now - lastExecution >= throttleInterval) {
+        handleResize();
+        lastExecution = now;
+      } else {
+        if (timeoutId) clearTimeout(timeoutId);
+        timeoutId = setTimeout(() => {
+          handleResize();
+          lastExecution = Date.now();
+        }, throttleInterval - (now - lastExecution));
+      }
+    };
+    
+    handleResize();
+    
+    const resizeObserver = new ResizeObserver(() => {
+      throttledResize();
+    });
+    
+    if (containerRef.current) {
+      resizeObserver.observe(containerRef.current);
+    }
+    
+    window.addEventListener('resize', throttledResize);
+    
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', throttledResize);
+    };
+  }, []);
   
-  // Dynamic Bezier packet animation time loop
+  // Dynamic Bezier packet animation time loop (only ticks when active animations or highlights exist to prevent idle 60FPS re-render lag)
   const [animTime, setAnimTime] = useState(0);
   useEffect(() => {
+    const hasActiveAnimation = 
+      (activeAnimationEdgeIds && activeAnimationEdgeIds.length > 0) || 
+      activeAnimationEdgeId || 
+      activeAnimationNodeId || 
+      highlightedNodeId;
+
+    if (!hasActiveAnimation) {
+      return;
+    }
+
     let animId: number;
     const tick = () => {
       setAnimTime((prev) => (prev + 0.012) % 1);
       animId = requestAnimationFrame(tick);
     };
     animId = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(animId);
-  }, []);
+    return () => {
+      cancelAnimationFrame(animId);
+    };
+  }, [activeAnimationEdgeIds?.length, activeAnimationEdgeId, activeAnimationNodeId, highlightedNodeId]);
 
   // Local interaction states
   const [draggedNodeId, setDraggedNodeId] = useState<string | null>(null);
@@ -623,14 +758,14 @@ export default function NodeGraph() {
   };
 
   return (
-    <div className="w-full h-full relative bg-[#1e1f22] overflow-hidden select-none">
+    <div ref={containerRef} className="w-full h-full relative bg-[#1e1f22] overflow-hidden select-none">
       {/* Background dot grid */}
       <div className="absolute inset-0 dot-grid opacity-50 z-0"></div>
 
       <Stage
         ref={stageRef}
-        width={window.innerWidth - 640}
-        height={window.innerHeight - 180}
+        width={dimensions.width || window.innerWidth - 640}
+        height={dimensions.height || window.innerHeight - 180}
         scaleX={zoom}
         scaleY={zoom}
         x={pan.x}
@@ -915,6 +1050,33 @@ export default function NodeGraph() {
             const hasWarning = nodeErrors.some(err => err.type === 'warning');
             const badgeColor = hasError ? '#f28b82' : hasWarning ? '#ffe082' : null;
 
+            // Heatmap calculation
+            const metrics = getNodeBenchmarkMetrics(node);
+            let heatRatio = 0;
+            let heatColor = '';
+            let metricText = '';
+
+            if (heatmapMode === 'flops' && maxMetrics.flops > 0) {
+              heatRatio = metrics.flops / maxMetrics.flops;
+              heatColor = '#ff4d4d'; // Red for Hot compute nodes
+              
+              const flops = metrics.flops;
+              if (flops >= 1e9) metricText = `${(flops / 1e9).toFixed(1)}G FLOPs`;
+              else if (flops >= 1e6) metricText = `${(flops / 1e6).toFixed(1)}M FLOPs`;
+              else if (flops >= 1e3) metricText = `${(flops / 1e3).toFixed(1)}K FLOPs`;
+              else metricText = `${flops} FLOPs`;
+            } else if (heatmapMode === 'memory' && maxMetrics.vram > 0) {
+              heatRatio = metrics.vram / maxMetrics.vram;
+              heatColor = '#c5a3ff'; // Purple/Magenta for memory heavy
+              
+              const mb = metrics.vram / (1024 * 1024);
+              metricText = `${mb.toFixed(2)} MB`;
+            } else if (heatmapMode === 'latency' && maxMetrics.latency > 0) {
+              heatRatio = metrics.latency / maxMetrics.latency;
+              heatColor = '#ffe082'; // Yellow/Amber for latency bottleneck
+              metricText = `${metrics.latency.toFixed(2)} ms`;
+            }
+
             return (
               <Group
                 key={node.id}
@@ -1002,6 +1164,56 @@ export default function NodeGraph() {
                   stroke={badgeColor ? badgeColor : isAnimating ? '#8ab4f8' : isSelected ? '#8ab4f8' : '#3f4046'}
                   strokeWidth={badgeColor ? 1.8 : isAnimating ? 2.5 : isSelected ? 2.2 : 1}
                 />
+
+                {/* Heatmap overlay */}
+                {heatmapMode !== 'none' && heatRatio > 0 && (
+                  <Rect
+                    width={NODE_WIDTH}
+                    height={NODE_HEIGHT}
+                    fill={heatColor}
+                    opacity={heatRatio * 0.18}
+                    cornerRadius={8}
+                    pointerEvents="none"
+                  />
+                )}
+
+                {/* Heatmap border glow */}
+                {heatmapMode !== 'none' && heatRatio > 0 && (
+                  <Rect
+                    width={NODE_WIDTH}
+                    height={NODE_HEIGHT}
+                    fill="transparent"
+                    stroke={heatColor}
+                    strokeWidth={1.2 + heatRatio * 1.8}
+                    opacity={0.35 + heatRatio * 0.5}
+                    cornerRadius={8}
+                    pointerEvents="none"
+                  />
+                )}
+
+                {/* Heatmap metric value pill badge */}
+                {heatmapMode !== 'none' && metricText && (
+                  <Group x={NODE_WIDTH - 85} y={6}>
+                     <Rect
+                       width={77}
+                       height={14}
+                       fill="#1b1c1e"
+                       stroke={heatColor}
+                       strokeWidth={0.8}
+                       cornerRadius={4}
+                     />
+                     <Text
+                       text={metricText}
+                       fill={heatColor}
+                       fontSize={8}
+                       fontStyle="bold"
+                       fontFamily="monospace"
+                       align="center"
+                       width={77}
+                       y={3}
+                     />
+                  </Group>
+                )}
 
                 {/* Warning / Error Badge */}
                 {badgeColor && (
@@ -1105,6 +1317,8 @@ export default function NodeGraph() {
                   fontSize={11.5}
                   fontStyle="bold"
                   fontFamily="'Outfit', sans-serif"
+                  width={heatmapMode !== 'none' ? 95 : 175}
+                  ellipsis={true}
                 />
 
                 {/* Node Subtitle dimensions breakdown */}
@@ -1195,21 +1409,52 @@ export default function NodeGraph() {
                     <Group y={NODE_HEIGHT + 4}>
                       <Rect
                         width={NODE_WIDTH}
-                        height={34}
+                        height={46}
                         fill="#1b1c1e"
-                        opacity={0.92}
-                        cornerRadius={6}
-                        stroke="#c5a3ff"
-                        strokeWidth={0.8}
+                        opacity={0.96}
+                        cornerRadius={8}
+                        stroke="#3f4046"
+                        strokeWidth={1}
                       />
+                      {/* Parameters badge */}
                       <Text
                         x={8}
-                        y={5}
-                        text={`${stats.params}  |  ${stats.flops}\nvRAM: ${stats.memory}  |  Act: ${stats.actSize}`}
-                        fill="#e3e3e3"
-                        fontSize={8.2}
+                        y={7}
+                        text={`P: ${stats.params}`}
+                        fill="#8ab4f8"
+                        fontSize={8.5}
+                        fontStyle="bold"
                         fontFamily="monospace"
-                        lineHeight={1.4}
+                      />
+                      {/* FLOPs badge */}
+                      <Text
+                        x={110}
+                        y={7}
+                        text={`F: ${stats.flops}`}
+                        fill="#81c784"
+                        fontSize={8.5}
+                        fontStyle="bold"
+                        fontFamily="monospace"
+                      />
+                      {/* Latency badge */}
+                      <Text
+                        x={8}
+                        y={25}
+                        text={`L: ${stats.latency}`}
+                        fill="#ffe082"
+                        fontSize={8.5}
+                        fontStyle="bold"
+                        fontFamily="monospace"
+                      />
+                      {/* VRAM badge */}
+                      <Text
+                        x={110}
+                        y={25}
+                        text={`V: ${stats.memory}`}
+                        fill="#c5a3ff"
+                        fontSize={8.5}
+                        fontStyle="bold"
+                        fontFamily="monospace"
                       />
                     </Group>
                   );

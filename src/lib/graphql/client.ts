@@ -35,7 +35,19 @@ export async function graphqlRequest<T = any>(query: string, variables: any = {}
   const body = await response.json();
   
   if (body.errors) {
-    throw new Error(body.errors[0]?.message || 'GraphQL execution error');
+    const errorMsg = body.errors[0]?.message || 'GraphQL execution error';
+    if (
+      errorMsg.toLowerCase().includes('not authenticated') ||
+      errorMsg.toLowerCase().includes('unauthorized') ||
+      errorMsg.toLowerCase().includes('signature has expired')
+    ) {
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('mlbuilder_token');
+        localStorage.removeItem('mlbuilder_username');
+        window.location.href = '/login';
+      }
+    }
+    throw new Error(errorMsg);
   }
 
   return body.data;
@@ -159,6 +171,12 @@ export const DELETE_NODE = `
 export const DELETE_EDGE = `
   mutation DeleteEdge($projectId: ID!, $edgeId: ID!) {
     deleteEdge(projectId: $projectId, edgeId: $edgeId)
+  }
+`;
+
+export const DELETE_PROJECT = `
+  mutation DeleteProject($id: ID!) {
+    deleteProject(id: $id)
   }
 `;
 

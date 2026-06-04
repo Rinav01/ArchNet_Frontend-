@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { Project } from '@/types/canvas';
-import { isBackendOnline, graphqlRequest, GET_PROJECTS, CREATE_PROJECT } from '@/lib/graphql/client';
+import { isBackendOnline, graphqlRequest, GET_PROJECTS, CREATE_PROJECT, DELETE_PROJECT } from '@/lib/graphql/client';
+import { toast } from './notificationStore';
 
 interface ProjectState {
   projects: Project[];
@@ -13,11 +14,12 @@ interface ProjectState {
   // Actions
   checkBackendStatus: () => Promise<boolean>;
   loadProjects: () => Promise<void>;
-  addProject: (project: Omit<Project, 'id' | 'updatedAt' | 'layersCount'>) => Promise<void>;
+  addProject: (project: Omit<Project, 'id' | 'updatedAt' | 'layersCount'>) => Promise<string | undefined>;
   setActiveProjectId: (id: string | null) => void;
   updateProjectStats: (id: string, updates: Partial<Project>) => void;
   setUserRole: (role: 'Admin' | 'Editor' | 'Viewer') => void;
   setIsOnline: (online: boolean) => void;
+  deleteProject: (id: string) => Promise<void>;
 }
 
 export const useProjectStore = create<ProjectState>((set, get) => ({
@@ -72,7 +74,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     const online = get().isOnline;
     if (!online) {
       alert('Cannot create project: Backend server is offline.');
-      return;
+      return undefined;
     }
 
     try {
@@ -95,10 +97,12 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
           notes: isValStatus ? `Milestone: ${p.description}` : (p.description || ''),
         };
         set((state) => ({ projects: [newProject, ...state.projects] }));
+        return p.id;
       }
     } catch (err: any) {
       alert(`Failed to create project in backend: ${err.message || err}`);
     }
+    return undefined;
   },
 
   setActiveProjectId: (id) => set({ activeProjectId: id }),
@@ -108,4 +112,30 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   })),
 
   setUserRole: (role) => set({ userRole: role }),
+
+  deleteProject: async (id) => {
+    const online = get().isOnline;
+    const project = get().projects.find((p) => p.id === id);
+    
+    if (online) {
+      try {
+        await graphqlRequest(DELETE_PROJECT, { id });
+      } catch (err: any) {
+        toast.error('Sync Error', `Failed to delete project from database: ${err.message || err}`);
+        return;
+      }
+    }
+
+    set((state) => ({
+      projects: state.projects.filter((p) => p.id !== id),
+      activeProjectId: state.activeProjectId === id ? null : state.activeProjectId
+    }));
+    
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem(`mlbuilder_project_draft_${id}`);
+      localStorage.removeItem(`mlbuilder_project_checkpoints_${id}`);
+    }
+    
+    toast.success('Project Deleted', `Successfully removed project "${project?.name || id}" and cleared all local caches.`);
+  },
 }));

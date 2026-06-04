@@ -9,12 +9,14 @@ import { Layers, Move, Sparkles, Lock, ChevronLeft, ChevronRight, Trash2, Box, C
 export default function LayerLibrary() {
   const [isOpen, setIsOpen] = useState(true);
   const [isCustomExpanded, setIsCustomExpanded] = useState(true);
+  const [isMarketplaceExpanded, setIsMarketplaceExpanded] = useState(true);
   const addNode = useCanvasStore((state) => state.addNode);
   const userRole = useProjectStore((state) => state.userRole);
 
   const customBlocks = useCanvasStore((state) => state.customBlocks);
   const spawnCustomBlock = useCanvasStore((state) => state.spawnCustomBlock);
   const deleteCustomBlock = useCanvasStore((state) => state.deleteCustomBlock);
+  const loadPrebuiltTemplate = useCanvasStore((state) => state.loadPrebuiltTemplate);
   const pan = useCanvasStore((state) => state.pan);
   const zoom = useCanvasStore((state) => state.zoom);
 
@@ -28,11 +30,25 @@ export default function LayerLibrary() {
     { type: 'Dense', desc: 'Fully connected projection', color: 'bg-[#ffe082]' },
   ];
 
+  const prebuiltTemplates = [
+    { name: 'ResNet50', desc: 'Residual conv bottleneck sequence with skip additions.', type: 'Classification', color: 'border-orange-500/30 text-orange-400 bg-orange-500/10' },
+    { name: 'ViT', desc: 'Vision Transformer with patch projection & self-attention.', type: 'Transformer', color: 'border-blue-500/30 text-blue-400 bg-blue-500/10' },
+    { name: 'UNet', desc: 'Encoder-decoder skip merge network for segmentation.', type: 'Segmentation', color: 'border-teal-500/30 text-teal-400 bg-teal-500/10' },
+    { name: 'MobileNet', desc: 'Depthwise separable convolutions & linear bottlenecks.', type: 'Mobile-friendly', color: 'border-purple-500/30 text-purple-400 bg-purple-500/10' }
+  ];
+
   const handleBlockClick = (type: NodeType) => {
     if (userRole === 'Viewer') return;
     const x = 200 + Math.floor(Math.random() * 100);
     const y = 150 + Math.floor(Math.random() * 100);
     addNode(type, x, y);
+  };
+
+  const handleTemplateClick = (name: string) => {
+    if (userRole === 'Viewer') return;
+    if (window.confirm(`Load prebuilt "${name}" architecture? This will replace your current active canvas.`)) {
+      loadPrebuiltTemplate(name);
+    }
   };
 
   if (!isOpen) {
@@ -172,6 +188,44 @@ export default function LayerLibrary() {
                   </div>
                 ))
               )}
+            </div>
+          )}
+        </div>
+
+        {/* Separator rule */}
+        <div className="border-t border-[#3f4046]/50 my-4" />
+
+        {/* Prebuilt Architectures Marketplace Group */}
+        <div className="space-y-2.5">
+          <button
+            onClick={() => setIsMarketplaceExpanded(!isMarketplaceExpanded)}
+            className="w-full flex items-center justify-between text-[9px] font-extrabold uppercase tracking-widest text-[#9aa0a6] mb-1 cursor-pointer bg-transparent border-none p-0 outline-none hover:text-white transition-colors"
+          >
+            <span>Prebuilt Architectures ({prebuiltTemplates.length})</span>
+            {isMarketplaceExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+          </button>
+
+          {isMarketplaceExpanded && (
+            <div className="space-y-2.5">
+              {prebuiltTemplates.map((tmpl) => (
+                <div
+                  key={tmpl.name}
+                  onClick={() => handleTemplateClick(tmpl.name)}
+                  className="group px-4 py-3 bg-[#2b2d31] border border-[#3f4046] hover:border-[#8ab4f8]/30 rounded-2xl cursor-pointer transition-all duration-200 flex flex-col gap-1.5 shadow-md hover:shadow-lg hover:-translate-y-[1px]"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-bold text-[#e3e3e3] tracking-wide group-hover:text-[#8ab4f8] transition-colors">
+                      {tmpl.name}
+                    </span>
+                    <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full border ${tmpl.color}`}>
+                      {tmpl.type}
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-[#9aa0a6] font-semibold leading-relaxed">
+                    {tmpl.desc}
+                  </span>
+                </div>
+              ))}
             </div>
           )}
         </div>
