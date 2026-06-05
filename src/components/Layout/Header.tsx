@@ -11,9 +11,10 @@ import { useLayoutStore } from '@/store/layoutStore';
 interface HeaderProps {
   onGenerateCode?: () => void;
   onCompareVersions?: () => void;
+  onOpenTrainingConfig?: () => void;
 }
 
-export default function Header({ onGenerateCode, onCompareVersions }: HeaderProps) {
+export default function Header({ onGenerateCode, onCompareVersions, onOpenTrainingConfig }: HeaderProps) {
   const pathname = usePathname();
   const router = useRouter();
   const activeProjectId = useProjectStore((state) => state.activeProjectId);
@@ -82,10 +83,15 @@ export default function Header({ onGenerateCode, onCompareVersions }: HeaderProp
     .slice(0, 2);
 
   const isEditor = pathname.startsWith('/editor');
+  const isTrainingPage = pathname.endsWith('/training');
   const currentProject = projects.find(p => p.id === activeProjectId);
 
-  const handleBackToDashboard = () => {
-    router.push('/');
+  const handleBack = () => {
+    if (isTrainingPage && activeProjectId) {
+      router.push(`/editor/${activeProjectId}`);
+    } else {
+      router.push('/');
+    }
   };
 
   // Close all open dropdowns
@@ -228,15 +234,15 @@ export default function Header({ onGenerateCode, onCompareVersions }: HeaderProp
     <>
       <header className="h-14 border-b border-[#3f4046] bg-[#1e1f22] grid grid-cols-[auto_1fr_auto] items-center px-2 xl:px-4 sticky top-0 z-30 w-full select-none gap-1">
         
-        {/* ═══════════════════════════════════════════ */}
+        {/* ------------------------------------------- */}
         {/* ZONE 1: Left — Back + Project Identity     */}
-        {/* ═══════════════════════════════════════════ */}
+        {/* ------------------------------------------- */}
         <div className="flex items-center gap-1.5 min-w-0 overflow-hidden">
           {/* Back Button */}
           <button 
-            onClick={handleBackToDashboard}
-            className="p-1.5 hover:bg-[#2b2d31] rounded-lg text-[#9aa0a6] hover:text-white transition-all shrink-0"
-            title="Back to Dashboard"
+            onClick={handleBack}
+            className="p-1.5 hover:bg-[#2b2d31] rounded-lg text-[#9aa0a6] hover:text-white transition-all shrink-0 cursor-pointer"
+            title={isTrainingPage ? "Back to Canvas Editor" : "Back to Dashboard"}
           >
             <ArrowLeft size={16} />
           </button>
@@ -276,12 +282,13 @@ export default function Header({ onGenerateCode, onCompareVersions }: HeaderProp
           </div>
         </div>
 
-        {/* ═══════════════════════════════════════════ */}
+        {/* ------------------------------------------- */}
         {/* ZONE 2: Center — Workspace Toolstrip       */}
-        {/* ═══════════════════════════════════════════ */}
+        {/* ------------------------------------------- */}
         <div className="flex items-center justify-center gap-1 min-w-0">
-          
-          {/* Undo / Redo Group */}
+          {!isTrainingPage && (
+            <>
+              {/* Undo / Redo Group */}
           <div className="flex items-center bg-[#2b2d31]/50 border border-[#3f4046] px-1 py-0.5 rounded-full shrink-0">
             <button
               onClick={undo}
@@ -668,12 +675,40 @@ export default function Header({ onGenerateCode, onCompareVersions }: HeaderProp
             <Code size={12} />
             <span className="hidden xl:inline">Generate</span>
           </button>
+          </>)}
         </div>
 
-        {/* ═══════════════════════════════════════════ */}
+        {/* ------------------------------------------- */}
         {/* ZONE 3: Right — Role + Collab + User       */}
-        {/* ═══════════════════════════════════════════ */}
+        {/* ------------------------------------------- */}
         <div className="flex items-center gap-1.5 shrink-0">
+          {/* View Toggle (Canvas vs. Training) */}
+          {activeProjectId && isEditor && (
+            <div className="bg-[#2b2d31]/80 border border-[#3f4046] rounded-full p-0.5 flex items-center mr-1">
+              <button
+                onClick={() => router.push(`/editor/${activeProjectId}`)}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold transition-all cursor-pointer border-none ${
+                  !isTrainingPage
+                    ? 'bg-[#8ab4f8] text-[#1e1f22] shadow-sm'
+                    : 'text-[#9aa0a6] hover:text-white bg-transparent'
+                }`}
+              >
+                <Sliders size={11} />
+                <span className="hidden sm:inline">Canvas Editor</span>
+              </button>
+              <button
+                onClick={() => router.push(`/editor/${activeProjectId}/training`)}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold transition-all cursor-pointer border-none ${
+                  isTrainingPage
+                    ? 'bg-[#ffe082] text-[#1e1f22] shadow-sm'
+                    : 'text-[#9aa0a6] hover:text-white bg-transparent'
+                }`}
+              >
+                <Cpu size={11} />
+                <span className="hidden sm:inline">Training Monitor</span>
+              </button>
+            </div>
+          )}
           {/* Enterprise Role Selector */}
           <select
             value={userRole}
@@ -731,7 +766,11 @@ export default function Header({ onGenerateCode, onCompareVersions }: HeaderProp
           </button>
 
           {/* Settings */}
-          <button className="p-1.5 hover:bg-[#2b2d31] text-[#9aa0a6] hover:text-white rounded-lg transition-all shrink-0">
+          <button 
+            onClick={onOpenTrainingConfig}
+            className="p-1.5 hover:bg-[#2b2d31] text-[#9aa0a6] hover:text-white rounded-lg transition-all shrink-0 cursor-pointer"
+            title="Training Configuration Settings"
+          >
             <Settings size={15} />
           </button>
 

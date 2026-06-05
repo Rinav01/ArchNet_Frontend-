@@ -12,9 +12,10 @@ interface MainLayoutProps {
   children: React.ReactNode;
   onGenerateCode?: () => void;
   onCompareVersions?: () => void;
+  onOpenTrainingConfig?: () => void;
 }
 
-export default function MainLayout({ children, onGenerateCode, onCompareVersions }: MainLayoutProps) {
+export default function MainLayout({ children, onGenerateCode, onCompareVersions, onOpenTrainingConfig }: MainLayoutProps) {
   const pathname = usePathname();
   const router = useRouter();
   const isOnline = useProjectStore((state) => state.isOnline);
@@ -60,7 +61,11 @@ export default function MainLayout({ children, onGenerateCode, onCompareVersions
       
       {/* Main Content Area */}
       <div className={`flex-1 ${isEditor ? 'pl-0' : 'pl-64'} flex flex-col h-screen overflow-hidden relative z-10 transition-all duration-300`}>
-        <Header onGenerateCode={onGenerateCode} onCompareVersions={onCompareVersions} />
+        <Header 
+          onGenerateCode={onGenerateCode} 
+          onCompareVersions={onCompareVersions} 
+          onOpenTrainingConfig={onOpenTrainingConfig} 
+        />
         <main className="flex-1 overflow-y-auto relative">
           {children}
         </main>

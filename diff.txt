@@ -1,0 +1,572 @@
+﻿diff --git a/src/components/Layout/Header.tsx b/src/components/Layout/Header.tsx
+index d07e58f..5a2ee7f 100644
+--- a/src/components/Layout/Header.tsx
++++ b/src/components/Layout/Header.tsx
+@@ -11,9 +11,10 @@ import { useLayoutStore } from '@/store/layoutStore';
+ interface HeaderProps {
+   onGenerateCode?: () => void;
+   onCompareVersions?: () => void;
++  onOpenTrainingConfig?: () => void;
+ }
+ 
+-export default function Header({ onGenerateCode, onCompareVersions }: HeaderProps) {
++export default function Header({ onGenerateCode, onCompareVersions, onOpenTrainingConfig }: HeaderProps) {
+   const pathname = usePathname();
+   const router = useRouter();
+   const activeProjectId = useProjectStore((state) => state.activeProjectId);
+@@ -82,10 +83,15 @@ export default function Header({ onGenerateCode, onCompareVersions }: HeaderProp
+     .slice(0, 2);
+ 
+   const isEditor = pathname.startsWith('/editor');
++  const isTrainingPage = pathname.endsWith('/training');
+   const currentProject = projects.find(p => p.id === activeProjectId);
+ 
+-  const handleBackToDashboard = () => {
+-    router.push('/');
++  const handleBack = () => {
++    if (isTrainingPage) {
++      router.push(`/editor/${activeProjectId}`);
++    } else {
++      router.push('/');
++    }
+   };
+ 
+   // Close all open dropdowns
+@@ -234,9 +240,9 @@ export default function Header({ onGenerateCode, onCompareVersions }: HeaderProp
+         <div className="flex items-center gap-1.5 min-w-0 overflow-hidden">
+           {/* Back Button */}
+           <button 
+-            onClick={handleBackToDashboard}
++            onClick={handleBack}
+             className="p-1.5 hover:bg-[#2b2d31] rounded-lg text-[#9aa0a6] hover:text-white transition-all shrink-0"
+-            title="Back to Dashboard"
++            title={isTrainingPage ? "Back to Canvas Editor" : "Back to Dashboard"}
+           >
+             <ArrowLeft size={16} />
+           </button>
+@@ -280,384 +286,151 @@ export default function Header({ onGenerateCode, onCompareVersions }: HeaderProp
+         {/* ZONE 2: Center — Workspace Toolstrip       */}
+         {/* ═══════════════════════════════════════════ */}
+         <div className="flex items-center justify-center gap-1 min-w-0">
+-          
+-          {/* Undo / Redo Group */}
+-          <div className="flex items-center bg-[#2b2d31]/50 border border-[#3f4046] px-1 py-0.5 rounded-full shrink-0">
+-            <button
+-              onClick={undo}
+-              disabled={undoStack.length === 0 || userRole === 'Viewer'}
+-              className={`p-1 rounded-full transition-all ${
+-                undoStack.length === 0 || userRole === 'Viewer'
+-                  ? 'text-[#5f6368] cursor-not-allowed opacity-50'
+-                  : 'text-[#9aa0a6] hover:text-white hover:bg-[#2b2d31] cursor-pointer'
+-              }`}
+-              title={userRole === 'Viewer' ? "Undo Restricted" : "Undo (Ctrl+Z)"}
+-            >
+-              <Undo size={13} />
+-            </button>
+-            <button
+-              onClick={redo}
+-              disabled={redoStack.length === 0 || userRole === 'Viewer'}
+-              className={`p-1 rounded-full transition-all ${
+-                redoStack.length === 0 || userRole === 'Viewer'
+-                  ? 'text-[#5f6368] cursor-not-allowed opacity-50'
+-                  : 'text-[#9aa0a6] hover:text-white hover:bg-[#2b2d31] cursor-pointer'
+-              }`}
+-              title={userRole === 'Viewer' ? "Redo Restricted" : "Redo (Ctrl+Y)"}
+-            >
+-              <Redo size={13} />
+-            </button>
+-          </div>
+-
+-          {/* Separator */}
+-          <div className="w-px h-5 bg-[#3f4046]/60 shrink-0 hidden sm:block"></div>
+-
+-          {/* Version History Button */}
+-          <div className="relative shrink-0">
+-            <button
+-              onClick={() => toggleDropdown('history')}
+-              className={`p-1.5 rounded-lg border transition-all cursor-pointer ${
+-                isHistoryOpen 
+-                  ? 'bg-[#8ab4f8]/10 border-[#8ab4f8]/30 text-[#8ab4f8]' 
+-                  : 'bg-transparent border-transparent text-[#9aa0a6] hover:text-white hover:bg-[#2b2d31]'
+-              }`}
+-              title="Version History"
+-            >
+-              <Clock size={13} />
+-            </button>
+-
+-            {/* Version History Dropdown */}
+-            {isHistoryOpen && (
+-              <>
+-                <div className="fixed inset-0 z-40 bg-transparent" onClick={() => setIsHistoryOpen(false)} />
+-                <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-80 bg-[#1e1f22]/95 backdrop-blur-md border border-[#3f4046] shadow-2xl rounded-2xl p-4 z-50 text-[#e3e3e3] select-none animate-in fade-in slide-in-from-top-2 duration-200">
+-                  <div className="flex items-center justify-between border-b border-[#3f4046] pb-2 mb-3 gap-2">
+-                    <span className="text-xs font-bold uppercase tracking-wider text-[#9aa0a6] shrink-0">Snapshots</span>
+-                    <div className="flex gap-1.5 shrink-0">
+-                      <button
+-                        onClick={() => {
+-                          closeAllDropdowns();
+-                          if (onCompareVersions) onCompareVersions();
+-                        }}
+-                        className="flex items-center gap-1 px-2 py-1 text-[10px] font-extrabold border border-[#3f4046] hover:bg-[#2b2d31] text-[#e3e3e3] rounded-lg transition-all cursor-pointer bg-transparent"
+-                        title="Compare Snapshot Versions"
+-                      >
+-                        <GitCompare size={10} />
+-                        <span>Compare</span>
+-                      </button>
+-                      <button
+-                        onClick={() => {
+-                          if (userRole === 'Viewer') return;
+-                          const name = window.prompt("Enter milestone checkpoint name:", `Milestone - ${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`);
+-                          if (name && name.trim()) {
+-                            saveCheckpoint(name);
+-                          }
+-                        }}
+-                        disabled={userRole === 'Viewer'}
+-                        className={`flex items-center gap-1 px-2.5 py-1 text-[10px] font-extrabold shadow-sm transition-all rounded-lg ${
+-                          userRole === 'Viewer'
+-                            ? 'bg-[#8ab4f8]/20 text-[#9aa0a6] cursor-not-allowed'
+-                            : 'bg-[#8ab4f8] hover:bg-[#a8c7fa] text-[#1e1f22] cursor-pointer'
+-                        }`}
+-                      >
+-                        <Save size={10} />
+-                        <span>Snapshot</span>
+-                      </button>
+-                    </div>
+-                  </div>
+-
+-                  <div className="max-h-60 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+-                    {checkpoints.length === 0 ? (
+-                      <div className="text-center py-6 text-xs text-[#9aa0a6]">
+-                        <Clock size={20} className="mx-auto mb-2 text-[#5f6368] opacity-60" />
+-                        <p className="font-semibold">No baseline snapshots yet</p>
+-                        <p className="text-[10px] mt-0.5 text-[#5f6368]">Save named milestones to go back to previous graph iterations.</p>
+-                      </div>
+-                    ) : (
+-                      checkpoints.map((cp) => (
+-                        <div 
+-                          key={cp.id} 
+-                          className="flex items-center justify-between bg-[#2b2d31]/50 border border-[#3f4046]/55 p-2.5 rounded-xl hover:bg-[#2b2d31]/80 hover:border-[#8ab4f8]/20 transition-all group"
+-                        >
+-                          <div className="flex-1 min-w-0 mr-2">
+-                            <p className="text-xs font-bold truncate text-[#e3e3e3] group-hover:text-[#8ab4f8] transition-colors">{cp.name}</p>
+-                            <p className="text-[9px] text-[#9aa0a6] mt-0.5 flex items-center gap-2">
+-                              <span>{cp.timestamp}</span>
+-                              <span className="w-1 h-1 rounded-full bg-[#5f6368]"></span>
+-                              <span>{cp.nodes.length} nodes</span>
+-                            </p>
+-                          </div>
+-                          <div className="flex items-center gap-1.5 opacity-80 group-hover:opacity-100 transition-opacity">
+-                            <button
+-                              onClick={() => {
+-                                if (userRole === 'Viewer') return;
+-                                if (window.confirm(`Restore this checkpoint: "${cp.name}"? Current canvas will be snapshot in the undo history.`)) {
+-                                  restoreCheckpoint(cp.id);
+-                                  setIsHistoryOpen(false);
+-                                }
+-                              }}
+-                              disabled={userRole === 'Viewer'}
+-                              className={`px-2 py-0.5 border text-[9px] font-bold transition-all rounded ${
+-                                userRole === 'Viewer'
+-                                  ? 'bg-[#81c784]/5 border-[#81c784]/10 text-[#81c784]/30 cursor-not-allowed'
+-                                  : 'bg-[#81c784]/15 hover:bg-[#81c784]/25 border-[#81c784]/20 text-[#81c784] cursor-pointer'
+-                              }`}
+-                            >
+-                              Restore
+-                            </button>
+-                            <button
+-                              onClick={() => {
+-                                if (userRole === 'Viewer') return;
+-                                deleteCheckpoint(cp.id);
+-                              }}
+-                              disabled={userRole === 'Viewer'}
+-                              className={`p-1 rounded transition-all ${
+-                                userRole === 'Viewer'
+-                                  ? 'text-[#5f6368] opacity-30 cursor-not-allowed'
+-                                  : 'hover:bg-red-500/10 text-[#9aa0a6] hover:text-red-400 cursor-pointer'
+-                              }`}
+-                              title="Delete checkpoint"
+-                            >
+-                              <Trash2 size={11} />
+-                            </button>
+-                          </div>
++          {!isTrainingPage ? (
++            <>
++              {/* Undo / Redo Group */}
++              <div className="flex items-center bg-[#2b2d31]/50 border border-[#3f4046] px-1 py-0.5 rounded-full shrink-0">
++                <button
++                  onClick={undo}
++                  disabled={undoStack.length === 0 || userRole === 'Viewer'}
++                  className={`p-1 rounded-full transition-all ${
++                    undoStack.length === 0 || userRole === 'Viewer'
++                      ? 'text-[#5f6368] cursor-not-allowed opacity-50'
++                      : 'text-[#9aa0a6] hover:text-white hover:bg-[#2b2d31] cursor-pointer'
++                  }`}
++                  title={userRole === 'Viewer' ? "Undo Restricted" : "Undo (Ctrl+Z)"}
++                >
++                  <Undo size={13} />
++                </button>
++                <button
++                  onClick={redo}
++                  disabled={redoStack.length === 0 || userRole === 'Viewer'}
++                  className={`p-1 rounded-full transition-all ${
++                    redoStack.length === 0 || userRole === 'Viewer'
++                      ? 'text-[#5f6368] cursor-not-allowed opacity-50'
++                      : 'text-[#9aa0a6] hover:text-white hover:bg-[#2b2d31] cursor-pointer'
++                  }`}
++                  title={userRole === 'Viewer' ? "Redo Restricted" : "Redo (Ctrl+Y)"}
++                >
++                  <Redo size={13} />
++                </button>
++              </div>
++
++              {/* Separator */}
++              <div className="w-px h-5 bg-[#3f4046]/60 shrink-0 hidden sm:block"></div>
++
++              {/* Version History Button */}
++              <div className="relative shrink-0">
++                <button
++                  onClick={() => toggleDropdown('history')}
++                  className={`p-1.5 rounded-lg border transition-all cursor-pointer ${
++                    isHistoryOpen 
++                      ? 'bg-[#8ab4f8]/10 border-[#8ab4f8]/30 text-[#8ab4f8]' 
++                      : 'bg-transparent border-transparent text-[#9aa0a6] hover:text-white hover:bg-[#2b2d31]'
++                  }`}
++                  title="Version History"
++                >
++                  <Clock size={13} />
++                </button>
++
++                {/* Version History Dropdown */}
++                {isHistoryOpen && (
++                  <>
++                    <div className="fixed inset-0 z-40 bg-transparent" onClick={() => setIsHistoryOpen(false)} />
++                    <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-80 bg-[#1e1f22]/95 backdrop-blur-md border border-[#3f4046] shadow-2xl rounded-2xl p-4 z-50 text-[#e3e3e3] select-none animate-in fade-in slide-in-from-top-2 duration-200">
++                      <div className="flex items-center justify-between border-b border-[#3f4046] pb-2 mb-3 gap-2">
++                        <span className="text-xs font-bold uppercase tracking-wider text-[#9aa0a6] shrink-0">Snapshots</span>
++                        <div className="flex gap-1.5 shrink-0">
++                          <button
++                            onClick={() => {
++                              closeAllDropdowns();
++                              if (onCompareVersions) onCompareVersions();
++                            }}
++                            className="flex items-center gap-1 px-2 py-1 text-[10px] font-extrabold border border-[#3f4046] hover:bg-[#2b2d31] text-[#e3e3e3] rounded-lg transition-all cursor-pointer bg-transparent"
++                            title="Compare Snapshot Versions"
++                          >
++                            <GitCompare size={10} />
++                            <span>Compare</span>
++                          </button>
++                          <button
++                            onClick={() => {
++                              if (userRole === 'Viewer') return;
++                              const name = window.prompt("Enter milestone checkpoint name:", `Milestone - ${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`);
++                              if (name && name.trim()) {
++                                saveCheckpoint(name);
++                              }
++                            }}
++                            disabled={userRole === 'Viewer'}
++                            className={`flex items-center gap-1 px-2.5 py-1 text-[10px] font-extrabold shadow-sm transition-all rounded-lg ${
++                              userRole === 'Viewer'
++                                ? 'bg-[#8ab4f8]/20 text-[#9aa0a6] cursor-not-allowed'
++                                : 'bg-[#8ab4f8] hover:bg-[#a8c7fa] text-[#1e1f22] cursor-pointer'
++                            }`}
++                          >
++                            <Save size={10} />
++                            <span>Snapshot</span>
++                          </button>
+                         </div>
+-                      ))
+-                    )}
+-                  </div>
+-                </div>
+-              </>
+-            )}
+-          </div>
+-
+-          {/* Separator */}
+-          <div className="w-px h-5 bg-[#3f4046]/60 shrink-0 hidden sm:block"></div>
+-
+-          {/* Panels Dropdown */}
+-          <div className="relative shrink-0">
+-            <button
+-              onClick={() => toggleDropdown('panels')}
+-              className={`flex items-center gap-1 px-2 py-1 border transition-all cursor-pointer rounded-lg text-[11px] font-bold ${
+-                isPanelsDropdownOpen 
+-                  ? 'bg-[#8ab4f8]/10 border-[#8ab4f8]/30 text-[#8ab4f8]' 
+-                  : 'bg-transparent border-transparent text-[#9aa0a6] hover:text-white hover:bg-[#2b2d31]'
+-              }`}
+-              title="Toggle Workspace Panels"
+-            >
+-              <LayoutGrid size={12} />
+-              <span className="hidden lg:inline">Panels</span>
+-              <ChevronDown size={10} className={`transition-transform duration-200 ${isPanelsDropdownOpen ? 'rotate-180' : ''}`} />
+-            </button>
+-
+-            {isPanelsDropdownOpen && (
+-              <>
+-                <div className="fixed inset-0 z-40 bg-transparent cursor-default" onClick={() => setIsPanelsDropdownOpen(false)} />
+-                <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-64 bg-[#1e1f22]/95 backdrop-blur-md border border-[#3f4046] shadow-2xl rounded-2xl p-2 z-50 text-[#e3e3e3] select-none animate-in fade-in slide-in-from-top-2 duration-200">
+-                  <div className="px-2.5 py-1.5 border-b border-[#3f4046]/50 mb-1 flex items-center justify-between text-[10px] font-black text-[#9aa0a6] uppercase tracking-wider">
+-                    <span>Toggle Windows</span>
+-                  </div>
+-
+-                  <div className="space-y-0.5">
+-                    {/* Layer Library */}
+-                    <button
+-                      onClick={() => togglePanel('library')}
+-                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold text-left transition-all border-none bg-transparent cursor-pointer ${
+-                        panels.library?.isOpen 
+-                          ? 'text-white bg-[#8ab4f8]/10' 
+-                          : 'text-[#9aa0a6] hover:text-white hover:bg-[#2b2d31]/50'
+-                      }`}
+-                    >
+-                      <div className="flex items-center gap-2.5">
+-                        <Layers size={14} className={panels.library?.isOpen ? 'text-[#8ab4f8]' : 'text-[#9aa0a6]'} />
+-                        <span>Layer Library</span>
+-                      </div>
+-                      {panels.library?.isOpen && (
+-                        <Check size={14} className="text-[#8ab4f8]" />
+-                      )}
+-                    </button>
+-
+-                    {/* Hyperparameter Inspector */}
+-                    <button
+-                      onClick={() => togglePanel('inspector')}
+-                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold text-left transition-all border-none bg-transparent cursor-pointer ${
+-                        panels.inspector?.isOpen 
+-                          ? 'text-white bg-[#8ab4f8]/10' 
+-                          : 'text-[#9aa0a6] hover:text-white hover:bg-[#2b2d31]/50'
+-                      }`}
+-                    >
+-                      <div className="flex items-center gap-2.5">
+-                        <Sliders size={14} className={panels.inspector?.isOpen ? 'text-[#8ab4f8]' : 'text-[#9aa0a6]'} />
+-                        <span>Inspector Config</span>
+-                      </div>
+-                      {panels.inspector?.isOpen && (
+-                        <Check size={14} className="text-[#8ab4f8]" />
+-                      )}
+-                    </button>
+-
+-                    {/* IDE Terminal Console */}
+-                    <button
+-                      onClick={() => togglePanel('console')}
+-                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold text-left transition-all border-none bg-transparent cursor-pointer ${
+-                        panels.console?.isOpen 
+-                          ? 'text-white bg-[#8ab4f8]/10' 
+-                          : 'text-[#9aa0a6] hover:text-white hover:bg-[#2b2d31]/50'
+-                      }`}
+-                    >
+-                      <div className="flex items-center gap-2.5">
+-                        <Terminal size={14} className={panels.console?.isOpen ? 'text-[#8ab4f8]' : 'text-[#9aa0a6]'} />
+-                        <span>IDE Terminal Console</span>
+                       </div>
+-                      {panels.console?.isOpen && (
+-                        <Check size={14} className="text-[#8ab4f8]" />
+-                      )}
+-                    </button>
+-
+-                    {/* Diagnostics & AutoML */}
+-                    <button
+-                      onClick={() => togglePanel('diagnostics')}
+-                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold text-left transition-all border-none bg-transparent cursor-pointer ${
+-                        panels.diagnostics?.isOpen 
+-                          ? 'text-white bg-[#8ab4f8]/10' 
+-                          : 'text-[#9aa0a6] hover:text-white hover:bg-[#2b2d31]/50'
+-                      }`}
+-                    >
+-                      <div className="flex items-center gap-2.5">
+-                        <Activity size={14} className={panels.diagnostics?.isOpen ? 'text-[#8ab4f8]' : 'text-[#9aa0a6]'} />
+-                        <span>Diagnostics & AutoML</span>
+-                      </div>
+-                      {panels.diagnostics?.isOpen && (
+-                        <Check size={14} className="text-[#8ab4f8]" />
+-                      )}
+-                    </button>
+-                  </div>
+-
+-                  <div className="border-t border-[#3f4046]/45 mt-1.5 pt-1.5 px-1 pb-0.5">
+-                    <button
+-                      onClick={() => {
+-                        resetLayout();
+-                        setIsPanelsDropdownOpen(false);
+-                      }}
+-                      className="w-full flex items-center gap-2.5 px-2.5 py-1.5 hover:bg-[#2b2d31] text-xs font-bold text-gray-400 hover:text-white rounded-xl transition-all border-none bg-transparent cursor-pointer text-left"
+-                    >
+-                      <RotateCw size={13} className="shrink-0" />
+-                      <span>Reset Workspace Layout</span>
+-                    </button>
+-                  </div>
+-                </div>
+-              </>
+-            )}
+-          </div>
+ 
+-          {/* Presets Dropdown */}
+-          <div className="relative shrink-0">
+-            <button
+-              onClick={() => toggleDropdown('presets')}
+-              className={`flex items-center gap-1 px-2 py-1 border transition-all cursor-pointer rounded-lg text-[11px] font-bold ${
+-                isPresetsDropdownOpen 
+-                  ? 'bg-[#8ab4f8]/10 border-[#8ab4f8]/30 text-[#8ab4f8]' 
+-                  : 'bg-transparent border-transparent text-[#9aa0a6] hover:text-white hover:bg-[#2b2d31]'
+-              }`}
+-              title="Workspace Layout Presets"
+-            >
+-              <LayoutGrid size={12} className="text-[#8ab4f8]" />
+-              <span className="hidden lg:inline truncate max-w-[100px]">{activePreset}</span>
+-              <ChevronDown size={10} className={`transition-transform duration-200 ${isPresetsDropdownOpen ? 'rotate-180' : ''}`} />
+-            </button>
+-
+-            {isPresetsDropdownOpen && (
+-              <>
+-                <div className="fixed inset-0 z-40 bg-transparent cursor-default" onClick={() => setIsPresetsDropdownOpen(false)} />
+-                <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-56 bg-[#1e1f22]/95 backdrop-blur-md border border-[#3f4046] shadow-2xl rounded-2xl p-2 z-50 text-[#e3e3e3] select-none animate-in fade-in slide-in-from-top-2 duration-200">
+-                  <div className="px-2.5 py-1.5 border-b border-[#3f4046]/50 mb-1 flex items-center justify-between text-[10px] font-black text-[#9aa0a6] uppercase tracking-wider">
+-                    <span>Layout Modes</span>
+-                  </div>
+-
+-                  <div className="space-y-0.5">
+-                    {[
+-                      'Architecture Mode',
+-                      'Canvas Focus',
+-                      'Training Mode',
+-                      'Metrics Focus',
+-                      'Benchmark Mode',
+-                      'Profiler Focus'
+-                    ].map((preset) => (
+-                      <button
+-                        key={preset}
+-                        onClick={() => {
+-                          applyPreset(preset);
+-                          // Auto-trigger appropriate heatmap visualizations and stats overlay for profiling/benchmarking/training modes
+-                          if (preset === 'Benchmark Mode') {
+-                            useCanvasStore.getState().setHeatmapMode('flops');
+-                            if (!useCanvasStore.getState().showStatsOverlay) {
+-                              useCanvasStore.getState().toggleStatsOverlay();
+-                            }
+-                          } else if (preset === 'Profiler Focus') {
+-                            useCanvasStore.getState().setHeatmapMode('latency');
+-                            if (!useCanvasStore.getState().showStatsOverlay) {
+-                              useCanvasStore.getState().toggleStatsOverlay();
+-                            }
+-                          } else if (preset === 'Training Mode' || preset === 'Metrics Focus') {
+-                            useCanvasStore.getState().setHeatmapMode('memory');
+-                            if (!useCanvasStore.getState().showStatsOverlay) {
+-                              useCanvasStore.getState().toggleStatsOverlay();
+-                            }
+-                          } else {
+-                            useCanvasStore.getState().setHeatmapMode('none');
+-                          }
+-                          setIsPresetsDropdownOpen(false);
+-                        }}
+-                        className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold text-left transition-all border-none bg-transparent cursor-pointer ${
+-                          activePreset === preset 
+-                            ? 'text-white bg-[#8ab4f8]/10' 
+-                            : 'text-[#9aa0a6] hover:text-white hover:bg-[#2b2d31]/50'
+-                        }`}
+-                      >
+-                        <span>{preset}</span>
+-                        {activePreset === preset && (
+-                          <Check size={14} className="text-[#8ab4f8]" />
++                      <div className="max-h-60 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
++                        {checkpoints.length === 0 ? (
++                          <div className="text-center py-6 text-xs text-[#9aa0a6]">
++                            <Clock size={20} className="mx-auto mb-2 text-[#5f6368] opacity-60" />
++                            <p className="font-semibold">No baseline snapshots yet</p>
++                            <p className="text-[10px] mt-0.5 text-[#5f6368]">Save named milestones to go back to previous graph iterations.</p>
++                          </div>
++                        ) : (
++                          checkpoints.map((cp) => (
++                            <div 
++                              key={cp.id} 
++                              className="flex items-center justify-between bg-[#2b2d31]/50 border border-[#3f4046]/55 p-2.5 rounded-xl hover:bg-[#2b2d31]/80 hover:border-[#8ab4f8]/20 transition-all group"
++                            >
++                              <div className="flex-1 min-w-0 mr-2">
++                                <p className="text-xs font-bold truncate text-[#e3e3e3] group-hover:text-[#8ab4f8] transition-colors">{cp.name}</p>
++                                <p className="text-[9px] text-[#9aa0a6] mt-0.5 flex items-center gap-2">
++                                  <span>{cp.timestamp}</span>
++                                  <span className="w-1 h-1 rounded-full bg-[#5f6368]"></span>
++                                  <span>{cp.nodes.length} nodes</span>
++                                </p>
++                              </div>
++                              <div className="flex items-center gap-1.5 opacity-80 group-hover:opacity-100 transition-opacity">
++                                <button
++                                  onClick={() => {
++                                    if (userRole === 'Viewer') return;
++                                    if (window.confirm(`Restore this checkpoint: "${cp.name}"? Current canvas will be snapshot in the undo history.`)) {
++                                      restoreCheckpoint(cp.id);
++                                      setIsHistoryOpen(false);
++                                    }
++                                  }}
++                                  disabled={userRole === 'Viewer'}
++                                  className={`px-2 py-0.5 border text-[9px] font-bold transition-all rounded ${
++                                    userRole === 'Viewer'
++                                      ? 'bg-[#81c784]/5 border-[#81c784]/10 text-[#81c784]/30 cursor-not-allowed'
++                                      : 'bg-[#81c784]/15 hover:bg-[#81c784]/25 border-[#81c784]/20 text-[#81c784] cursor-pointer'
++                                  }`}
++                                >
++                                  Restore
++                                </button>
++                                <button
++                                  onClick={() => {
++                                    if (userRole === 'Viewer') return;
++                                    deleteCheckpoint(cp.id);
++                                  }}
++                                  disabled={userRole === 'Viewer'}
++                                  className={`p-1 rounded transition-all ${
++                                    userRole === 'Viewer'
++                                      ? 'text-[#5f6368] opacity-30 cursor-not-allowed'
++                                      : 'hover:bg-red-500/10 text-[#9aa0a6] hover:text-red-400 cursor-pointer'
++                                  }`}
++                                  title="Delete checkpoint"
++                                >
++                                  <Trash2 size={11} />
++                                </button>
++                              </div>
++                            </div>
++                          ))
+                         )}
+-                      </button>
+-                    ))}
+-                  </div>
+-                </div>
+-              </>
+-            )}
+-          </div>
+-
+-          {/* Separator */}
+-          <div className="w-px h-5 bg-[#3f4046]/60 shrink-0 hidden sm:block"></div>
+-
+-          {/* Run Forward Pass */}
+-          <button
+-            onClick={runForwardPass}
+-            disabled={isPlayingAnimation || userRole === 'Viewer'}
+-            className={`flex items-center gap-1 px-2.5 py-1 border rounded-lg text-[11px] font-bold transition-all shrink-0 ${
+-              isPlayingAnimation || userRole === 'Viewer'
+-                ? 'bg-transparent border-[#3f4046]/40 text-[#5f6368] cursor-not-allowed opacity-50'
+-                : 'bg-transparent border-[#3f4046] hover:bg-[#2b2d31] text-[#8ab4f8] hover:text-white cursor-pointer'
+-            }`}
+-            title={isPlayingAnimation ? 'Running...' : userRole === 'Viewer' ? 'Viewer Locked' : 'Run Graph'}
+-          >
+-            <Play size={12} className={isPlayingAnimation ? 'animate-pulse text-[#8ab4f8]' : ''} />
+-            <span className="hidden xl:inline">
+-              {isPlayingAnimation ? 'Running...' : 'Run'}
+-            </span>
+-          </button>
+-
+-          {/* Block Reference */}
+-          <button
+-            onClick={() => setIsBlockGuideOpen(true)}
+-            className="flex items-center gap-1 px-2.5 py-1 border border-transparent hover:border-[#3f4046] hover:bg-[#2b2d31] text-[#9aa0a6] hover:text-white rounded-lg text-[11px] font-bold transition-all cursor-pointer bg-transparent shrink-0"
+-            title="Block Guide"
+-          >
+-            <Layers size={12} className="text-[#8ab4f8]" />
+-            <span className="hidden xl:inline">Blocks</span>
+-          </button>
+-
+-          {/* Generate Code */}
+-          <button
+-            onClick={onGenerateCode}
+-            disabled={userRole === 'Viewer'}
+             className={`flex items-center gap-1 px-3 py-1 rounded-lg text-[11px] font-bold shadow-sm transition-all shrink-0 ${
+               userRole === 'Viewer'
+                 ? 'bg-[#8ab4f8]/20 text-[#9aa0a6] cursor-not-allowed'

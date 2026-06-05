@@ -13,6 +13,7 @@ import ErrorBoundary from '@/components/Common/ErrorBoundary';
 import CommandPalette from '@/components/Modals/CommandPalette';
 import GraphSearch from '@/components/Modals/GraphSearch';
 import DiffViewerModal from '@/components/Modals/DiffViewerModal';
+import TrainingConfigModal from '@/components/Modals/TrainingConfigModal';
 import DockablePanel from '@/components/Common/DockablePanel';
 import { useLayoutStore } from '@/store/layoutStore';
 import { useCanvasStore } from '@/store/canvasStore';
@@ -77,6 +78,7 @@ export default function EditorPage() {
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isGraphSearchOpen, setIsGraphSearchOpen] = useState(false);
   const [isDiffModalOpen, setIsDiffModalOpen] = useState(false);
+  const [isTrainingConfigOpen, setIsTrainingConfigOpen] = useState(false);
 
   // Keyboard shortcut listener for Undo / Redo and Modals (Command Palette / Graph Search)
   useEffect(() => {
@@ -194,7 +196,11 @@ export default function EditorPage() {
   };
 
   return (
-    <MainLayout onGenerateCode={() => setIsCodeModalOpen(true)} onCompareVersions={() => setIsDiffModalOpen(true)}>
+    <MainLayout 
+      onGenerateCode={() => setIsCodeModalOpen(true)} 
+      onCompareVersions={() => setIsDiffModalOpen(true)}
+      onOpenTrainingConfig={() => setIsTrainingConfigOpen(true)}
+    >
       <div className="flex h-[calc(100vh-4rem)] overflow-hidden relative z-10 select-none bg-[#090a0f] w-full">
         
         {/* 1. LEFT DOCK COLUMN CONTAINER */}
@@ -547,6 +553,11 @@ export default function EditorPage() {
       <DiffViewerModal
         isOpen={isDiffModalOpen}
         onClose={() => setIsDiffModalOpen(false)}
+      />
+
+      <TrainingConfigModal
+        isOpen={isTrainingConfigOpen}
+        onClose={() => setIsTrainingConfigOpen(false)}
       />
     </MainLayout>
   );

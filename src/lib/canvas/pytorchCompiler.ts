@@ -177,13 +177,13 @@ export function compileToPyTorch(nodes: CanvasNode[], edges: CanvasEdge[]): stri
   return `import torch
 import torch.nn as nn
 
-class MLBuilderModule(nn.Module):
+class GeneratedModel(nn.Module):
     """
     Generated automatically by MLBuilder visual designer.
     Topology contains ${nodes.length} nodes and ${edges.length} connections.
     """
     def __init__(self):
-        super(MLBuilderModule, self).__init__()
+        super(GeneratedModel, self).__init__()
         
 ${initializers.join('\n\n')}
 
@@ -197,7 +197,7 @@ ${forwardSteps.join('\n')}
 
 # Instantiation & Summary Example
 if __name__ == '__main__':
-    model = MLBuilderModule()
+    model = GeneratedModel()
     print(model)
     
     # Mock forward input pass matching Root config dimensions

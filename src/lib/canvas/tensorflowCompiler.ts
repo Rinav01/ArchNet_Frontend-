@@ -162,13 +162,13 @@ export function compileToTensorFlow(nodes: CanvasNode[], edges: CanvasEdge[]): s
   return `import tensorflow as tf
 from tensorflow.keras import layers, Model
 
-class MLBuilderModel(Model):
+class GeneratedModel(Model):
     """
     Generated automatically by MLBuilder visual designer.
     Topology contains ${nodes.length} nodes and ${edges.length} connections.
     """
     def __init__(self):
-        super(MLBuilderModel, self).__init__()
+        super(GeneratedModel, self).__init__()
         
 ${initializers.join('\n\n')}
 
@@ -183,7 +183,7 @@ ${forwardSteps.join('\n')}
 # Instantiation & Summary Example
 if __name__ == '__main__':
     # Initialize the model subclass
-    model = MLBuilderModel()
+    model = GeneratedModel()
     
     # Build Keras graph by passing mock tensor matching Root dims
     # TensorFlow standard format: [Batch, Height, Width, Channels]

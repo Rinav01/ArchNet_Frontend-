@@ -171,9 +171,7 @@ interface CanvasState {
 
 
 
-export const useCanvasStore = create<CanvasState>((set, get) => {
-  
-  const getTopologicalOrder = (nodes: CanvasNode[], edges: CanvasEdge[]): CanvasNode[] => {
+export const getTopologicalOrder = (nodes: CanvasNode[], edges: CanvasEdge[]): CanvasNode[] => {
     const adj = new Map<string, string[]>();
     const inDegree = new Map<string, number>();
     
@@ -213,7 +211,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
     return [...orderedNodes, ...remainingNodes];
   };
 
-  const computeNodeOutputShape = (type: NodeType, inputShape: number[], config: NodeConfig): number[] => {
+export const computeNodeOutputShape = (type: NodeType, inputShape: number[], config: NodeConfig): number[] => {
     if (type === 'Input') {
       return config.dim || [224, 224, 3];
     }
@@ -262,6 +260,8 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
 
     return inputShape;
   };
+
+export const useCanvasStore = create<CanvasState>((set, get) => {
 
   const generateUUID = () => {
     if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -361,9 +361,24 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
               target: e.toNodeId,
             }));
 
+            // Retrieve saved node groups from local project draft if available
+            let localNodeGroups: CanvasNodeGroup[] = [];
+            if (typeof window !== 'undefined') {
+              const savedDraft = localStorage.getItem(`mlbuilder_project_draft_${projectId}`);
+              if (savedDraft) {
+                try {
+                  const parsed = JSON.parse(savedDraft);
+                  localNodeGroups = parsed.nodeGroups || [];
+                } catch (e) {
+                  console.warn('Failed to parse draft for node groups:', e);
+                }
+              }
+            }
+
             set({
               nodes: nodesTranslated,
               edges: edgesTranslated,
+              nodeGroups: localNodeGroups,
               logs: [
                 { id: 'init', timestamp: time, type: 'success', text: `GraphQL Synced: Pulled ${nodesTranslated.length} nodes from cloud database.` }
               ]
@@ -2933,7 +2948,6 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
       } else if (templateName === 'ViT') {
         const inputId = generateUUID();
         const patchConvId = generateUUID();
-        const patchFlatId = generateUUID();
 
         const norm1 = generateUUID();
         const denseQkv = generateUUID();
@@ -2953,19 +2967,18 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
         newNodes = [
           { id: inputId, type: 'Input', name: 'INPUT_IMAGE', x: 100, y: 300, inputShape: [], outputShape: [224, 224, 3], config: { dim: [224, 224, 3] } },
           { id: patchConvId, type: 'Conv2D', name: 'PATCH_PROJECTION', x: 280, y: 300, inputShape: [], outputShape: [], config: { filters: 768, kernelSize: 16, stride: 16, padding: 'valid', activation: 'None' } },
-          { id: patchFlatId, type: 'Flatten', name: 'FLATTEN_PATCHES', x: 460, y: 300, inputShape: [], outputShape: [], config: {} },
 
           // Transformer Encoder Self Attention
           { id: norm1, type: 'BatchNorm2D', name: 'ATTN_LAYERNORM', x: 640, y: 200, inputShape: [], outputShape: [], config: {} },
-          { id: denseQkv, type: 'Dense', name: 'QKV_PROJECTION', x: 820, y: 200, inputShape: [], outputShape: [], config: { units: 768 } },
-          { id: denseAttnOut, type: 'Dense', name: 'ATTN_OUT_PROJ', x: 1000, y: 200, inputShape: [], outputShape: [], config: { units: 768 } },
+          { id: denseQkv, type: 'Conv2D', name: 'QKV_PROJECTION', x: 820, y: 200, inputShape: [], outputShape: [], config: { filters: 768, kernelSize: 1, stride: 1, padding: 'same', activation: 'ReLU' } },
+          { id: denseAttnOut, type: 'Conv2D', name: 'ATTN_OUT_PROJ', x: 1000, y: 200, inputShape: [], outputShape: [], config: { filters: 768, kernelSize: 1, stride: 1, padding: 'same', activation: 'None' } },
           { id: dropoutAttn, type: 'Dropout', name: 'ATTN_DROPOUT', x: 1180, y: 200, inputShape: [], outputShape: [], config: { rate: 0.1 } },
           { id: attnMerge, type: 'Conv2D', name: 'ATTN_RESIDUAL_ADD', x: 1360, y: 300, inputShape: [], outputShape: [], config: { filters: 768, kernelSize: 1, stride: 1, padding: 'same', activation: 'None' } },
 
           // MLP
           { id: norm2, type: 'BatchNorm2D', name: 'MLP_LAYERNORM', x: 1540, y: 200, inputShape: [], outputShape: [], config: {} },
-          { id: denseMlp1, type: 'Dense', name: 'MLP_DENSE_HIDE', x: 1720, y: 200, inputShape: [], outputShape: [], config: { units: 3072 } },
-          { id: denseMlp2, type: 'Dense', name: 'MLP_DENSE_OUT', x: 1900, y: 200, inputShape: [], outputShape: [], config: { units: 768 } },
+          { id: denseMlp1, type: 'Conv2D', name: 'MLP_DENSE_HIDE', x: 1720, y: 200, inputShape: [], outputShape: [], config: { filters: 3072, kernelSize: 1, stride: 1, padding: 'same', activation: 'ReLU' } },
+          { id: denseMlp2, type: 'Conv2D', name: 'MLP_DENSE_OUT', x: 1900, y: 200, inputShape: [], outputShape: [], config: { filters: 768, kernelSize: 1, stride: 1, padding: 'same', activation: 'None' } },
           { id: dropoutMlp, type: 'Dropout', name: 'MLP_DROPOUT', x: 2080, y: 200, inputShape: [], outputShape: [], config: { rate: 0.1 } },
           { id: mlpMerge, type: 'Conv2D', name: 'MLP_RESIDUAL_ADD', x: 2260, y: 300, inputShape: [], outputShape: [], config: { filters: 768, kernelSize: 1, stride: 1, padding: 'same', activation: 'None' } },
 
@@ -2976,16 +2989,15 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
 
         newEdges = [
           { id: generateUUID(), source: inputId, target: patchConvId },
-          { id: generateUUID(), source: patchConvId, target: patchFlatId },
+          { id: generateUUID(), source: patchConvId, target: norm1 },
 
           // Attn Branch
-          { id: generateUUID(), source: patchFlatId, target: norm1 },
           { id: generateUUID(), source: norm1, target: denseQkv },
           { id: generateUUID(), source: denseQkv, target: denseAttnOut },
           { id: generateUUID(), source: denseAttnOut, target: dropoutAttn },
           { id: generateUUID(), source: dropoutAttn, target: attnMerge },
           // Attn shortcut
-          { id: generateUUID(), source: patchFlatId, target: attnMerge },
+          { id: generateUUID(), source: patchConvId, target: attnMerge },
 
           // MLP Branch
           { id: generateUUID(), source: attnMerge, target: norm2 },
@@ -3002,7 +3014,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
         ];
 
         newNodeGroups = [
-          { id: generateUUID(), name: 'Patch Projection', color: '#8ab4f8', nodeIds: [patchConvId, patchFlatId] },
+          { id: generateUUID(), name: 'Patch Projection', color: '#8ab4f8', nodeIds: [patchConvId] },
           { id: generateUUID(), name: 'Transformer Block 1 (Self Attention)', color: '#ffe082', nodeIds: [norm1, denseQkv, denseAttnOut, dropoutAttn, attnMerge] },
           { id: generateUUID(), name: 'Transformer Block 1 (MLP)', color: '#81c784', nodeIds: [norm2, denseMlp1, denseMlp2, dropoutMlp, mlpMerge] },
           { id: generateUUID(), name: 'Classification Head', color: '#c5a3ff', nodeIds: [headFlat, classifier] }
@@ -3035,9 +3047,9 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
 
           // Encoder
           { id: convEnc1, type: 'Conv2D', name: 'ENC1_CONV_64', x: 280, y: 300, inputShape: [], outputShape: [], config: { filters: 64, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' } },
-          { id: poolEnc1, type: 'MaxPool2D', name: 'ENC1_MAXPOOL', x: 460, y: 300, inputShape: [], outputShape: [], config: { poolSize: 2 } },
+          { id: poolEnc1, type: 'MaxPool2D', name: 'ENC1_MAXPOOL', x: 460, y: 300, inputShape: [], outputShape: [], config: { poolSize: 1 } },
           { id: convEnc2, type: 'Conv2D', name: 'ENC2_CONV_128', x: 640, y: 450, inputShape: [], outputShape: [], config: { filters: 128, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' } },
-          { id: poolEnc2, type: 'MaxPool2D', name: 'ENC2_MAXPOOL', x: 820, y: 450, inputShape: [], outputShape: [], config: { poolSize: 2 } },
+          { id: poolEnc2, type: 'MaxPool2D', name: 'ENC2_MAXPOOL', x: 820, y: 450, inputShape: [], outputShape: [], config: { poolSize: 1 } },
 
           // Bottleneck
           { id: convBottle, type: 'Conv2D', name: 'BOTTLENECK_CONV', x: 1000, y: 600, inputShape: [], outputShape: [], config: { filters: 256, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' } },
@@ -3140,8 +3152,8 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
 
           // Attention Block
           { id: attnNorm, type: 'BatchNorm2D', name: 'ATTN_LAYERNORM', x: 2080, y: 300, inputShape: [], outputShape: [], config: {} },
-          { id: attnQkv, type: 'Dense', name: 'ATTN_QKV_PROJ', x: 2260, y: 200, inputShape: [], outputShape: [], config: { units: 128 } },
-          { id: attnOut, type: 'Dense', name: 'ATTN_OUT_PROJ', x: 2440, y: 200, inputShape: [], outputShape: [], config: { units: 128 } },
+          { id: attnQkv, type: 'Conv2D', name: 'ATTN_QKV_PROJ', x: 2260, y: 200, inputShape: [], outputShape: [], config: { filters: 128, kernelSize: 1, stride: 1, padding: 'same', activation: 'ReLU' } },
+          { id: attnOut, type: 'Conv2D', name: 'ATTN_OUT_PROJ', x: 2440, y: 200, inputShape: [], outputShape: [], config: { filters: 128, kernelSize: 1, stride: 1, padding: 'same', activation: 'None' } },
           { id: attnDrop, type: 'Dropout', name: 'ATTN_DROPOUT', x: 2620, y: 200, inputShape: [], outputShape: [], config: { rate: 0.1 } },
           { id: attnAdd, type: 'Conv2D', name: 'ATTN_RESIDUAL_ADD', x: 2800, y: 300, inputShape: [], outputShape: [], config: { filters: 128, kernelSize: 1, stride: 1, padding: 'same', activation: 'None' } },
 

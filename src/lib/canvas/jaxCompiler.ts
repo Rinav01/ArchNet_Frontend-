@@ -153,7 +153,7 @@ export function compileToJAX(nodes: CanvasNode[], edges: CanvasEdge[]): string {
 import jax.numpy as jnp
 from flax import linen as nn
 
-class MLBuilderModule(nn.Module):
+class GeneratedModel(nn.Module):
     """
     Generated automatically by MLBuilder visual designer.
     Topology contains ${nodes.length} nodes and ${edges.length} connections.
@@ -171,7 +171,7 @@ ${forwardSteps.join('\n')}
 # Instantiation & Param Initialization Example
 if __name__ == '__main__':
     # Instantiate the Flax Module
-    model = MLBuilderModule()
+    model = GeneratedModel()
     
     # Generate random input keys and key splits
     key = jax.random.PRNGKey(42)

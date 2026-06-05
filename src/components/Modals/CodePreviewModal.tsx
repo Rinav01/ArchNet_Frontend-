@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { X, Copy, Check, Download, FileCode, Columns, Grid, Layers, GitCompare } from 'lucide-react';
+import { X, Copy, Check, Download, FileCode, Columns, Grid, Layers, GitCompare, Maximize2, Minimize2 } from 'lucide-react';
 import { CanvasNode, CanvasEdge } from '@/types/canvas';
 import { compileToPyTorch } from '@/lib/canvas/pytorchCompiler';
 import { compileToTensorFlow } from '@/lib/canvas/tensorflowCompiler';
@@ -21,6 +21,7 @@ type ViewMode = 'single' | 'split' | 'quad' | 'diff';
 export default function CodePreviewModal({ isOpen, onClose, nodes, edges }: CodePreviewModalProps) {
   const [viewMode, setViewMode] = useState<ViewMode>('single');
   const [activeFramework, setActiveFramework] = useState<Framework>('PyTorch');
+  const [isExpanded, setIsExpanded] = useState(false);
   
   // Split pane compare state
   const [leftFramework, setLeftFramework] = useState<Framework>('PyTorch');
@@ -297,8 +298,12 @@ export default function CodePreviewModal({ isOpen, onClose, nodes, edges }: Code
   const orderedNodes = getTopologicalOrder();
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
-      <div className="w-full max-w-7xl glass-panel rounded-2xl border border-white/10 flex flex-col h-[90vh] shadow-2xl relative overflow-hidden bg-[#16171a]">
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-0 md:p-4">
+      <div className={`w-full glass-panel border border-white/10 flex flex-col shadow-2xl relative overflow-hidden bg-[#16171a] transition-all duration-300 ${
+        isExpanded 
+          ? 'max-w-none h-screen rounded-none border-none p-0' 
+          : 'max-w-7xl h-[90vh] rounded-2xl'
+      }`}>
         
         {/* Modal Header */}
         <div className="flex items-center justify-between px-8 py-4 border-b border-white/5 bg-[#1e1f22]/60 backdrop-blur-md">
@@ -398,6 +403,42 @@ export default function CodePreviewModal({ isOpen, onClose, nodes, edges }: Code
                     </button>
                   );
                 })}
+              </div>
+
+              {/* Code Header Toolbar */}
+              <div className="flex justify-between items-center px-8 py-3 bg-[#111215] border-b border-white/5 select-none">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-mono font-bold text-[#ffe082]">class GeneratedModel:</span>
+                  <span className="text-[10px] text-gray-500 font-mono italic"># compiled target module</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  {/* Copy Button */}
+                  <button
+                    onClick={() => handleCopy(activeFramework, setCopiedSingle)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-[#2b2d31]/50 border border-[#3f4046] hover:bg-[#2b2d31] text-[10px] font-bold text-[#e3e3e3] hover:text-white rounded-lg transition-all cursor-pointer border-none bg-transparent"
+                  >
+                    {copiedSingle ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
+                    <span>{copiedSingle ? 'Copied' : 'Copy'}</span>
+                  </button>
+
+                  {/* Download Button */}
+                  <button
+                    onClick={() => handleDownload(activeFramework)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-[#2b2d31]/50 border border-[#3f4046] hover:bg-[#2b2d31] text-[10px] font-bold text-[#e3e3e3] hover:text-white rounded-lg transition-all cursor-pointer border-none bg-transparent"
+                  >
+                    <Download size={11} />
+                    <span>Download</span>
+                  </button>
+
+                  {/* Expand Button */}
+                  <button
+                    onClick={() => setIsExpanded(!isExpanded)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-[#2b2d31]/50 border border-[#3f4046] hover:bg-[#2b2d31] text-[10px] font-bold text-[#e3e3e3] hover:text-white rounded-lg transition-all cursor-pointer border-none bg-transparent"
+                  >
+                    {isExpanded ? <Minimize2 size={11} className="text-[#8ab4f8]" /> : <Maximize2 size={11} className="text-[#8ab4f8]" />}
+                    <span>{isExpanded ? 'Minimize' : 'Expand'}</span>
+                  </button>
+                </div>
               </div>
 
               {/* Monospace Code Editor Area */}
