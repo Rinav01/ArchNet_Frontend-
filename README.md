@@ -21,47 +21,44 @@ MLBuilder is an enterprise-grade, high-fidelity visual workspace for designing, 
 This flowchart illustrates the relationships between the frontend workspace, state managers, compiler layers, and FastAPI/PostgreSQL cloud backends.
 
 ```mermaid
-flowchart TB
-    %% Nodes
-    subgraph UI ["Frontend User Interface (Next.js 16)"]
-        Canvas["Node Editor Canvas (Konva.js)"]
-        Sidebar["Diagnostic Center & AutoML (ValidationSidebar)"]
-        CodeView["Generated Code Viewer (CodePreviewModal)"]
-        Telemetry["Training Telemetry Dashboard (Recharts)"]
-        DatasetMgr["Dataset Upload Manager"]
-    end
+graph TD
+    Canvas["Node Editor Canvas"]
+    Sidebar["Diagnostic Center and AutoML"]
+    CodeView["Generated Code Viewer"]
+    Telemetry["Training Telemetry Dashboard"]
+    DatasetMgr["Dataset Upload Manager"]
 
-    subgraph Stores ["State Management (Zustand 5)"]
-        CanvasStore["canvasStore.ts (Nodes, Edges, Custom Blocks)"]
-        ProjStore["projectStore.ts (GraphQL clients, Authentication)"]
-        TrainingStore["trainingStore.ts (WebSocket Metrics, Telemetry History)"]
-    end
+    CanvasStore["canvasStore - Zustand"]
+    ProjStore["projectStore - Zustand"]
+    TrainingStore["trainingStore - Zustand"]
 
-    subgraph Compilers ["Local Compiler Engines"]
-        PyTorchC["pytorchCompiler.ts"]
-        TFC["tensorflowCompiler.ts"]
-        JaxC["jaxCompiler.ts"]
-        ONNXC["onnxCompiler.ts"]
-    end
+    PyTorchC["pytorchCompiler"]
+    TFC["tensorflowCompiler"]
+    JaxC["jaxCompiler"]
+    ONNXC["onnxCompiler"]
 
-    subgraph Backend ["FastAPI Cloud Backend (http://localhost:8000)"]
-        GraphQL["GraphQL Strawberry endpoint"]
-        WS["WebSocket Training Telemetry Router"]
-        Celery["Celery Ingestion / Sandbox workers"]
-        DB[(PostgreSQL Database)]
-    end
+    GraphQL["GraphQL API Endpoint"]
+    WS["WebSocket Telemetry Router"]
+    Celery["Celery Ingestion Workers"]
+    DB["PostgreSQL Database"]
 
-    %% Connections
-    Canvas -->|User Actions / Drag-Drop| CanvasStore
-    CanvasStore -->|Topological Sort & Solver| Sidebar
-    CanvasStore -->|Trigger Local Synthesis| Compilers
-    Compilers -->|Render Script| CodeView
+    Canvas -->|User Actions| CanvasStore
+    CanvasStore -->|Topological Sort and Solver| Sidebar
+    CanvasStore -->|Trigger Local Synthesis| PyTorchC
+    CanvasStore -->|Trigger Local Synthesis| TFC
+    CanvasStore -->|Trigger Local Synthesis| JaxC
+    CanvasStore -->|Trigger Local Synthesis| ONNXC
     
-    ProjStore -->|Sync Graph / CRUD| GraphQL
-    GraphQL -->|Write / Read| DB
-    DatasetMgr -->|Upload Datasets / Process| GraphQL
+    PyTorchC -->|Render Script| CodeView
+    TFC -->|Render Script| CodeView
+    JaxC -->|Render Script| CodeView
+    ONNXC -->|Render Script| CodeView
     
-    TrainingStore -->|Websocket connection / Simulation| WS
+    ProjStore -->|Sync Graph CRUD| GraphQL
+    GraphQL -->|Write and Read| DB
+    DatasetMgr -->|Upload and Process| GraphQL
+    
+    TrainingStore -->|Websocket Connection| WS
     WS -->|Live Telemetry Frames| Telemetry
     Celery -->|Emit Metrics Event| WS
 ```
@@ -72,29 +69,27 @@ Telemetry updates from backend Celery tasks or local simulators cascade into cha
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Client as Training Monitor (UI)
-    participant Store as trainingStore (Zustand)
+    participant Client as Training Monitor UI
+    participant Store as trainingStore Zustand
     participant WS as FastAPI WebSocket Server
-    participant Celery as Celery Worker (Training Job)
+    participant Celery as Celery Worker
 
-    Client->>Store: mount() / startTraining(projectId)
+    Client->>Store: mount and startTraining
     activate Store
-    Store->>WS: Establish Connection (ws://localhost:8000/ws/training/[projectId])
+    Store->>WS: Establish Connection
     activate WS
-    WS-->>Store: Handshake Successful (jobId, Status: RUNNING)
+    WS-->>Store: Handshake Successful
     
-    rect rgb(15, 23, 42)
-        Note over Store, Celery: Epoch Execution Telemetry Loop (20 epochs)
-        Celery->>WS: Push Epoch metrics (loss, validation_accuracy)
-        WS->>Store: Forward WebSockets Frame (json payload)
-        Store->>Store: Append to metrics list & update current epoch state
-        Store-->>Client: Re-render charts (LossChart & AccuracyChart)
-    end
+    Note over Store, Celery: Epoch Execution Telemetry Loop (20 epochs)
+    Celery->>WS: Push Epoch metrics
+    WS->>Store: Forward WebSockets Frame
+    Store->>Store: Append to metrics and update epoch
+    Store-->>Client: Re-render charts
     
-    Celery->>WS: Job Completed (final_accuracy)
-    WS->>Store: Final Metrics frame (Status: COMPLETED)
+    Celery->>WS: Job Completed
+    WS->>Store: Final Metrics frame
     deactivate WS
-    Store->>Store: Record run in history panel list & disconnect()
+    Store->>Store: Record run in history and disconnect
     deactivate Store
 ```
 
