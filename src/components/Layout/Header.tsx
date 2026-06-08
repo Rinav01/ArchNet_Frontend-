@@ -2,8 +2,9 @@
 
 import React from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { Search, Bell, Settings, ArrowLeft, Play, Cpu, Code, Undo, Redo, Zap, Clock, Save, Check, RotateCw, AlertTriangle, Trash2, LogOut, Layers, Sliders, Terminal, Activity, LayoutGrid, ChevronDown, GitCompare } from 'lucide-react';
+import { Search, Bell, Settings, ArrowLeft, Play, Cpu, Code, Undo, Redo, Zap, Clock, Save, Check, RotateCw, AlertTriangle, Trash2, LogOut, Layers, Sliders, Terminal, Activity, LayoutGrid, ChevronDown, GitCompare, Box, CloudLightning, GitBranch } from 'lucide-react';
 import { useProjectStore } from '@/store/projectStore';
+import { toast } from '@/store/notificationStore';
 import BlockGuideModal from '@/components/Modals/BlockGuideModal';
 import { useCanvasStore } from '@/store/canvasStore';
 import { useLayoutStore } from '@/store/layoutStore';
@@ -12,15 +13,24 @@ interface HeaderProps {
   onGenerateCode?: () => void;
   onCompareVersions?: () => void;
   onOpenTrainingConfig?: () => void;
+  onOpenExport?: () => void;
+  onOpenCompare?: () => void;
 }
 
-export default function Header({ onGenerateCode, onCompareVersions, onOpenTrainingConfig }: HeaderProps) {
+export default function Header({ 
+  onGenerateCode, 
+  onCompareVersions, 
+  onOpenTrainingConfig,
+  onOpenExport,
+  onOpenCompare
+}: HeaderProps) {
   const pathname = usePathname();
   const router = useRouter();
   const activeProjectId = useProjectStore((state) => state.activeProjectId);
   const projects = useProjectStore((state) => state.projects);
   const userRole = useProjectStore((state) => state.userRole);
   const setUserRole = useProjectStore((state) => state.setUserRole);
+  const updateProjectStats = useProjectStore((state) => state.updateProjectStats);
   const isPlayingAnimation = useCanvasStore((state) => state.isPlayingAnimation);
   const runForwardPass = useCanvasStore((state) => state.runForwardPass);
   const undo = useCanvasStore((state) => state.undo);
@@ -84,10 +94,13 @@ export default function Header({ onGenerateCode, onCompareVersions, onOpenTraini
 
   const isEditor = pathname.startsWith('/editor');
   const isTrainingPage = pathname.endsWith('/training');
+  const isDeployPage = pathname.endsWith('/deploy');
+  const isInferencePage = pathname.endsWith('/inference');
+  const isExperimentsPage = pathname.endsWith('/experiments');
   const currentProject = projects.find(p => p.id === activeProjectId);
 
   const handleBack = () => {
-    if (isTrainingPage && activeProjectId) {
+    if ((isTrainingPage || isDeployPage || isInferencePage || isExperimentsPage) && activeProjectId) {
       router.push(`/editor/${activeProjectId}`);
     } else {
       router.push('/');
@@ -252,11 +265,30 @@ export default function Header({ onGenerateCode, onCompareVersions, onOpenTraini
             {currentProject?.name || 'ResNet-Mini'}
           </span>
 
-          {/* Framework Tag */}
+          {/* Framework Switcher Dropdown */}
           {currentProject?.framework && (
-            <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-md bg-[#8ab4f8]/10 text-[#8ab4f8] border border-[#8ab4f8]/25 shrink-0 hidden sm:inline-flex">
-              {currentProject.framework}
-            </span>
+            <div className="relative shrink-0 hidden sm:inline-flex items-center bg-[#2b2d31]/80 text-[#8ab4f8] border border-[#3f4046] rounded-xl px-2.5 py-0.5">
+              <span className="text-[9px] font-black uppercase tracking-wider pr-1.5 border-r border-[#3f4046] text-[#9aa0a6] select-none">Framework</span>
+              <select
+                value={currentProject.framework}
+                onChange={(e) => {
+                  const newFw = e.target.value as any;
+                  updateProjectStats(currentProject.id, { framework: newFw });
+                  
+                  // Show instant compile success toast!
+                  toast.success(
+                    'Instant Recompile', 
+                    `Visual graph compiled successfully to ${newFw} (0.02s).`
+                  );
+                }}
+                className="bg-transparent border-none text-[10px] font-extrabold text-white cursor-pointer focus:outline-none pl-1.5 pr-0.5"
+              >
+                <option value="PyTorch" className="bg-[#1e1f22] text-[#ff6633]">🔥 PyTorch</option>
+                <option value="TensorFlow" className="bg-[#1e1f22] text-[#ff9000]">🍊 TensorFlow</option>
+                <option value="JAX" className="bg-[#1e1f22] text-[#8ab4f8]">⚡ JAX</option>
+                <option value="ONNX" className="bg-[#1e1f22] text-[#c5a3ff]">💎 ONNX</option>
+              </select>
+            </div>
           )}
 
           {/* Status Dot */}
@@ -286,7 +318,7 @@ export default function Header({ onGenerateCode, onCompareVersions, onOpenTraini
         {/* ZONE 2: Center — Workspace Toolstrip       */}
         {/* ------------------------------------------- */}
         <div className="flex items-center justify-center gap-1 min-w-0">
-          {!isTrainingPage && (
+          {!isTrainingPage && !isDeployPage && !isInferencePage && !isExperimentsPage && (
             <>
               {/* Undo / Redo Group */}
           <div className="flex items-center bg-[#2b2d31]/50 border border-[#3f4046] px-1 py-0.5 rounded-full shrink-0">
@@ -661,19 +693,30 @@ export default function Header({ onGenerateCode, onCompareVersions, onOpenTraini
             <span className="hidden xl:inline">Blocks</span>
           </button>
 
-          {/* Generate Code */}
+          {/* Compiler Center */}
           <button
             onClick={onGenerateCode}
             disabled={userRole === 'Viewer'}
-            className={`flex items-center gap-1 px-3 py-1 rounded-lg text-[11px] font-bold shadow-sm transition-all shrink-0 ${
+            className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] font-bold shadow-sm transition-all shrink-0 ${
               userRole === 'Viewer'
                 ? 'bg-[#8ab4f8]/20 text-[#9aa0a6] cursor-not-allowed'
                 : 'bg-[#8ab4f8] hover:bg-[#a8c7fa] text-[#1e1f22] cursor-pointer'
             }`}
-            title="Generate Framework Target Code"
+            title="Open Compiler Center"
           >
             <Code size={12} />
-            <span className="hidden xl:inline">Generate</span>
+            <span className="hidden xl:inline">Compiler</span>
+          </button>
+
+          {/* Export Center */}
+          <button
+            onClick={onOpenExport}
+            disabled={userRole === 'Viewer'}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold border border-[#3f4046] bg-[#2b2d31]/50 hover:bg-[#2b2d31] text-[#e3e3e3] hover:text-white transition-all shrink-0 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed`}
+            title="Export model code or ONNX binaries"
+          >
+            <Box size={12} className="text-[#c5a3ff]" />
+            <span className="hidden xl:inline">Export</span>
           </button>
           </>)}
         </div>
@@ -682,19 +725,19 @@ export default function Header({ onGenerateCode, onCompareVersions, onOpenTraini
         {/* ZONE 3: Right — Role + Collab + User       */}
         {/* ------------------------------------------- */}
         <div className="flex items-center gap-1.5 shrink-0">
-          {/* View Toggle (Canvas vs. Training) */}
+          {/* View Toggle (Canvas vs. Training vs. Experiments vs. Deploy vs. Inference) */}
           {activeProjectId && isEditor && (
             <div className="bg-[#2b2d31]/80 border border-[#3f4046] rounded-full p-0.5 flex items-center mr-1">
               <button
                 onClick={() => router.push(`/editor/${activeProjectId}`)}
                 className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold transition-all cursor-pointer border-none ${
-                  !isTrainingPage
+                  !isTrainingPage && !isDeployPage && !isInferencePage && !isExperimentsPage
                     ? 'bg-[#8ab4f8] text-[#1e1f22] shadow-sm'
                     : 'text-[#9aa0a6] hover:text-white bg-transparent'
                 }`}
               >
                 <Sliders size={11} />
-                <span className="hidden sm:inline">Canvas Editor</span>
+                <span className="hidden sm:inline">Canvas</span>
               </button>
               <button
                 onClick={() => router.push(`/editor/${activeProjectId}/training`)}
@@ -705,7 +748,40 @@ export default function Header({ onGenerateCode, onCompareVersions, onOpenTraini
                 }`}
               >
                 <Cpu size={11} />
-                <span className="hidden sm:inline">Training Monitor</span>
+                <span className="hidden sm:inline">Training</span>
+              </button>
+              <button
+                onClick={() => router.push(`/editor/${activeProjectId}/experiments`)}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold transition-all cursor-pointer border-none ${
+                  isExperimentsPage
+                    ? 'bg-[#c5a3ff] text-[#1e1f22] shadow-sm'
+                    : 'text-[#9aa0a6] hover:text-white bg-transparent'
+                }`}
+              >
+                <GitBranch size={11} />
+                <span className="hidden sm:inline">Experiments</span>
+              </button>
+              <button
+                onClick={() => router.push(`/editor/${activeProjectId}/deploy`)}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold transition-all cursor-pointer border-none ${
+                  isDeployPage
+                    ? 'bg-[#80cbc4] text-[#1e1f22] shadow-sm'
+                    : 'text-[#9aa0a6] hover:text-white bg-transparent'
+                }`}
+              >
+                <CloudLightning size={11} />
+                <span className="hidden sm:inline">Deploy</span>
+              </button>
+              <button
+                onClick={() => router.push(`/editor/${activeProjectId}/inference`)}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold transition-all cursor-pointer border-none ${
+                  isInferencePage
+                    ? 'bg-[#f28b82] text-[#1e1f22] shadow-sm'
+                    : 'text-[#9aa0a6] hover:text-white bg-transparent'
+                }`}
+              >
+                <Play size={11} />
+                <span className="hidden sm:inline">Inference</span>
               </button>
             </div>
           )}

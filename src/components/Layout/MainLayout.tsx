@@ -13,9 +13,18 @@ interface MainLayoutProps {
   onGenerateCode?: () => void;
   onCompareVersions?: () => void;
   onOpenTrainingConfig?: () => void;
+  onOpenExport?: () => void;
+  onOpenCompare?: () => void;
 }
 
-export default function MainLayout({ children, onGenerateCode, onCompareVersions, onOpenTrainingConfig }: MainLayoutProps) {
+export default function MainLayout({ 
+  children, 
+  onGenerateCode, 
+  onCompareVersions, 
+  onOpenTrainingConfig,
+  onOpenExport,
+  onOpenCompare
+}: MainLayoutProps) {
   const pathname = usePathname();
   const router = useRouter();
   const isOnline = useProjectStore((state) => state.isOnline);
@@ -65,6 +74,8 @@ export default function MainLayout({ children, onGenerateCode, onCompareVersions
           onGenerateCode={onGenerateCode} 
           onCompareVersions={onCompareVersions} 
           onOpenTrainingConfig={onOpenTrainingConfig} 
+          onOpenExport={onOpenExport}
+          onOpenCompare={onOpenCompare}
         />
         <main className="flex-1 overflow-y-auto relative">
           {children}

@@ -13,12 +13,13 @@ interface CodePreviewModalProps {
   onClose: () => void;
   nodes: CanvasNode[];
   edges: CanvasEdge[];
+  onOpenCompare?: () => void;
 }
 
 type Framework = 'PyTorch' | 'TensorFlow' | 'JAX' | 'ONNX';
 type ViewMode = 'single' | 'split' | 'quad' | 'diff';
 
-export default function CodePreviewModal({ isOpen, onClose, nodes, edges }: CodePreviewModalProps) {
+export default function CodePreviewModal({ isOpen, onClose, nodes, edges, onOpenCompare }: CodePreviewModalProps) {
   const [viewMode, setViewMode] = useState<ViewMode>('single');
   const [activeFramework, setActiveFramework] = useState<Framework>('PyTorch');
   const [isExpanded, setIsExpanded] = useState(false);
@@ -313,7 +314,7 @@ export default function CodePreviewModal({ isOpen, onClose, nodes, edges }: Code
             </div>
             <div>
               <h3 className="text-lg font-black text-white tracking-wide flex items-center gap-2">
-                <span>Multi-Framework Compiler Console</span>
+                <span>Compiler Center</span>
                 <span className="text-[9px] bg-emerald-500/10 border border-emerald-500/25 px-2 py-0.5 rounded text-emerald-400 font-extrabold uppercase select-none">
                   Online
                 </span>
@@ -411,7 +412,7 @@ export default function CodePreviewModal({ isOpen, onClose, nodes, edges }: Code
                   <span className="text-xs font-mono font-bold text-[#ffe082]">class GeneratedModel:</span>
                   <span className="text-[10px] text-gray-500 font-mono italic"># compiled target module</span>
                 </div>
-                <div className="flex items-center gap-2">
+                 <div className="flex items-center gap-2">
                   {/* Copy Button */}
                   <button
                     onClick={() => handleCopy(activeFramework, setCopiedSingle)}
@@ -429,6 +430,20 @@ export default function CodePreviewModal({ isOpen, onClose, nodes, edges }: Code
                     <Download size={11} />
                     <span>Download</span>
                   </button>
+
+                  {/* Compare Button */}
+                  {activeFramework !== 'ONNX' && (
+                    <button
+                      onClick={() => {
+                        onClose();
+                        if (onOpenCompare) onOpenCompare();
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-[#ffe082]/10 hover:bg-[#ffe082]/20 border border-[#ffe082]/25 text-[10px] font-bold text-[#ffe082] rounded-lg transition-all cursor-pointer"
+                    >
+                      <GitCompare size={11} />
+                      <span>Compare</span>
+                    </button>
+                  )}
 
                   {/* Expand Button */}
                   <button
@@ -459,7 +474,20 @@ export default function CodePreviewModal({ isOpen, onClose, nodes, edges }: Code
                   </span>
                 </div>
 
-                <div className="flex items-center gap-3">
+                 <div className="flex items-center gap-3">
+                  {activeFramework !== 'ONNX' && (
+                    <button
+                      onClick={() => {
+                        onClose();
+                        if (onOpenCompare) onOpenCompare();
+                      }}
+                      className="flex items-center gap-2 px-5 py-2.5 bg-[#ffe082]/10 hover:bg-[#ffe082]/20 text-[#ffe082] rounded-xl text-xs font-bold border border-[#ffe082]/25 transition-all duration-150 cursor-pointer"
+                    >
+                      <GitCompare size={14} />
+                      <span>Compare Frameworks</span>
+                    </button>
+                  )}
+
                   <button
                     onClick={() => handleCopy(activeFramework, setCopiedSingle)}
                     className="flex items-center gap-2 px-5 py-2.5 bg-[#2b2d31]/60 hover:bg-[#2b2d31] text-xs font-bold text-[#e3e3e3] hover:text-white rounded-xl border border-[#3f4046] transition-all duration-150 cursor-pointer"

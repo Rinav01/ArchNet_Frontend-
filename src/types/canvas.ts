@@ -52,7 +52,7 @@ export interface LogItem {
 export interface Project {
   id: string;
   name: string;
-  framework: 'PyTorch' | 'TensorFlow' | 'JAX';
+  framework: 'PyTorch' | 'TensorFlow' | 'JAX' | 'ONNX';
   status: 'Production Ready' | 'Training' | 'Draft';
   layersCount: number;
   learningRate?: string;

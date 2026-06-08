@@ -9,6 +9,8 @@ import ValidationPanel from '@/components/Panels/ValidationPanel';
 import ValidationSidebar from '@/components/Panels/ValidationSidebar';
 import CanvasWrapper from '@/components/Canvas/CanvasWrapper';
 import CodePreviewModal from '@/components/Modals/CodePreviewModal';
+import ExportModal from '@/components/Modals/ExportModal';
+import FrameworkComparisonModal from '@/components/Modals/FrameworkComparisonModal';
 import ErrorBoundary from '@/components/Common/ErrorBoundary';
 import CommandPalette from '@/components/Modals/CommandPalette';
 import GraphSearch from '@/components/Modals/GraphSearch';
@@ -68,6 +70,7 @@ export default function EditorPage() {
   
   const setActiveProjectId = useProjectStore((state) => state.setActiveProjectId);
   const loadProjects = useProjectStore((state) => state.loadProjects);
+  const projects = useProjectStore((state) => state.projects);
   const userRole = useProjectStore((state) => state.userRole);
 
   const panels = useLayoutStore((state) => state.panels);
@@ -79,6 +82,8 @@ export default function EditorPage() {
   const [isGraphSearchOpen, setIsGraphSearchOpen] = useState(false);
   const [isDiffModalOpen, setIsDiffModalOpen] = useState(false);
   const [isTrainingConfigOpen, setIsTrainingConfigOpen] = useState(false);
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [isComparisonModalOpen, setIsComparisonModalOpen] = useState(false);
 
   // Keyboard shortcut listener for Undo / Redo and Modals (Command Palette / Graph Search)
   useEffect(() => {
@@ -195,11 +200,15 @@ export default function EditorPage() {
     }
   };
 
+  const currentProject = projects.find(p => p.id === projectId);
+
   return (
     <MainLayout 
       onGenerateCode={() => setIsCodeModalOpen(true)} 
       onCompareVersions={() => setIsDiffModalOpen(true)}
       onOpenTrainingConfig={() => setIsTrainingConfigOpen(true)}
+      onOpenExport={() => setIsExportModalOpen(true)}
+      onOpenCompare={() => setIsComparisonModalOpen(true)}
     >
       <div className="flex h-[calc(100vh-4rem)] overflow-hidden relative z-10 select-none bg-[#090a0f] w-full">
         
@@ -530,12 +539,31 @@ export default function EditorPage() {
         )}
       </div>
 
-      {/* Floating Code Preview Modal */}
+      {/* Floating Code Preview Modal / Compiler Center */}
       <CodePreviewModal
         isOpen={isCodeModalOpen}
         onClose={() => setIsCodeModalOpen(false)}
         nodes={nodes}
         edges={edges}
+        onOpenCompare={() => setIsComparisonModalOpen(true)}
+      />
+
+      {/* Floating Export Modal */}
+      <ExportModal
+        isOpen={isExportModalOpen}
+        onClose={() => setIsExportModalOpen(false)}
+        nodes={nodes}
+        edges={edges}
+        project={currentProject}
+      />
+
+      {/* Floating Framework Comparison View Modal */}
+      <FrameworkComparisonModal
+        isOpen={isComparisonModalOpen}
+        onClose={() => setIsComparisonModalOpen(false)}
+        nodes={nodes}
+        edges={edges}
+        project={currentProject}
       />
 
       <CommandPalette

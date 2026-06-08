@@ -4,6 +4,8 @@ import React, { useState } from 'react';
 import { useCanvasStore, getTopologicalOrder, computeNodeOutputShape } from '@/store/canvasStore';
 import { useProjectStore } from '@/store/projectStore';
 import { AutoMLSuggestion, CanvasNode, CanvasEdge, ValidationError } from '@/types/canvas';
+import { graphqlRequest, SCORE_ARCHITECTURE, RECOMMEND_ARCHITECTURE } from '@/lib/graphql/client';
+import { toast } from '@/store/notificationStore';
 import { 
   AlertTriangle, 
   CheckCircle, 
@@ -26,7 +28,6 @@ interface ExtendedValidationError extends ValidationError {
 }
 
 export default function ValidationSidebar() {
-  const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'issues' | 'suggestions' | 'trace' | 'sandbox'>('issues');
   const [expandedIssueIdx, setExpandedIssueIdx] = useState<number | null>(null);
   
@@ -41,7 +42,87 @@ export default function ValidationSidebar() {
     setSelectedNodeId 
   } = useCanvasStore();
   
+  const activeProjectId = useProjectStore((state) => state.activeProjectId);
   const isOnline = useProjectStore((state) => state.isOnline);
+
+  const [backendScore, setBackendScore] = useState<number | null>(null);
+  const [backendGrade, setBackendGrade] = useState<string | null>(null);
+  const [backendBreakdown, setBackendBreakdown] = useState<any | null>(null);
+  const [backendRecommendations, setBackendRecommendations] = useState<any[] | null>(null);
+  const [isScoringLoading, setIsScoringLoading] = useState(false);
+
+  React.useEffect(() => {
+    let active = true;
+    const fetchScores = async () => {
+      if (!isOnline || !activeProjectId) {
+        setBackendScore(null);
+        setBackendGrade(null);
+        setBackendBreakdown(null);
+        setBackendRecommendations(null);
+        return;
+      }
+      setIsScoringLoading(true);
+      try {
+        const [scoreData, recommendData] = await Promise.all([
+          graphqlRequest(SCORE_ARCHITECTURE, { projectId: activeProjectId }),
+          graphqlRequest(RECOMMEND_ARCHITECTURE, { projectId: activeProjectId })
+        ]);
+        if (active) {
+          if (scoreData?.scoreArchitecture) {
+            setBackendScore(scoreData.scoreArchitecture.score);
+            setBackendGrade(scoreData.scoreArchitecture.grade);
+            setBackendBreakdown(scoreData.scoreArchitecture.breakdown);
+          }
+          if (recommendData?.recommendArchitecture) {
+            setBackendRecommendations(recommendData.recommendArchitecture);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch architecture score/recommendations:", err);
+      } finally {
+        if (active) setIsScoringLoading(false);
+      }
+    };
+
+    fetchScores();
+    return () => {
+      active = false;
+    };
+  }, [activeProjectId, nodes, edges, isOnline]);
+
+  const applyAddBatchNorm = async (convNodeId: string) => {
+    const store = useCanvasStore.getState();
+    const convNode = store.nodes.find(n => n.id === convNodeId);
+    if (!convNode) return;
+
+    const outgoingEdges = store.edges.filter(e => e.source === convNodeId);
+    const newX = convNode.x + 120;
+    const newY = convNode.y;
+    const bnId = `node_bn_${Math.random().toString(36).substring(2, 9)}`;
+
+    await store.addNode('BatchNorm2D', newX, newY, bnId);
+
+    if (outgoingEdges.length > 0) {
+      for (const edge of outgoingEdges) {
+        await store.removeEdge(edge.id);
+        await store.addEdge(bnId, edge.target);
+      }
+    }
+    await store.addEdge(convNodeId, bnId);
+    store.addLog('success', `AutoML Fix: Inserted BatchNorm2D after Conv2D Layer ${convNode.name}.`);
+    store.triggerCompilation();
+  };
+
+  const applyReduceDenseWidth = (denseNodeId: string) => {
+    const store = useCanvasStore.getState();
+    const denseNode = store.nodes.find(n => n.id === denseNodeId);
+    if (!denseNode) return;
+
+    store.updateNodeConfig(denseNode.id, { units: 128 });
+    store.addLog('success', `AutoML Fix: Reduced units of Dense Layer ${denseNode.name} to 128.`);
+    store.triggerCompilation();
+  };
+
 
   // Helper function to validate a custom block internally for shape, rank, cycle, and broadcasting errors
   const getCustomBlockErrors = (): ExtendedValidationError[] => {
@@ -233,7 +314,7 @@ export default function ValidationSidebar() {
           id: `conv_act_${node.id}`,
           title: `Conv2D Activation Missing`,
           category: 'anti-pattern',
-          description: `Layer '${node.name}' has no activation function configured. Linear convolutions severely restrict model representational capacity.`,
+          description: `Layer '${node.name}' has no activation function configured. Linear convolutions restrict model representational capacity.`,
           advice: `Applying a non-linear activation like ReLU after convolutions allows the network to learn complex non-linear feature maps.`,
           severity: 'high',
           score: 8.8,
@@ -246,6 +327,26 @@ export default function ValidationSidebar() {
         });
       }
     });
+
+    // 1b. Check Conv2D BatchNorm2D missing
+    const hasBatchNorm = nodes.some(n => n.type === 'BatchNorm2D');
+    const firstConv = nodes.find(n => n.type === 'Conv2D');
+    if (firstConv && !hasBatchNorm) {
+      suggestions.push({
+        id: `local_add_bn_${firstConv.id}`,
+        title: `Add BatchNorm`,
+        category: 'architecture',
+        description: `Conv2D Layer '${firstConv.name}' is missing a batch normalization layer. Standard vision networks use Batch Normalization to stabilize training.`,
+        advice: `Adding a BatchNorm2D layer after '${firstConv.name}' normalizes feature maps, mitigating internal covariate shift.`,
+        severity: 'medium',
+        score: 7.0,
+        nodeId: firstConv.id,
+        fixLabel: `Add BatchNorm`,
+        applyFix: async () => {
+          await applyAddBatchNorm(firstConv.id);
+        }
+      });
+    }
 
     // 2. Check input dimensions power of 2 or typical sizes
     const inputNode = nodes.find(n => n.type === 'Input');
@@ -323,17 +424,16 @@ export default function ValidationSidebar() {
         if (totalParams > 500000) {
           suggestions.push({
             id: `param_explosion_${node.id}`,
-            title: `Dense Parameter Explosion`,
+            title: `Reduce Dense Width`,
             category: 'optimization',
-            description: `Fully connected projection at '${node.name}' contains over ${totalParams.toLocaleString()} parameters. This is highly redundant and leads to heavy vRAM memory footprint and overfitting.`,
+            description: `Fully connected projection at '${node.name}' contains over ${totalParams.toLocaleString()} parameters. This is highly redundant and leads to heavy vRAM memory footprint.`,
             advice: `Consider reducing the Dense units or adding pooling layers (MaxPool2D) before flattening to reduce spatial feature dimensions.`,
             severity: 'medium',
             score: 7.5,
             nodeId: node.id,
-            fixLabel: `Reduce Units to 128`,
+            fixLabel: `Reduce Dense Width`,
             applyFix: () => {
-              useCanvasStore.getState().updateNodeConfig(node.id, { units: 128 });
-              useCanvasStore.getState().addLog('success', `AutoML Fix applied: Reduced units of Dense Layer ${node.name} to 128.`);
+              applyReduceDenseWidth(node.id);
             }
           });
         }
@@ -843,6 +943,193 @@ export default function ValidationSidebar() {
     return { explanation, fixLabel, hasFix, applyFix };
   };
 
+  const getLocalScore = () => {
+    let score = 100;
+    
+    // Deduct for validation errors
+    errors.forEach(() => {
+      score -= 10;
+    });
+    // Deduct for warnings
+    warnings.forEach(() => {
+      score -= 5;
+    });
+
+    // Deduct for AutoML suggestions
+    const localSuggestions = getAutoMLSuggestions();
+    localSuggestions.forEach((s) => {
+      if (s.severity === 'high') {
+        score -= 8;
+      } else if (s.severity === 'medium') {
+        score -= 5;
+      } else {
+        score -= 2;
+      }
+    });
+
+    // Clamp between 10 and 100
+    score = Math.max(10, Math.min(100, score));
+
+    // Calculate grade
+    let grade = 'A';
+    if (score >= 95) grade = 'A+';
+    else if (score >= 90) grade = 'A';
+    else if (score >= 85) grade = 'B+';
+    else if (score >= 80) grade = 'B';
+    else if (score >= 70) grade = 'C';
+    else if (score >= 60) grade = 'D';
+    else grade = 'F';
+
+    return { score, grade };
+  };
+
+  const currentScore = isOnline && backendScore !== null ? backendScore : getLocalScore().score;
+  const currentGrade = isOnline && backendGrade !== null ? backendGrade : getLocalScore().grade;
+
+  const getGradeTheme = (grade: string) => {
+    const g = grade.toUpperCase();
+    if (g.startsWith('A')) {
+      return {
+        color: '#10b981', // emerald
+        glow: 'rgba(16, 185, 129, 0.4)',
+        textColor: 'text-emerald-400',
+        bg: 'bg-emerald-500/10',
+        border: 'border-emerald-500/20'
+      };
+    } else if (g.startsWith('B')) {
+      return {
+        color: '#f59e0b', // amber/yellow
+        glow: 'rgba(245, 158, 11, 0.4)',
+        textColor: 'text-amber-400',
+        bg: 'bg-amber-500/10',
+        border: 'border-amber-500/20'
+      };
+    } else {
+      return {
+        color: '#ef4444', // rose/red
+        glow: 'rgba(239, 68, 68, 0.4)',
+        textColor: 'text-rose-400',
+        bg: 'bg-rose-500/10',
+        border: 'border-rose-500/20'
+      };
+    }
+  };
+
+  const theme = getGradeTheme(currentGrade);
+  const scoreColor = theme.color;
+  const scoreGlowColor = theme.glow;
+  const gradeTextColor = theme.textColor;
+
+  const mapBackendRecommendationToSuggestion = (rec: any): AutoMLSuggestion | null => {
+    const bottleneck = rec.bottleneck || '';
+    const recommendedAction = rec.recommendedAction || '';
+    const severity = (rec.severity || 'medium').toLowerCase() as 'high' | 'medium' | 'info';
+
+    // 1. "Add BatchNorm"
+    if (bottleneck.includes("Add BatchNorm") || recommendedAction.toLowerCase().includes("batchnorm")) {
+      const match = bottleneck.match(/'([^']+)'/) || recommendedAction.match(/'([^']+)'/);
+      const nodeName = match ? match[1] : '';
+      const targetNode = nodes.find(n => n.name === nodeName || n.type === 'Conv2D');
+      
+      if (targetNode) {
+        return {
+          id: `backend_bn_${targetNode.id}`,
+          title: `Add BatchNorm`,
+          category: 'architecture',
+          description: recommendedAction || `Add a BatchNorm2D layer after '${targetNode.name}' to normalize activations.`,
+          advice: `Batch Normalization stabilizes neural training dynamics by standardizing inputs to each layer.`,
+          severity: severity,
+          score: 8.0,
+          nodeId: targetNode.id,
+          fixLabel: `Add BatchNorm`,
+          applyFix: async () => {
+            await applyAddBatchNorm(targetNode.id);
+          }
+        };
+      }
+    }
+
+    // 2. "Reduce Dense Layer" / "Reduce Dense Width"
+    if (bottleneck.includes("Reduce Dense") || recommendedAction.toLowerCase().includes("reduce dense") || bottleneck.toLowerCase().includes("dense width")) {
+      const match = bottleneck.match(/'([^']+)'/) || recommendedAction.match(/'([^']+)'/);
+      const nodeName = match ? match[1] : '';
+      const targetNode = nodes.find(n => n.name === nodeName || n.type === 'Dense');
+
+      if (targetNode) {
+        return {
+          id: `backend_dense_${targetNode.id}`,
+          title: `Reduce Dense Width`,
+          category: 'optimization',
+          description: recommendedAction || `Reduce Dense Layer '${targetNode.name}' units to 128.`,
+          advice: `Reducing units in wide projection layers decreases overfitting risks and footprint size.`,
+          severity: severity,
+          score: 7.5,
+          nodeId: targetNode.id,
+          fixLabel: `Reduce Dense Width`,
+          applyFix: () => {
+            applyReduceDenseWidth(targetNode.id);
+          }
+        };
+      }
+    }
+
+    // 3. Generic backend recommendations
+    return {
+      id: `backend_generic_${Math.random().toString(36).substring(2, 9)}`,
+      title: bottleneck.split(':')[0] || 'Optimization Recommendation',
+      category: 'architecture',
+      description: recommendedAction,
+      advice: `Applying standard optimization fixes improves the model compilation and performance.`,
+      severity: severity,
+      score: 5.0,
+      fixLabel: `Apply Suggestion`,
+      applyFix: () => {
+        const match = bottleneck.match(/'([^']+)'/) || recommendedAction.match(/'([^']+)'/);
+        const nodeName = match ? match[1] : '';
+        const targetNode = nodes.find(n => n.name === nodeName);
+        if (targetNode) {
+          setSelectedNodeId(targetNode.id);
+          toast.info('Inspect Node', `Please inspect node '${targetNode.name}' to apply the recommendation manually.`);
+        } else {
+          toast.info('Info', 'This recommendation needs manual resolution.');
+        }
+      }
+    };
+  };
+
+  const getMergedSuggestions = (): AutoMLSuggestion[] => {
+    const localSuggestions = getAutoMLSuggestions();
+
+    if (isOnline && backendRecommendations && backendRecommendations.length > 0) {
+      const mappedBackend = backendRecommendations
+        .map(mapBackendRecommendationToSuggestion)
+        .filter(Boolean) as AutoMLSuggestion[];
+
+      const hasBackendBN = mappedBackend.some(b => b.title === 'Add BatchNorm');
+      const hasBackendDense = mappedBackend.some(b => b.title === 'Reduce Dense Width');
+
+      return [
+        ...mappedBackend,
+        ...localSuggestions.filter(s => {
+          if (s.title === 'Add BatchNorm' && hasBackendBN) return false;
+          if (s.title === 'Reduce Dense Width' && hasBackendDense) return false;
+          return true;
+        })
+      ];
+    }
+
+    return localSuggestions;
+  };
+
+  const mergedSuggestions = getMergedSuggestions();
+
+  const handleOneClickFix = async () => {
+    if (mergedSuggestions.length === 0) return;
+    const firstSug = mergedSuggestions[0];
+    toast.info('One-Click Fix', `Applying suggestion: "${firstSug.title}"...`);
+    await firstSug.applyFix();
+  };
+
   const handleIssueClick = (nodeId?: string) => {
     if (nodeId) {
       const activeNode = nodes.find(n => n.id === nodeId);
@@ -855,31 +1142,11 @@ export default function ValidationSidebar() {
     }
   };
 
-  if (!isOpen) {
-    return (
-      <button
-        onClick={() => setIsOpen(true)}
-        className="absolute top-1/2 right-0 -translate-y-1/2 bg-[#2b2d31] border-l border-y border-[#3f4046] hover:bg-[#313338] text-white p-2 rounded-l-2xl z-40 shadow-xl transition-all"
-        title="Open Diagnostic Center"
-      >
-        <ChevronLeft size={18} className="animate-pulse text-[#8ab4f8]" />
-      </button>
-    );
-  }
-
   return (
-    <div className="w-80 border-l border-[#3f4046] bg-[#1e1f22] flex flex-col h-full select-none z-20 relative transition-all duration-300">
+    <div className="w-full h-full bg-[#1e1f22] flex flex-col select-none relative">
       
-      {/* Collapse Toggle Handle */}
-      <button
-        onClick={() => setIsOpen(false)}
-        className="absolute top-1/2 -left-3.5 -translate-y-1/2 bg-[#1e1f22] border border-[#3f4046] hover:bg-[#2b2d31] text-[#9aa0a6] hover:text-white p-0.5 rounded-full z-30 shadow-md transition-all"
-      >
-        <ChevronRight size={14} />
-      </button>
-
       {/* Title block */}
-      <div className="p-6 border-b border-[#3f4046]">
+      <div className="p-4 border-b border-[#3f4046] shrink-0">
         <div className="flex justify-between items-center">
           <span className="text-[10px] font-extrabold uppercase tracking-widest text-[#9aa0a6] block">Diagnostic Center</span>
           <div className="flex items-center gap-1">
@@ -894,16 +1161,12 @@ export default function ValidationSidebar() {
             )}
           </div>
         </div>
-        <h3 className="text-xl font-black text-white mt-1 flex items-center gap-2">
-          <Cpu size={18} className="text-[#8ab4f8]" />
-          <span>Compiler Engine</span>
-        </h3>
         
         {/* Trigger manually button */}
         <button
           onClick={() => triggerCompilation()}
           disabled={isValidating || !isOnline}
-          className={`w-full mt-3 flex items-center justify-center gap-1.5 py-1.5 rounded-xl border text-[10px] font-extrabold uppercase tracking-wider transition-all ${
+          className={`w-full mt-2 flex items-center justify-center gap-1.5 py-1.5 rounded-xl border text-[10px] font-extrabold uppercase tracking-wider transition-all ${
             isValidating 
               ? 'bg-[#8ab4f8]/5 border-[#8ab4f8]/20 text-[#8ab4f8] cursor-not-allowed'
               : !isOnline
@@ -917,7 +1180,7 @@ export default function ValidationSidebar() {
       </div>
 
       {/* Tabs Menu */}
-      <div className="flex border-b border-[#3f4046] text-[10px] bg-black/10 font-bold select-none">
+      <div className="flex border-b border-[#3f4046] text-[10px] bg-black/10 font-bold select-none shrink-0">
         <button
           onClick={() => setActiveTab('issues')}
           className={`flex-1 py-3 text-center border-b-2 transition-all cursor-pointer ${
@@ -937,9 +1200,9 @@ export default function ValidationSidebar() {
           }`}
         >
           AutoML
-          {autoMLSuggestions.length > 0 && (
+          {mergedSuggestions.length > 0 && (
             <span className="ml-1 px-1.5 py-0.5 bg-amber-500 text-[#1e1f22] text-[8px] font-black rounded-full leading-none animate-pulse inline-block">
-              {autoMLSuggestions.length}
+              {mergedSuggestions.length}
             </span>
           )}
         </button>
@@ -971,6 +1234,54 @@ export default function ValidationSidebar() {
         {/* Tab: AutoML Suggestions */}
         {activeTab === 'suggestions' && (
           <div className="p-4 space-y-4">
+            
+            {/* Architecture Score gauge */}
+            <div className="flex flex-col items-center justify-center bg-[#2b2d31]/30 border border-[#3f4046]/40 p-5 rounded-2xl gap-3 shrink-0">
+              <span className="text-[10px] font-extrabold uppercase tracking-widest text-[#9aa0a6]">Architecture Score</span>
+              
+              {/* Circular gauge */}
+              <div className="relative flex items-center justify-center">
+                {/* SVG Circular Progress */}
+                <svg className="w-28 h-28 transform -rotate-90">
+                  <circle
+                    cx="56"
+                    cy="56"
+                    r="46"
+                    stroke="#2b2d31"
+                    strokeWidth="8"
+                    fill="transparent"
+                  />
+                  <circle
+                    cx="56"
+                    cy="56"
+                    r="46"
+                    stroke={scoreColor}
+                    strokeWidth="8"
+                    fill="transparent"
+                    strokeDasharray={2 * Math.PI * 46}
+                    strokeDashoffset={2 * Math.PI * 46 * (1 - currentScore / 100)}
+                    className="transition-all duration-700 ease-out"
+                    strokeLinecap="round"
+                    style={{ filter: `drop-shadow(0 0 6px ${scoreGlowColor})` }}
+                  />
+                </svg>
+                {/* Text overlay in center */}
+                <div className="absolute flex flex-col items-center justify-center">
+                  <span className="text-2xl font-black text-white leading-none">{currentScore}</span>
+                  <span className="text-[9px] font-bold text-[#9aa0a6] mt-0.5">/ 100</span>
+                </div>
+              </div>
+
+              {/* Grade Badge */}
+              <div className="flex items-center gap-1.5 bg-black/30 border border-[#3f4046]/30 px-3 py-1 rounded-full">
+                <span className="text-[9px] font-bold text-[#9aa0a6] uppercase tracking-wider">Grade:</span>
+                <span className={`text-[10px] font-black uppercase tracking-wider ${gradeTextColor}`}>
+                  {currentGrade}
+                </span>
+              </div>
+            </div>
+
+            {/* Sparkles description */}
             <div className="bg-[#2b2d31]/40 border border-[#3f4046]/50 rounded-xl p-3.5 flex items-start gap-3">
               <Sparkles size={16} className="text-amber-400 mt-0.5 shrink-0" />
               <div>
@@ -981,78 +1292,104 @@ export default function ValidationSidebar() {
               </div>
             </div>
 
-            {autoMLSuggestions.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-16 text-center select-none">
-                <CheckCircle size={32} className="text-[#81c784] mb-3 opacity-90" />
-                <h4 className="text-xs font-bold text-gray-300 uppercase">Architecture Optimized</h4>
-                <p className="text-[10px] text-[#9aa0a6] mt-1 max-w-[200px] font-semibold leading-relaxed">
-                  No anti-patterns, parameters bottleneck, or dimensional scale anomalies found in your graph flow!
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-3.5">
-                {autoMLSuggestions.map((cp) => {
-                  const isHigh = cp.severity === 'high';
-                  const isMed = cp.severity === 'medium';
-                  
-                  const borderClass = isHigh 
-                    ? 'border-rose-500/30 bg-rose-500/5 hover:border-rose-500/40' 
-                    : isMed 
-                      ? 'border-amber-500/30 bg-amber-500/5 hover:border-amber-500/40' 
-                      : 'border-blue-500/30 bg-blue-500/5 hover:border-blue-500/40';
-
-                  const badgeClass = isHigh 
-                    ? 'bg-rose-500/10 text-rose-400' 
-                    : isMed 
-                      ? 'bg-amber-500/10 text-amber-400' 
-                      : 'bg-blue-500/10 text-blue-400';
-
-                  return (
-                    <div 
-                      key={cp.id} 
-                      className={`border p-3.5 rounded-xl transition-all space-y-3 ${borderClass}`}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="space-y-1">
-                          <span className={`text-[8px] font-extrabold uppercase px-1.5 py-0.5 rounded tracking-wider ${badgeClass}`}>
-                            {cp.severity.toUpperCase()} (Score: {cp.score})
-                          </span>
-                          <h4 className="text-xs font-black text-white">{cp.title}</h4>
-                        </div>
-                        <span className="text-[10px] font-black text-[#9aa0a6] uppercase tracking-wider">{cp.category}</span>
-                      </div>
-
-                      <p className="text-[10px] text-gray-300 font-semibold leading-relaxed select-text">{cp.description}</p>
-                      
-                      <div className="bg-black/20 border border-[#3f4046]/30 p-2.5 rounded-lg">
-                        <p className="text-[9.5px] text-[#9aa0a6] font-semibold leading-relaxed select-text flex gap-1">
-                          <Lightbulb size={11} className="shrink-0 text-[#8ab4f8] mt-0.5" />
-                          <span>{cp.advice}</span>
-                        </p>
-                      </div>
-
-                      <div className="flex items-center justify-between pt-1 border-t border-[#3f4046]/30">
-                        {cp.nodeId && (
-                          <button
-                            onClick={() => handleIssueClick(cp.nodeId)}
-                            className="text-[9px] font-bold text-[#8ab4f8] hover:underline cursor-pointer"
-                          >
-                            Inspect Block
-                          </button>
-                        )}
-                        <button
-                          onClick={cp.applyFix}
-                          className="flex items-center gap-1 px-3 py-1 bg-amber-500 hover:bg-amber-400 text-[#1e1f22] rounded-lg text-[9px] font-extrabold shadow-sm transition-all cursor-pointer"
-                        >
-                          <Wrench size={10} />
-                          <span>{cp.fixLabel}</span>
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+            {/* Global One Click Fix */}
+            {mergedSuggestions.length > 0 && (
+              <button
+                onClick={handleOneClickFix}
+                className="w-full flex items-center justify-center gap-2 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-[#1e1f22] rounded-xl text-xs font-black shadow-lg shadow-amber-500/10 transition-all cursor-pointer border-none"
+              >
+                <Sparkles size={14} className="animate-pulse" />
+                <span>One Click Fix</span>
+              </button>
             )}
+
+            {/* Suggestions Checklist */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-extrabold uppercase tracking-widest text-[#9aa0a6]">Suggestions</span>
+                <span className="text-[9px] font-bold text-gray-500">
+                  {mergedSuggestions.length} available
+                </span>
+              </div>
+
+              {mergedSuggestions.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 text-center select-none">
+                  <CheckCircle size={32} className="text-[#81c784] mb-3 opacity-90" />
+                  <h4 className="text-xs font-bold text-gray-300 uppercase">Architecture Optimized</h4>
+                  <p className="text-[10px] text-[#9aa0a6] mt-1 max-w-[200px] font-semibold leading-relaxed">
+                    No anti-patterns, parameters bottleneck, or dimensional scale anomalies found in your graph flow!
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {mergedSuggestions.map((cp) => {
+                    const isHigh = cp.severity === 'high';
+                    const isMed = cp.severity === 'medium';
+                    
+                    const borderClass = isHigh 
+                      ? 'border-rose-500/30 bg-rose-500/5 hover:border-rose-500/40' 
+                      : isMed 
+                        ? 'border-amber-500/30 bg-amber-500/5 hover:border-amber-500/40' 
+                        : 'border-blue-500/30 bg-blue-500/5 hover:border-blue-500/40';
+
+                    const badgeClass = isHigh 
+                      ? 'bg-rose-500/10 text-rose-400' 
+                      : isMed 
+                        ? 'bg-amber-500/10 text-amber-400' 
+                        : 'bg-blue-500/10 text-blue-400';
+
+                    return (
+                      <div 
+                        key={cp.id} 
+                        className={`border p-3.5 rounded-xl transition-all space-y-3 ${borderClass}`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="space-y-1">
+                            <span className={`text-[8px] font-extrabold uppercase px-1.5 py-0.5 rounded tracking-wider ${badgeClass}`}>
+                              {cp.severity.toUpperCase()} (Score: {cp.score})
+                            </span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-amber-400 text-xs shrink-0">•</span>
+                              <h4 className="text-xs font-black text-white">{cp.title}</h4>
+                            </div>
+                          </div>
+                          <span className="text-[10px] font-black text-[#9aa0a6] uppercase tracking-wider">{cp.category}</span>
+                        </div>
+
+                        <p className="text-[10px] text-gray-300 font-semibold leading-relaxed select-text">{cp.description}</p>
+                        
+                        {cp.advice && (
+                          <div className="bg-black/20 border border-[#3f4046]/30 p-2.5 rounded-lg">
+                            <p className="text-[9.5px] text-[#9aa0a6] font-semibold leading-relaxed select-text flex gap-1">
+                              <Lightbulb size={11} className="shrink-0 text-[#8ab4f8] mt-0.5" />
+                              <span>{cp.advice}</span>
+                            </p>
+                          </div>
+                        )}
+
+                        <div className="flex items-center justify-between pt-1 border-t border-[#3f4046]/30">
+                          {cp.nodeId ? (
+                            <button
+                              onClick={() => handleIssueClick(cp.nodeId)}
+                              className="text-[9px] font-bold text-[#8ab4f8] hover:underline cursor-pointer bg-transparent border-none p-0"
+                            >
+                              Inspect Block
+                            </button>
+                          ) : <div />}
+                          <button
+                            onClick={cp.applyFix}
+                            className="flex items-center gap-1 px-3 py-1 bg-amber-500 hover:bg-amber-400 text-[#1e1f22] rounded-lg text-[9px] font-extrabold shadow-sm transition-all cursor-pointer border-none"
+                          >
+                            <Wrench size={10} />
+                            <span>Apply Suggestion</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -1155,7 +1492,6 @@ export default function ValidationSidebar() {
               <div className="relative border-l border-[#3f4046] ml-2 pl-4 space-y-5 py-2">
                 {traceOrder.map((n, idx) => {
                   const nodeHasError = validationErrors.some(err => err.nodeId === n.id);
-                  const isLast = idx === traceOrder.length - 1;
                   
                   return (
                     <div key={n.id} className="relative group select-text">
@@ -1232,3 +1568,4 @@ export default function ValidationSidebar() {
     </div>
   );
 }
+

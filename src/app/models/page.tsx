@@ -61,6 +61,21 @@ export default function ModelsPage() {
           </p>
         </div>
 
+        {/* Tab switcher design */}
+        <div className="flex border-b border-[#3f4046]">
+          <button
+            className="px-6 py-3 text-sm font-bold text-[#8ab4f8] border-b-2 border-[#8ab4f8] transition-all cursor-pointer"
+          >
+            Templates Catalog
+          </button>
+          <button
+            onClick={() => router.push('/models/registry')}
+            className="px-6 py-3 text-sm font-bold text-[#9aa0a6] hover:text-white transition-all cursor-pointer border-b-2 border-transparent"
+          >
+            Model Registry
+          </button>
+        </div>
+
         {/* Model cards grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {prebuiltModels.map((model, idx) => (

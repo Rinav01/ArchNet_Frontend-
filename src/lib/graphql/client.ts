@@ -262,5 +262,38 @@ export const TRIGGER_DATASET_PROCESSING = `
   }
 `;
 
+export const EXPORT_ONNX = `
+  mutation ExportOnnx($projectId: ID!) {
+    exportOnnx(projectId: $projectId) {
+      id
+      projectId
+      framework
+      artifactPath
+      checksum
+      createdAt
+    }
+  }
+`;
+
+export const SCORE_ARCHITECTURE = `
+  query ScoreArchitecture($projectId: ID!) {
+    scoreArchitecture(projectId: $projectId) {
+      score
+      grade
+      breakdown
+    }
+  }
+`;
+
+export const RECOMMEND_ARCHITECTURE = `
+  query RecommendArchitecture($projectId: ID!) {
+    recommendArchitecture(projectId: $projectId) {
+      severity
+      bottleneck
+      recommendedAction
+    }
+  }
+`;
+
 
 
