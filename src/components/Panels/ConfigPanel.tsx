@@ -87,7 +87,7 @@ export default function ConfigPanel() {
               <input
                 type="range"
                 min="8"
-                max="256"
+                max="2048"
                 step="8"
                 value={config.filters || 64}
                 onChange={(e) => handleConfigChange('filters', parseInt(e.target.value))}
@@ -276,6 +276,303 @@ export default function ConfigPanel() {
                 step="0.05"
                 value={config.rate !== undefined ? config.rate : 0.5}
                 onChange={(e) => handleConfigChange('rate', parseFloat(e.target.value))}
+                className="w-full cursor-pointer accent-[#8ab4f8]"
+              />
+            </div>
+          </div>
+        );
+
+      case 'Embedding':
+        return (
+          <div className="space-y-6">
+            <h4 className="text-[10px] font-extrabold uppercase text-[#9aa0a6] tracking-wider flex items-center gap-1.5 mb-2">
+              <Sliders size={12} />
+              <span>Embedding Parameters</span>
+            </h4>
+            <div className="space-y-2">
+              <div className="flex justify-between text-xs font-bold text-[#9aa0a6]">
+                <span>VOCAB SIZE</span>
+                <span className="text-[#8ab4f8] font-mono">{config.vocab_size || 10000}</span>
+              </div>
+              <input
+                type="number"
+                min="10"
+                max="1000000"
+                value={config.vocab_size || 10000}
+                onChange={(e) => handleConfigChange('vocab_size', Math.max(1, parseInt(e.target.value) || 10000))}
+                className="w-full px-3 py-2 bg-[#2b2d31] border border-[#3f4046] rounded-xl text-xs text-white focus:outline-none focus:border-[#8ab4f8]"
+              />
+            </div>
+            <div className="space-y-2">
+              <div className="flex justify-between text-xs font-bold text-[#9aa0a6]">
+                <span>EMBEDDING DIM</span>
+                <span className="text-[#8ab4f8] font-mono">{config.embedding_dim || 128}</span>
+              </div>
+              <input
+                type="range"
+                min="16"
+                max="2048"
+                step="16"
+                value={config.embedding_dim || 128}
+                onChange={(e) => handleConfigChange('embedding_dim', parseInt(e.target.value))}
+                className="w-full cursor-pointer accent-[#8ab4f8]"
+              />
+            </div>
+          </div>
+        );
+
+      case 'PositionalEncoding':
+        return (
+          <div className="space-y-6">
+            <h4 className="text-[10px] font-extrabold uppercase text-[#9aa0a6] tracking-wider flex items-center gap-1.5 mb-2">
+              <Sliders size={12} />
+              <span>Positional Encoding</span>
+            </h4>
+            <div className="space-y-2">
+              <div className="flex justify-between text-xs font-bold text-[#9aa0a6]">
+                <span>MAX SEQUENCE LENGTH</span>
+                <span className="text-[#8ab4f8] font-mono">{config.max_len || 5000}</span>
+              </div>
+              <input
+                type="number"
+                min="10"
+                max="100000"
+                value={config.max_len || 5000}
+                onChange={(e) => handleConfigChange('max_len', Math.max(1, parseInt(e.target.value) || 5000))}
+                className="w-full px-3 py-2 bg-[#2b2d31] border border-[#3f4046] rounded-xl text-xs text-white focus:outline-none focus:border-[#8ab4f8]"
+              />
+            </div>
+            <div className="space-y-2">
+              <div className="flex justify-between text-xs font-bold text-[#9aa0a6]">
+                <span>EMBED DIM</span>
+                <span className="text-[#8ab4f8] font-mono">{config.embed_dim || 128}</span>
+              </div>
+              <input
+                type="range"
+                min="16"
+                max="2048"
+                step="16"
+                value={config.embed_dim || 128}
+                onChange={(e) => handleConfigChange('embed_dim', parseInt(e.target.value))}
+                className="w-full cursor-pointer accent-[#8ab4f8]"
+              />
+            </div>
+          </div>
+        );
+
+      case 'LayerNorm':
+        return (
+          <div className="space-y-4">
+            <h4 className="text-[10px] font-extrabold uppercase text-[#9aa0a6] tracking-wider flex items-center gap-1.5 mb-2">
+              <Sliders size={12} />
+              <span>Layer Normalization</span>
+            </h4>
+            <div className="p-3.5 bg-[#2b2d31] border border-[#3f4046] rounded-xl text-center">
+              <p className="text-xs text-white font-bold">Layer Normalization (LayerNorm)</p>
+              <p className="text-[10px] text-[#9aa0a6] mt-1.5 leading-relaxed font-semibold">
+                Normalizes features across the channel/embedding dimensions for each individual sequence element.
+              </p>
+            </div>
+          </div>
+        );
+
+      case 'Attention':
+        return (
+          <div className="space-y-4">
+            <h4 className="text-[10px] font-extrabold uppercase text-[#9aa0a6] tracking-wider flex items-center gap-1.5 mb-2">
+              <Sliders size={12} />
+              <span>Attention Parameters</span>
+            </h4>
+            <div className="p-3.5 bg-[#2b2d31] border border-[#3f4046] rounded-xl text-center">
+              <p className="text-xs text-white font-bold">Standard Self-Attention Block</p>
+              <p className="text-[10px] text-[#9aa0a6] mt-1.5 leading-relaxed font-semibold">
+                Computes scaled dot-product attention mapping keys, queries, and values.
+              </p>
+            </div>
+          </div>
+        );
+
+      case 'MultiHeadAttention':
+        return (
+          <div className="space-y-6">
+            <h4 className="text-[10px] font-extrabold uppercase text-[#9aa0a6] tracking-wider flex items-center gap-1.5 mb-2">
+              <Sliders size={12} />
+              <span>Multi-Head Attention</span>
+            </h4>
+            <div className="space-y-2">
+              <div className="flex justify-between text-xs font-bold text-[#9aa0a6]">
+                <span>NUMBER OF HEADS</span>
+                <span className="text-[#8ab4f8] font-mono">{config.num_heads || 8}</span>
+              </div>
+              <input
+                type="range"
+                min="1"
+                max="32"
+                step="1"
+                value={config.num_heads || 8}
+                onChange={(e) => handleConfigChange('num_heads', parseInt(e.target.value))}
+                className="w-full cursor-pointer accent-[#8ab4f8]"
+              />
+            </div>
+            <div className="space-y-2">
+              <div className="flex justify-between text-xs font-bold text-[#9aa0a6]">
+                <span>EMBED DIM</span>
+                <span className="text-[#8ab4f8] font-mono">{config.embed_dim || 128}</span>
+              </div>
+              <input
+                type="range"
+                min="16"
+                max="2048"
+                step="16"
+                value={config.embed_dim || 128}
+                onChange={(e) => handleConfigChange('embed_dim', parseInt(e.target.value))}
+                className="w-full cursor-pointer accent-[#8ab4f8]"
+              />
+            </div>
+          </div>
+        );
+
+      case 'ResidualAdd':
+        return (
+          <div className="space-y-4">
+            <h4 className="text-[10px] font-extrabold uppercase text-[#9aa0a6] tracking-wider flex items-center gap-1.5 mb-2">
+              <Sliders size={12} />
+              <span>Residual Connection</span>
+            </h4>
+            <div className="p-3.5 bg-[#2b2d31] border border-[#3f4046] rounded-xl text-center">
+              <p className="text-xs text-white font-bold">Residual Add Block</p>
+              <p className="text-[10px] text-[#9aa0a6] mt-1.5 leading-relaxed font-semibold">
+                Sums multiple input tensors element-wise (typically a layer's output and a skip/shortcut connection).
+              </p>
+            </div>
+          </div>
+        );
+
+      case 'TransformerBlock':
+      case 'EncoderBlock':
+      case 'DecoderBlock':
+        return (
+          <div className="space-y-6">
+            <h4 className="text-[10px] font-extrabold uppercase text-[#9aa0a6] tracking-wider flex items-center gap-1.5 mb-2">
+              <Sliders size={12} />
+              <span>Transformer Block</span>
+            </h4>
+            <div className="space-y-2">
+              <div className="flex justify-between text-xs font-bold text-[#9aa0a6]">
+                <span>NUMBER OF HEADS</span>
+                <span className="text-[#8ab4f8] font-mono">{config.num_heads || 8}</span>
+              </div>
+              <input
+                type="range"
+                min="1"
+                max="32"
+                step="1"
+                value={config.num_heads || 8}
+                onChange={(e) => handleConfigChange('num_heads', parseInt(e.target.value))}
+                className="w-full cursor-pointer accent-[#8ab4f8]"
+              />
+            </div>
+            <div className="space-y-2">
+              <div className="flex justify-between text-xs font-bold text-[#9aa0a6]">
+                <span>EMBED DIM</span>
+                <span className="text-[#8ab4f8] font-mono">{config.embed_dim || 128}</span>
+              </div>
+              <input
+                type="range"
+                min="16"
+                max="2048"
+                step="16"
+                value={config.embed_dim || 128}
+                onChange={(e) => handleConfigChange('embed_dim', parseInt(e.target.value))}
+                className="w-full cursor-pointer accent-[#8ab4f8]"
+              />
+            </div>
+            <div className="space-y-2">
+              <div className="flex justify-between text-xs font-bold text-[#9aa0a6]">
+                <span>HIDDEN (FFN) SIZE</span>
+                <span className="text-[#8ab4f8] font-mono">{config.hidden_size || 512}</span>
+              </div>
+              <input
+                type="range"
+                min="64"
+                max="8192"
+                step="64"
+                value={config.hidden_size || 512}
+                onChange={(e) => handleConfigChange('hidden_size', parseInt(e.target.value))}
+                className="w-full cursor-pointer accent-[#8ab4f8]"
+              />
+            </div>
+          </div>
+        );
+
+      case 'RNN':
+      case 'LSTM':
+      case 'GRU':
+      case 'BiLSTM':
+        return (
+          <div className="space-y-6">
+            <h4 className="text-[10px] font-extrabold uppercase text-[#9aa0a6] tracking-wider flex items-center gap-1.5 mb-2">
+              <Sliders size={12} />
+              <span>Recurrent Parameters</span>
+            </h4>
+            <div className="space-y-2">
+              <div className="flex justify-between text-xs font-bold text-[#9aa0a6]">
+                <span>HIDDEN SIZE</span>
+                <span className="text-[#8ab4f8] font-mono">{config.hidden_size || 128}</span>
+              </div>
+              <input
+                type="range"
+                min="8"
+                max="2048"
+                step="8"
+                value={config.hidden_size || 128}
+                onChange={(e) => handleConfigChange('hidden_size', parseInt(e.target.value))}
+                className="w-full cursor-pointer accent-[#8ab4f8]"
+              />
+            </div>
+            <div className="space-y-2">
+              <span className="text-xs font-bold text-[#9aa0a6] uppercase">RETURN SEQUENCES</span>
+              <div className="grid grid-cols-2 gap-2">
+                {[true, false].map((val) => (
+                  <button
+                    key={val ? 'true' : 'false'}
+                    type="button"
+                    onClick={() => handleConfigChange('return_sequences', val)}
+                    className={`py-2 rounded-full border text-xs font-bold capitalize transition-all ${
+                      (config.return_sequences !== undefined ? config.return_sequences : true) === val
+                        ? 'bg-[#8ab4f8]/10 border-[#8ab4f8]/50 text-[#8ab4f8]'
+                        : 'bg-[#2b2d31] border-[#3f4046] text-[#9aa0a6] hover:bg-[#313338] hover:text-white'
+                    }`}
+                  >
+                    {val ? 'Yes (3D)' : 'No (2D)'}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+
+      case 'GCN':
+      case 'GraphSAGE':
+      case 'GAT':
+        return (
+          <div className="space-y-6">
+            <h4 className="text-[10px] font-extrabold uppercase text-[#9aa0a6] tracking-wider flex items-center gap-1.5 mb-2">
+              <Sliders size={12} />
+              <span>GNN Parameters</span>
+            </h4>
+            <div className="space-y-2">
+              <div className="flex justify-between text-xs font-bold text-[#9aa0a6]">
+                <span>OUT FEATURES</span>
+                <span className="text-[#8ab4f8] font-mono">{config.out_features || 64}</span>
+              </div>
+              <input
+                type="range"
+                min="4"
+                max="2048"
+                step="4"
+                value={config.out_features || 64}
+                onChange={(e) => handleConfigChange('out_features', parseInt(e.target.value))}
                 className="w-full cursor-pointer accent-[#8ab4f8]"
               />
             </div>

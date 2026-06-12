@@ -82,6 +82,18 @@ const DEFAULT_PANELS: Record<string, PanelState> = {
     height: 500,
     zIndex: 13,
   },
+  explainability: {
+    id: 'explainability',
+    title: 'Explainability & Analytics',
+    isOpen: false,
+    isFloating: false,
+    dockPosition: 'right',
+    x: 850,
+    y: 120,
+    width: 340,
+    height: 550,
+    zIndex: 14,
+  },
 };
 
 export const useLayoutStore = create<LayoutState>((set, get) => ({
@@ -150,7 +162,7 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
       if (!panel) return {};
 
       // Retrieve default dimensions for docking
-      const defaultWidth = id === 'console' ? 800 : id === 'inspector' ? 350 : 320;
+      const defaultWidth = id === 'console' ? 800 : id === 'inspector' ? 350 : id === 'explainability' ? 340 : 320;
       const defaultHeight = id === 'console' ? 256 : 550;
 
       return {

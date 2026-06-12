@@ -7,6 +7,7 @@ import LayerLibrary from '@/components/Panels/LayerLibrary';
 import ConfigPanel from '@/components/Panels/ConfigPanel';
 import ValidationPanel from '@/components/Panels/ValidationPanel';
 import ValidationSidebar from '@/components/Panels/ValidationSidebar';
+import ExplainabilityPanel from '@/components/Panels/ExplainabilityPanel';
 import CanvasWrapper from '@/components/Canvas/CanvasWrapper';
 import CodePreviewModal from '@/components/Modals/CodePreviewModal';
 import ExportModal from '@/components/Modals/ExportModal';
@@ -193,6 +194,12 @@ export default function EditorPage() {
         return (
           <ErrorBoundary name="Diagnostics Sidebar">
             <ValidationSidebar />
+          </ErrorBoundary>
+        );
+      case 'explainability':
+        return (
+          <ErrorBoundary name="Explainability Panel">
+            <ExplainabilityPanel />
           </ErrorBoundary>
         );
       default:

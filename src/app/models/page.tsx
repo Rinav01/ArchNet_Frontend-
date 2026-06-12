@@ -74,6 +74,12 @@ export default function ModelsPage() {
           >
             Model Registry
           </button>
+          <button
+            onClick={() => router.push('/models/research')}
+            className="px-6 py-3 text-sm font-bold text-[#9aa0a6] hover:text-white transition-all cursor-pointer border-b-2 border-transparent"
+          >
+            Research Playground
+          </button>
         </div>
 
         {/* Model cards grid */}

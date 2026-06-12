@@ -21,6 +21,25 @@ import {
 const NODE_WIDTH = 220;
 const NODE_HEIGHT = 80;
 
+const isSequenceType = (type: NodeType) => {
+  return [
+    'Embedding', 'PositionalEncoding', 'LayerNorm', 'Attention', 
+    'MultiHeadAttention', 'TransformerBlock', 'EncoderBlock', 'DecoderBlock',
+    'LSTM', 'GRU', 'BiLSTM', 'GCN', 'GraphSAGE', 'GAT'
+  ].includes(type);
+};
+
+const formatShapeText = (type: NodeType, shape: number[]) => {
+  if (!shape || shape.length === 0) return 'N/A';
+  if (isSequenceType(type) && shape.length >= 2) {
+    const B = 32;
+    const T = shape.length === 2 ? shape[0] : shape[1];
+    const D = shape.length === 2 ? shape[1] : shape[2];
+    return `[B,T,D]: [${B},${T},${D}]`;
+  }
+  return `[${shape.join(', ')}]`;
+};
+
 const getBezierPoint = (
   t: number,
   x0: number, y0: number,
@@ -45,7 +64,7 @@ const getNodeStats = (node: CanvasNode) => {
   let params = 0;
   let memory = 0; // weights in bytes
   let latency = 0.05; // Base latency in ms for inputs/flatten/etc.
-  let actSize = node.outputShape && node.outputShape.length > 0 ? `[${node.outputShape.join(', ')}]` : 'N/A';
+  let actSize = formatShapeText(node.type, node.outputShape);
 
   if (node.type === 'Conv2D') {
     const inputChannels = node.inputShape.length >= 3 ? node.inputShape[2] : 3;
@@ -587,13 +606,29 @@ export default function NodeGraph() {
   // Color mappings for Google Material Dark indicators
   const getNodeColor = (type: NodeType) => {
     switch (type) {
-      case 'Input': return '#81c784';     /* Emerald Green */
-      case 'Conv2D': return '#8ab4f8';    /* Material Blue */
-      case 'BatchNorm2D': return '#f48fb1'; /* Rose Pink */
-      case 'MaxPool2D': return '#80cbc4'; /* Dark Cyan Teal */
-      case 'Dropout': return '#ffab91';   /* Soft Orange */
-      case 'Flatten': return '#c5a3ff';   /* Soft Purple */
-      case 'Dense': return '#ffe082';     /* Amber Yellow */
+      case 'Input': return '#81c784';           /* Emerald Green */
+      case 'Conv2D': return '#8ab4f8';          /* Material Blue */
+      case 'BatchNorm2D': return '#f48fb1';       /* Rose Pink */
+      case 'MaxPool2D': return '#80cbc4';       /* Dark Cyan Teal */
+      case 'Dropout': return '#ffab91';         /* Soft Orange */
+      case 'Flatten': return '#c5a3ff';         /* Soft Purple */
+      case 'Dense': return '#ffe082';           /* Amber Yellow */
+      case 'Embedding': return '#26c6da';       /* Deep Cyan / Teal */
+      case 'PositionalEncoding': return '#ffb74d'; /* Soft Orange / Gold */
+      case 'LayerNorm': return '#f48fb1';        /* Rose Pink (Norm) */
+      case 'Attention':
+      case 'MultiHeadAttention': return '#b39ddb'; /* Lavender Purple */
+      case 'ResidualAdd': return '#e57373';      /* Soft Coral Red */
+      case 'TransformerBlock':
+      case 'EncoderBlock':
+      case 'DecoderBlock': return '#9fa8da';     /* Indigo Blue */
+      case 'RNN':
+      case 'LSTM':
+      case 'GRU':
+      case 'BiLSTM': return '#80deea';           /* Pale Cyan */
+      case 'GCN':
+      case 'GraphSAGE':
+      case 'GAT': return '#a5d6a7';              /* Pale Green */
       default: return '#9aa0a6';
     }
   };
@@ -642,23 +677,32 @@ export default function NodeGraph() {
       y1 = trgNode.y + NODE_HEIGHT / 2;
     }
 
-    const cp1x = x0 + 80;
-    const cp1y = y0;
-    const cp2x = x1 - 80;
-    const cp2y = y1;
+    // Determine target Y offsets (Attention socket routing)
+    const incoming = edges.filter(e => e.target === edge.target);
+    const isAttentionTarget = trgNode.type === 'Attention' || trgNode.type === 'MultiHeadAttention';
+    
+    let targetYOffsets = [NODE_HEIGHT / 2];
+    if (isAttentionTarget) {
+      if (incoming.length === 1) {
+        // If single input to attention, split/branch into Q, K, V
+        targetYOffsets = [20, 40, 60];
+      } else {
+        // If multiple, map by index
+        const idx = incoming.findIndex(e => e.id === edge.id);
+        if (idx === 0) targetYOffsets = [20];
+        else if (idx === 1) targetYOffsets = [40];
+        else if (idx === 2) targetYOffsets = [60];
+        else targetYOffsets = [40]; // fallback
+      }
+    }
 
-    const pathData = `M ${x0} ${y0} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${x1} ${y1}`;
-    
-    // Check if animated (supporting branching activeAnimationEdgeIds array)
-    const isAnimated = (activeAnimationEdgeIds || []).includes(edge.id) || activeAnimationEdgeId === edge.id;
-    
-    const hasBroadcastError = validationErrors.some(err => 
-      err.nodeId === edge.target && 
-      err.category === 'broadcast' && 
-      err.message.includes(`'${srcNode.name}'`)
-    );
-    
-    // Dynamic throughput indicators
+    // Check if skip/residual connection
+    const srcIndex = nodes.findIndex(n => n.id === edge.source);
+    const trgIndex = nodes.findIndex(n => n.id === edge.target);
+    const isSkipConnection = trgNode.type === 'ResidualAdd' || 
+      (srcIndex !== -1 && trgIndex !== -1 && Math.abs(trgIndex - srcIndex) > 1);
+
+    // Dynamic throughput indicators / sequence shape representation
     const shape = srcNode.outputShape || [];
     const numElements = shape.reduce((a, b) => a * b, 1);
     const formatBytes = (elements: number) => {
@@ -668,91 +712,125 @@ export default function NodeGraph() {
       if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
       return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
     };
-    const sizeText = shape.length > 0 ? `${shape.join('x')} (${formatBytes(numElements)})` : '';
-    
-    // Modulate execution intensity (packet size & speed scale with tensor dimensions)
-    const packetRadius = Math.max(3, Math.min(6.5, Math.log10(Math.max(1, numElements)) - 1));
-    const speedFactor = Math.max(0.6, Math.min(1.8, Math.log10(Math.max(1, numElements)) / 3));
-    
-    // Animate multiple moving packets along active edges
-    const t1 = (animTime * speedFactor) % 1;
-    const t2 = ((animTime * speedFactor) + 0.5) % 1;
-    
-    const p1 = getBezierPoint(t1, x0, y0, cp1x, cp1y, cp2x, cp2y, x1, y1);
-    const p2 = getBezierPoint(t2, x0, y0, cp1x, cp1y, cp2x, cp2y, x1, y1);
-    const centerPoint = getBezierPoint(0.5, x0, y0, cp1x, cp1y, cp2x, cp2y, x1, y1);
-    
+
+    let sizeText = '';
+    const isSeq = isSequenceType(srcNode.type) || isSequenceType(trgNode.type);
+    if (isSeq && shape.length >= 2) {
+      const B = 32;
+      const T = shape.length === 2 ? shape[0] : shape[1];
+      const D = shape.length === 2 ? shape[1] : shape[2];
+      sizeText = `[B,T,D]: [${B},${T},${D}]`;
+    } else if (shape.length > 0) {
+      sizeText = `${shape.join('x')} (${formatBytes(numElements)})`;
+    }
+
     return (
       <Group key={edge.id}>
-        {/* Interaction Group */}
-        <Group onClick={() => {
-          if (window.confirm('Delete connection?')) {
-            removeEdge(edge.id);
-          }
-        }}>
-          {/* Edge Bezier Line */}
-          <Path
-            data={pathData}
-            stroke={hasBroadcastError ? '#f28b82' : isAnimated ? '#c5a3ff' : '#8ab4f8'}
-            strokeWidth={hasBroadcastError ? 3 : isAnimated ? 4 : 2}
-            opacity={hasBroadcastError ? 0.95 : isAnimated ? 0.95 : 0.6}
-            dash={hasBroadcastError ? [6, 4] : undefined}
-          />
-          <Path
-            data={pathData}
-            stroke="transparent"
-            strokeWidth={15}
-            className="cursor-pointer"
-          />
-        </Group>
+        {targetYOffsets.map((offset, offsetIdx) => {
+          let y1_offset = targetGroup ? y1 : trgNode.y + offset;
+          
+          const cp1x = x0 + 80;
+          const cp1y = y0;
+          const cp2x = x1 - 80;
+          const cp2y = y1_offset;
 
-        {/* Dynamic Throughput Indicator label above center */}
-        {sizeText && (
-          <Group x={centerPoint.x - 50} y={centerPoint.y - 6}>
-            <Rect
-              width={100}
-              height={12}
-              fill="#1e1f22"
-              opacity={0.85}
-              cornerRadius={3}
-              stroke="#3f4046"
-              strokeWidth={0.5}
-            />
-            <Text
-              text={sizeText}
-              fill="#9aa0a6"
-              fontSize={7}
-              fontFamily="monospace"
-              align="center"
-              width={100}
-              y={2}
-            />
-          </Group>
-        )}
+          const pathData = `M ${x0} ${y0} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${x1} ${y1_offset}`;
+          
+          // Check if animated
+          const isAnimated = (activeAnimationEdgeIds || []).includes(edge.id) || activeAnimationEdgeId === edge.id;
+          
+          const hasBroadcastError = validationErrors.some(err => 
+            err.nodeId === edge.target && 
+            err.category === 'broadcast' && 
+            err.message.includes(`'${srcNode.name}'`)
+          );
+          
+          // Modulate execution intensity
+          const packetRadius = Math.max(3, Math.min(6.5, Math.log10(Math.max(1, numElements)) - 1));
+          const speedFactor = Math.max(0.6, Math.min(1.8, Math.log10(Math.max(1, numElements)) / 3));
+          
+          const t1 = (animTime * speedFactor) % 1;
+          const t2 = ((animTime * speedFactor) + 0.5) % 1;
+          
+          const p1 = getBezierPoint(t1, x0, y0, cp1x, cp1y, cp2x, cp2y, x1, y1_offset);
+          const p2 = getBezierPoint(t2, x0, y0, cp1x, cp1y, cp2x, cp2y, x1, y1_offset);
+          const centerPoint = getBezierPoint(0.5, x0, y0, cp1x, cp1y, cp2x, cp2y, x1, y1_offset);
+          
+          const showText = sizeText && (isAttentionTarget && incoming.length === 1 ? offsetIdx === 1 : true);
 
-        {/* Animated Tensor Packets */}
-        {isAnimated && (
-          <Group>
-            <Circle
-              x={p1.x}
-              y={p1.y}
-              radius={packetRadius}
-              fill="#c5a3ff"
-              shadowColor="#c5a3ff"
-              shadowBlur={6}
-              opacity={0.9}
-            />
-            <Circle
-              x={p2.x}
-              y={p2.y}
-              radius={packetRadius}
-              fill="#c5a3ff"
-              shadowColor="#c5a3ff"
-              shadowBlur={6}
-              opacity={0.9}
-            />
-          </Group>
-        )}
+          return (
+            <Group key={`${edge.id}-${offset}`}>
+              {/* Interaction Group */}
+              <Group onClick={() => {
+                if (window.confirm('Delete connection?')) {
+                  removeEdge(edge.id);
+                }
+              }}>
+                <Path
+                  data={pathData}
+                  stroke={hasBroadcastError ? '#f28b82' : isSkipConnection ? '#e57373' : isAnimated ? '#c5a3ff' : '#8ab4f8'}
+                  strokeWidth={hasBroadcastError ? 3 : isSkipConnection ? 2.5 : isAnimated ? 4 : 2}
+                  opacity={hasBroadcastError ? 0.95 : isSkipConnection ? 0.8 : isAnimated ? 0.95 : 0.6}
+                  dash={hasBroadcastError ? [6, 4] : isSkipConnection ? [6, 4] : undefined}
+                />
+                <Path
+                  data={pathData}
+                  stroke="transparent"
+                  strokeWidth={15}
+                  className="cursor-pointer"
+                />
+              </Group>
+
+              {/* Dynamic Throughput Indicator label */}
+              {showText && (
+                <Group x={centerPoint.x - 50} y={centerPoint.y - 6}>
+                  <Rect
+                    width={100}
+                    height={12}
+                    fill="#1e1f22"
+                    opacity={0.85}
+                    cornerRadius={3}
+                    stroke={isSkipConnection ? '#e57373' : '#3f4046'}
+                    strokeWidth={0.5}
+                  />
+                  <Text
+                    text={isSkipConnection ? "Skip Connection" : sizeText}
+                    fill={isSkipConnection ? '#e57373' : '#9aa0a6'}
+                    fontSize={7}
+                    fontFamily="monospace"
+                    align="center"
+                    width={100}
+                    y={2}
+                  />
+                </Group>
+              )}
+
+              {/* Animated Tensor Packets */}
+              {isAnimated && (
+                <Group>
+                  <Circle
+                    x={p1.x}
+                    y={p1.y}
+                    radius={packetRadius}
+                    fill={isSkipConnection ? '#e57373' : '#c5a3ff'}
+                    shadowColor={isSkipConnection ? '#e57373' : '#c5a3ff'}
+                    shadowBlur={6}
+                    opacity={0.9}
+                  />
+                  <Circle
+                    x={p2.x}
+                    y={p2.y}
+                    radius={packetRadius}
+                    fill={isSkipConnection ? '#e57373' : '#c5a3ff'}
+                    shadowColor={isSkipConnection ? '#e57373' : '#c5a3ff'}
+                    shadowBlur={6}
+                    opacity={0.9}
+                  />
+                </Group>
+              )}
+            </Group>
+          );
+        })}
       </Group>
     );
   };
@@ -1262,23 +1340,62 @@ export default function NodeGraph() {
 
                 {/* Left input socket */}
                 {node.type !== 'Input' && (
-                  <Group
-                    x={0}
-                    y={NODE_HEIGHT / 2}
-                    onClick={(e) => handlePortClick(e, node.id, true)}
-                    className="cursor-pointer"
-                  >
-                    <Circle
-                      radius={6}
-                      fill="#1e1f22"
-                      stroke={isConnecting && connectingSourceId !== node.id ? '#8ab4f8' : '#3f4046'}
-                      strokeWidth={1.5}
-                    />
-                    <Circle
-                      radius={2.5}
-                      fill={isConnecting && connectingSourceId !== node.id ? '#8ab4f8' : '#9aa0a6'}
-                    />
-                  </Group>
+                  node.type === 'Attention' || node.type === 'MultiHeadAttention' ? (
+                    <Group>
+                      {['Q', 'K', 'V'].map((label, idx) => {
+                        const portY = 20 + idx * 20;
+                        return (
+                          <Group key={label} y={portY}>
+                            <Circle
+                              x={0}
+                              y={0}
+                              radius={5}
+                              fill="#1e1f22"
+                              stroke={isConnecting && connectingSourceId !== node.id ? '#8ab4f8' : '#3f4046'}
+                              strokeWidth={1.2}
+                              onClick={(e) => handlePortClick(e, node.id, true)}
+                              className="cursor-pointer"
+                            />
+                            <Circle
+                              x={0}
+                              y={0}
+                              radius={2}
+                              fill={isConnecting && connectingSourceId !== node.id ? '#8ab4f8' : '#9aa0a6'}
+                              onClick={(e) => handlePortClick(e, node.id, true)}
+                              className="cursor-pointer"
+                            />
+                            <Text
+                              x={8}
+                              y={-3.5}
+                              text={label}
+                              fill="#b39ddb"
+                              fontSize={7.5}
+                              fontStyle="bold"
+                              fontFamily="'Outfit', sans-serif"
+                            />
+                          </Group>
+                        );
+                      })}
+                    </Group>
+                  ) : (
+                    <Group
+                      x={0}
+                      y={NODE_HEIGHT / 2}
+                      onClick={(e) => handlePortClick(e, node.id, true)}
+                      className="cursor-pointer"
+                    >
+                      <Circle
+                        radius={6}
+                        fill="#1e1f22"
+                        stroke={isConnecting && connectingSourceId !== node.id ? '#8ab4f8' : '#3f4046'}
+                        strokeWidth={1.5}
+                      />
+                      <Circle
+                        radius={2.5}
+                        fill={isConnecting && connectingSourceId !== node.id ? '#8ab4f8' : '#9aa0a6'}
+                      />
+                    </Group>
+                  )
                 )}
 
                 {/* Right output socket */}
@@ -1326,7 +1443,7 @@ export default function NodeGraph() {
                   <Text
                     x={18}
                     y={48}
-                    text={`DIM:   ${node.outputShape.join(', ')}`}
+                    text={`DIM:   ${formatShapeText(node.type, node.outputShape)}`}
                     fill="#9aa0a6"
                     fontSize={9.5}
                     fontFamily="monospace"
@@ -1398,6 +1515,134 @@ export default function NodeGraph() {
                       fill="#9aa0a6"
                       fontSize={9.5}
                       fontFamily="monospace"
+                    />
+                  </Group>
+                )}
+
+                {node.type === 'MultiHeadAttention' && (
+                  <Group x={18} y={44}>
+                    <Text
+                      text={`HEADS`}
+                      fill="#5f6368"
+                      fontSize={8.5}
+                      fontFamily="'Outfit', sans-serif"
+                      fontStyle="bold"
+                    />
+                    <Text
+                      x={65}
+                      text={`${node.config.num_heads || 12}`}
+                      fill="#9aa0a6"
+                      fontSize={8.5}
+                      fontFamily="monospace"
+                    />
+                    <Text
+                      y={14}
+                      text={`DIM`}
+                      fill="#5f6368"
+                      fontSize={8.5}
+                      fontFamily="'Outfit', sans-serif"
+                      fontStyle="bold"
+                    />
+                    <Text
+                      x={65}
+                      y={14}
+                      text={`${node.config.embed_dim || 768}`}
+                      fill="#9aa0a6"
+                      fontSize={8.5}
+                      fontFamily="monospace"
+                    />
+                  </Group>
+                )}
+
+                {(node.type === 'TransformerBlock' || node.type === 'EncoderBlock' || node.type === 'DecoderBlock') && (
+                  <Group>
+                    {/* Attention block */}
+                    <Rect
+                      x={18}
+                      y={46}
+                      width={56}
+                      height={20}
+                      fill="#1e1f22"
+                      stroke="#b39ddb"
+                      strokeWidth={1}
+                      cornerRadius={4}
+                    />
+                    <Text
+                      x={18}
+                      y={52}
+                      text="Attention"
+                      fill="#b39ddb"
+                      fontSize={8}
+                      fontStyle="bold"
+                      align="center"
+                      width={56}
+                      fontFamily="'Outfit', sans-serif"
+                    />
+
+                    {/* Arrow 1 */}
+                    <Text
+                      x={75}
+                      y={52}
+                      text="→"
+                      fill="#5f6368"
+                      fontSize={10}
+                      fontStyle="bold"
+                    />
+
+                    {/* LayerNorm block */}
+                    <Rect
+                      x={86}
+                      y={46}
+                      width={56}
+                      height={20}
+                      fill="#1e1f22"
+                      stroke="#f48fb1"
+                      strokeWidth={1}
+                      cornerRadius={4}
+                    />
+                    <Text
+                      x={86}
+                      y={52}
+                      text="LayerNorm"
+                      fill="#f48fb1"
+                      fontSize={8}
+                      fontStyle="bold"
+                      align="center"
+                      width={56}
+                      fontFamily="'Outfit', sans-serif"
+                    />
+
+                    {/* Arrow 2 */}
+                    <Text
+                      x={143}
+                      y={52}
+                      text="→"
+                      fill="#5f6368"
+                      fontSize={10}
+                      fontStyle="bold"
+                    />
+
+                    {/* FeedForward block */}
+                    <Rect
+                      x={154}
+                      y={46}
+                      width={48}
+                      height={20}
+                      fill="#1e1f22"
+                      stroke="#ffe082"
+                      strokeWidth={1}
+                      cornerRadius={4}
+                    />
+                    <Text
+                      x={154}
+                      y={52}
+                      text="FeedFwd"
+                      fill="#ffe082"
+                      fontSize={8}
+                      fontStyle="bold"
+                      align="center"
+                      width={48}
+                      fontFamily="'Outfit', sans-serif"
                     />
                   </Group>
                 )}

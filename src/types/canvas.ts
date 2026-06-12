@@ -1,4 +1,27 @@
-export type NodeType = 'Input' | 'Conv2D' | 'MaxPool2D' | 'Flatten' | 'Dense' | 'BatchNorm2D' | 'Dropout';
+export type NodeType =
+  | 'Input'
+  | 'Conv2D'
+  | 'MaxPool2D'
+  | 'Flatten'
+  | 'Dense'
+  | 'BatchNorm2D'
+  | 'Dropout'
+  | 'Embedding'
+  | 'PositionalEncoding'
+  | 'LayerNorm'
+  | 'Attention'
+  | 'MultiHeadAttention'
+  | 'ResidualAdd'
+  | 'TransformerBlock'
+  | 'EncoderBlock'
+  | 'DecoderBlock'
+  | 'LSTM'
+  | 'GRU'
+  | 'BiLSTM'
+  | 'RNN'
+  | 'GCN'
+  | 'GraphSAGE'
+  | 'GAT';
 
 export interface NodeConfig {
   // Input specific
@@ -20,6 +43,19 @@ export interface NodeConfig {
 
   // Dropout specific
   rate?: number;
+
+  // NLP / Transformer specific
+  vocab_size?: number;
+  embedding_dim?: number;
+  num_heads?: number;
+  embed_dim?: number;
+  max_len?: number;
+  hidden_size?: number;
+  return_sequences?: boolean;
+  
+  // GNN specific
+  out_features?: number;
+  num_layers?: number;
 
   // Private parameters tracking flag
   _exploded?: boolean;

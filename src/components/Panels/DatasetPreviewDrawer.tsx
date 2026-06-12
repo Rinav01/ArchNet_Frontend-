@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { useRouter } from 'next/navigation';
 import { X, FileSpreadsheet, Image as ImageIcon, Binary, Calendar, Hash } from 'lucide-react';
 import DatasetStatusCard from '@/components/Datasets/DatasetStatusCard';
 import DatasetPreview from '@/components/Datasets/DatasetPreview';
@@ -22,6 +23,7 @@ interface DatasetPreviewDrawerProps {
 }
 
 export default function DatasetPreviewDrawer({ isOpen, onClose, dataset }: DatasetPreviewDrawerProps) {
+  const router = useRouter();
   if (!isOpen || !dataset) return null;
 
   const datasetTypeFormatted = (dataset.datasetType || 'RAW').toUpperCase();
@@ -72,6 +74,18 @@ export default function DatasetPreviewDrawer({ isOpen, onClose, dataset }: Datas
         <DatasetStatusCard dataset={dataset} />
 
         <DatasetPreview dataset={dataset} />
+
+        {dataset.status === 'READY' && (
+          <button
+            onClick={() => {
+              onClose();
+              router.push(`/datasets/${dataset.id}/analysis`);
+            }}
+            className="w-full flex items-center justify-center gap-1.5 py-3 bg-[#8ab4f8] hover:bg-[#a8c7fa] text-[#1e1f22] text-xs font-black uppercase tracking-wider rounded-xl transition-all cursor-pointer shadow-md mt-4"
+          >
+            <span>Run Dataset Intelligence</span>
+          </button>
+        )}
 
       </div>
 

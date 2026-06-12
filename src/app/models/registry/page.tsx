@@ -1,10 +1,12 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import MainLayout from '@/components/Layout/MainLayout';
 import { useDeploymentStore } from '@/store/deploymentStore';
 import { useProjectStore } from '@/store/projectStore';
+import { useExperimentStore, ModelVersion } from '@/store/experimentStore';
+import { toast } from '@/store/notificationStore';
 import { 
   Cpu, 
   ArrowRight, 
@@ -18,42 +20,185 @@ import {
   Play, 
   Settings, 
   CloudLightning,
-  Filter
+  Filter,
+  Folder,
+  FolderOpen,
+  ChevronRight,
+  ChevronDown,
+  FileText,
+  Activity,
+  Terminal,
+  FileCode,
+  Copy,
+  Check
 } from 'lucide-react';
+
+interface ExplorerNode {
+  id: string;
+  name: string;
+  type: 'project' | 'experiment' | 'run' | 'version';
+  children?: ExplorerNode[];
+  metadata?: any;
+}
 
 export default function ModelRegistryPage() {
   const router = useRouter();
+  
+  // Zustand Stores
   const registeredModels = useDeploymentStore((state) => state.registeredModels);
   const projects = useProjectStore((state) => state.projects);
   const setActiveProjectId = useProjectStore((state) => state.setActiveProjectId);
+  const modelVersions = useExperimentStore((state) => state.modelVersions);
+  const rollbackVersion = useExperimentStore((state) => state.rollbackVersion);
 
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedFramework, setSelectedFramework] = useState<string>('ALL');
-
-  // Filter models
-  const filteredModels = registeredModels.filter((model) => {
-    const matchesSearch = model.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                          model.version.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesFramework = selectedFramework === 'ALL' || model.framework === selectedFramework;
-    return matchesSearch && matchesFramework;
+  // UI state
+  const [selectedVersion, setSelectedVersion] = useState<ModelVersion>(modelVersions[0]);
+  const [activeTab, setActiveTab] = useState<'metrics' | 'configs' | 'weights' | 'compiler'>('metrics');
+  const [copied, setCopied] = useState(false);
+  const [expandedNodes, setExpandedNodes] = useState<Record<string, boolean>>({
+    'proj_1': true,
+    'exp_1': true,
+    'run_1': true
   });
 
-  // Framework style mapping
-  const frameworkBadges: Record<string, { bg: string; text: string; border: string; emoji: string }> = {
-    PyTorch: { bg: 'bg-[#ff6633]/10', text: 'text-[#ff6633]', border: 'border-[#ff6633]/25', emoji: '🔥' },
-    TensorFlow: { bg: 'bg-[#ff9000]/10', text: 'text-[#ff9000]', border: 'border-[#ff9000]/25', emoji: '🍊' },
-    JAX: { bg: 'bg-[#8ab4f8]/10', text: 'text-[#8ab4f8]', border: 'border-[#8ab4f8]/25', emoji: '⚡' },
-    ONNX: { bg: 'bg-[#c5a3ff]/10', text: 'text-[#c5a3ff]', border: 'border-[#c5a3ff]/25', emoji: '💎' },
+  // Hierarchical Explorer structure representation
+  const explorerTree: ExplorerNode[] = [
+    {
+      id: 'proj_1',
+      name: 'ResNet Optimization Study',
+      type: 'project',
+      children: [
+        {
+          id: 'exp_1',
+          name: 'Learning Rate Grid',
+          type: 'experiment',
+          children: [
+            {
+              id: 'run_1',
+              name: 'AdamW + Cosine Decay',
+              type: 'run',
+              children: [
+                { id: 'v_3', name: 'Model v3 (Active)', type: 'version', metadata: modelVersions[0] },
+                { id: 'v_2', name: 'Model v2', type: 'version', metadata: modelVersions[1] },
+                { id: 'v_1', name: 'Model v1', type: 'version', metadata: modelVersions[2] },
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      id: 'proj_2',
+      name: 'CIFAR-10 Transformer',
+      type: 'project',
+      children: [
+        {
+          id: 'exp_2',
+          name: 'Attention Heads Scan',
+          type: 'experiment',
+          children: [
+            {
+              id: 'run_2',
+              name: 'ViT Baseline',
+              type: 'run',
+              children: [
+                { id: 'v_vit_1', name: 'Model v1.0.0', type: 'version', metadata: { id: 'v_vit_1', versionTag: 'Model v1.0.0', commitHash: 'sha256:88fa2b1897de', accuracy: 0.934, loss: 0.112, framework: 'PyTorch', author: 'SandboxArchitect', timestamp: '3 days ago', isActive: true } }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ];
+
+  // Helper toggle explorer node
+  const toggleNode = (nodeId: string) => {
+    setExpandedNodes(prev => ({
+      ...prev,
+      [nodeId]: !prev[nodeId]
+    }));
+  };
+
+  const handleSelectVersion = (version: ModelVersion) => {
+    setSelectedVersion(version);
+    toast.info('Model Selected', `Displaying artifacts for ${version.versionTag}`);
+  };
+
+  const handleRollback = async (versionId: string) => {
+    toast.info('Rollback Initiated', `Rolling back active environment to target version...`);
+    await rollbackVersion(versionId);
+    // Find version
+    const updated = modelVersions.find(v => v.id === versionId);
+    if (updated) {
+      setSelectedVersion({ ...updated, isActive: true });
+    }
+    toast.success('Rollback Complete', `Target model version is now set to ACTIVE.`);
+  };
+
+  const handleCopyConfig = () => {
+    const configStr = JSON.stringify({
+      model_type: "ResNet",
+      epochs: 50,
+      batch_size: 64,
+      optimizer: "AdamW",
+      learning_rate: 0.0003,
+      loss: "CrossEntropyLoss",
+      framework: selectedVersion.framework
+    }, null, 2);
+    
+    navigator.clipboard.writeText(configStr);
+    setCopied(true);
+    toast.success('Config Copied', 'JSON hyperparameter configuration copied.');
+    setTimeout(() => setCopied(false), 2000);
   };
 
   // Find top accuracy
   const topAccuracy = Math.max(...registeredModels.map(m => m.accuracy), 0) * 100;
 
-  // Handle routing to project editor or deploy page
-  const handleDeployClick = (projectId: string) => {
-    // If the projectId is from our prebuilts or mock, set active and route
-    setActiveProjectId(projectId);
-    router.push(`/editor/${projectId}/deploy`);
+  // Render recursive explorer nodes
+  const renderExplorerNode = (node: ExplorerNode, depth = 0) => {
+    const isExpanded = expandedNodes[node.id];
+    const hasChildren = node.children && node.children.length > 0;
+    
+    return (
+      <div key={node.id} className="space-y-1 font-sans select-none">
+        <div 
+          onClick={() => {
+            if (hasChildren) {
+              toggleNode(node.id);
+            } else if (node.type === 'version' && node.metadata) {
+              handleSelectVersion(node.metadata);
+            }
+          }}
+          className={`flex items-center gap-2 py-2 px-3 rounded-lg text-xs cursor-pointer transition-all ${
+            node.type === 'version' && selectedVersion?.id === node.id
+              ? 'bg-[#8ab4f8]/10 text-[#8ab4f8] border-l-2 border-[#8ab4f8]'
+              : 'text-gray-400 hover:bg-[#2b2d31]/50 hover:text-white'
+          }`}
+          style={{ paddingLeft: `${depth * 14 + 12}px` }}
+        >
+          {hasChildren && (
+            <span>
+              {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+            </span>
+          )}
+          {!hasChildren && <span className="w-3"></span>}
+
+          {node.type === 'project' && <FolderOpen size={13} className="text-[#8ab4f8]" />}
+          {node.type === 'experiment' && <Folder size={13} className="text-[#c5a3ff]" />}
+          {node.type === 'run' && <Layers size={13} className="text-[#80cbc4]" />}
+          {node.type === 'version' && <GitBranch size={13} className="text-gray-500" />}
+
+          <span className="font-semibold truncate max-w-[190px]" title={node.name}>{node.name}</span>
+        </div>
+
+        {hasChildren && isExpanded && (
+          <div className="space-y-1">
+            {node.children!.map(child => renderExplorerNode(child, depth + 1))}
+          </div>
+        )}
+      </div>
+    );
   };
 
   return (
@@ -68,24 +213,17 @@ export default function ModelRegistryPage() {
               <span>Model Registry</span>
             </h1>
             <p className="text-[#9aa0a6] mt-2 text-sm font-semibold">
-              Enterprise versioned repository for audited deep learning artifacts and deployments.
+              Enterprise audited deep learning artifacts catalog, configuration versions, and Triton output streams.
             </p>
           </div>
           
           <div className="flex items-center gap-3">
             <button
-              onClick={() => router.push('/models')}
+              onClick={() => router.push('/models/generate')}
               className="flex items-center gap-2 px-4 py-2 bg-[#2b2d31] hover:bg-[#313338] text-xs font-bold text-white rounded-xl border border-[#3f4046] transition-all cursor-pointer"
             >
               <Plus size={14} />
-              <span>Import Templates</span>
-            </button>
-            <button
-              onClick={() => router.push('/')}
-              className="flex items-center gap-1.5 px-4 py-2 bg-[#8ab4f8]/10 hover:bg-[#8ab4f8]/20 text-xs font-bold text-[#8ab4f8] hover:text-[#a8c7fa] rounded-xl border border-[#8ab4f8]/20 transition-all cursor-pointer"
-            >
-              <span>Project Dashboard</span>
-              <ArrowRight size={12} />
+              <span>AI Architecture Generator</span>
             </button>
           </div>
         </div>
@@ -103,191 +241,200 @@ export default function ModelRegistryPage() {
           >
             Model Registry
           </button>
+          <button
+            onClick={() => router.push('/models/research')}
+            className="px-6 py-3 text-sm font-bold text-[#9aa0a6] hover:text-white transition-all cursor-pointer border-b-2 border-transparent"
+          >
+            Research Playground
+          </button>
         </div>
 
-        {/* Analytics Highlights Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* 2-Column Registry Panel Layout */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           
-          {/* Card 1: Total Models */}
-          <div className="bg-[#2b2d31]/50 border border-[#3f4046] p-5 rounded-2xl flex items-center justify-between shadow-lg relative overflow-hidden">
-            <div className="absolute right-0 bottom-0 translate-x-3 translate-y-3 w-16 h-16 bg-[#80cbc4]/5 rounded-full blur-xl"></div>
-            <div>
-              <span className="text-[10px] uppercase font-black tracking-wider text-gray-500">Registered Models</span>
-              <h3 className="text-3xl font-extrabold text-white mt-1">{registeredModels.length}</h3>
-              <span className="text-[9px] text-[#80cbc4] font-semibold block mt-1">Ready for production</span>
+          {/* Left Column: Model Explorer (Tree View) */}
+          <div className="lg:col-span-4 bg-[#2b2d31]/50 border border-[#3f4046] rounded-2xl shadow-xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-[#3f4046]/80 bg-[#1e1f22]/50 flex items-center justify-between">
+              <h3 className="text-xs font-black uppercase tracking-wider text-white">Model Explorer</h3>
             </div>
-            <div className="p-3 bg-[#80cbc4]/10 border border-[#80cbc4]/20 rounded-xl text-[#80cbc4]">
-              <Cpu size={20} />
+            
+            <div className="p-4 space-y-2 max-h-[500px] overflow-y-auto">
+              {explorerTree.map(node => renderExplorerNode(node))}
             </div>
           </div>
 
-          {/* Card 2: Highest Accuracy */}
-          <div className="bg-[#2b2d31]/50 border border-[#3f4046] p-5 rounded-2xl flex items-center justify-between shadow-lg relative overflow-hidden">
-            <div className="absolute right-0 bottom-0 translate-x-3 translate-y-3 w-16 h-16 bg-[#ffe082]/5 rounded-full blur-xl"></div>
-            <div>
-              <span className="text-[10px] uppercase font-black tracking-wider text-gray-500">Peak Register Accuracy</span>
-              <h3 className="text-3xl font-extrabold text-[#ffe082] mt-1">{topAccuracy.toFixed(1)}%</h3>
-              <span className="text-[9px] text-[#ffe082] font-semibold block mt-1">Benchmark baseline model</span>
-            </div>
-            <div className="p-3 bg-[#ffe082]/10 border border-[#ffe082]/20 rounded-xl text-[#ffe082]">
-              <Percent size={20} />
-            </div>
-          </div>
-
-          {/* Card 3: Framework distribution */}
-          <div className="bg-[#2b2d31]/50 border border-[#3f4046] p-5 rounded-2xl flex items-center justify-between shadow-lg relative overflow-hidden">
-            <div className="absolute right-0 bottom-0 translate-x-3 translate-y-3 w-16 h-16 bg-[#c5a3ff]/5 rounded-full blur-xl"></div>
-            <div>
-              <span className="text-[10px] uppercase font-black tracking-wider text-gray-500">Active Frameworks</span>
-              <h3 className="text-3xl font-extrabold text-white mt-1">4 Modes</h3>
-              <span className="text-[9px] text-[#c5a3ff] font-semibold block mt-1">PyTorch / TF / JAX / ONNX</span>
-            </div>
-            <div className="p-3 bg-[#c5a3ff]/10 border border-[#c5a3ff]/20 rounded-xl text-[#c5a3ff]">
-              <GitBranch size={20} />
-            </div>
-          </div>
-
-          {/* Card 4: Deployment Status */}
-          <div className="bg-[#2b2d31]/50 border border-[#3f4046] p-5 rounded-2xl flex items-center justify-between shadow-lg relative overflow-hidden">
-            <div className="absolute right-0 bottom-0 translate-x-3 translate-y-3 w-16 h-16 bg-[#8ab4f8]/5 rounded-full blur-xl"></div>
-            <div>
-              <span className="text-[10px] uppercase font-black tracking-wider text-gray-500">K8s Deployment Nodes</span>
-              <h3 className="text-3xl font-extrabold text-white mt-1">Live Endpoint</h3>
-              <span className="text-[9px] text-[#8ab4f8] font-semibold block mt-1">Simulated load balancer</span>
-            </div>
-            <div className="p-3 bg-[#8ab4f8]/10 border border-[#8ab4f8]/20 rounded-xl text-[#8ab4f8]">
-              <CloudLightning size={20} />
-            </div>
-          </div>
-        </div>
-
-        {/* Filter controls and Search Bar */}
-        <div className="flex flex-col md:flex-row items-center justify-between gap-4 bg-[#2b2d31]/30 border border-[#3f4046]/80 p-4 rounded-2xl">
-          <div className="relative w-full md:w-80">
-            <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500" />
-            <input
-              type="text"
-              placeholder="Search registry by model or version..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 bg-[#1e1f22] border border-[#3f4046] rounded-xl text-xs text-white placeholder-gray-500 focus:outline-none focus:border-[#8ab4f8] focus:ring-1 focus:ring-[#8ab4f8]/20 transition-all font-semibold"
-            />
-          </div>
-
-          <div className="flex items-center gap-2 self-end md:self-auto">
-            <div className="p-2 bg-[#1e1f22] border border-[#3f4046] rounded-xl text-gray-500">
-              <Filter size={14} />
-            </div>
-            <div className="flex gap-1.5 bg-[#1e1f22] border border-[#3f4046] p-1 rounded-xl">
-              {['ALL', 'PyTorch', 'TensorFlow', 'JAX', 'ONNX'].map((fw) => (
-                <button
-                  key={fw}
-                  onClick={() => setSelectedFramework(fw)}
-                  className={`px-3 py-1.5 text-[10px] font-black tracking-wide rounded-lg transition-all cursor-pointer ${
-                    selectedFramework === fw
-                      ? 'bg-[#8ab4f8] text-[#1e1f22]'
-                      : 'text-gray-400 hover:text-white'
-                  }`}
-                >
-                  {fw}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Main Table for Registered Models */}
-        <div className="bg-[#2b2d31]/50 border border-[#3f4046] rounded-2xl shadow-xl overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr className="border-b border-[#3f4046]/80 bg-[#1e1f22]/50 text-gray-400 font-extrabold uppercase tracking-wider text-[10px]">
-                  <th className="py-4 px-6">Model</th>
-                  <th className="py-4 px-4">Version</th>
-                  <th className="py-4 px-4">Framework</th>
-                  <th className="py-4 px-4 text-center">Accuracy</th>
-                  <th className="py-4 px-4">Created</th>
-                  <th className="py-4 px-6 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#3f4046]/50">
-                {filteredModels.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="py-12 text-center text-gray-500 font-semibold text-sm">
-                      <Cpu size={32} className="mx-auto mb-3 text-[#3f4046]" />
-                      No registered models found matching the search criteria.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredModels.map((model) => {
-                    const badge = frameworkBadges[model.framework] || { bg: 'bg-[#2b2d31]', text: 'text-white', border: 'border-[#3f4046]', emoji: '🧠' };
+          {/* Right Column: Version Timeline & Artifact Viewer */}
+          <div className="lg:col-span-8 space-y-6">
+            
+            {/* 1. Version Timeline Block */}
+            {selectedVersion && (
+              <div className="bg-[#2b2d31]/50 border border-[#3f4046] rounded-2xl p-6 shadow-xl space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-black uppercase tracking-widest text-gray-500">Version Release Timeline</h3>
+                  <span className="text-[10px] text-gray-400 font-bold font-mono">Commit: {selectedVersion.commitHash.slice(0, 15)}</span>
+                </div>
+                
+                {/* Horizontal Timeline Track */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 py-3 relative">
+                  
+                  {modelVersions.map((v, idx) => {
+                    const isCurrent = v.id === selectedVersion.id;
+                    const isActive = v.isActive;
                     return (
-                      <tr 
-                        key={model.id} 
-                        className="hover:bg-[#2b2d31]/30 transition-all font-semibold"
+                      <div 
+                        key={v.id} 
+                        onClick={() => handleSelectVersion(v)}
+                        className={`flex-1 p-3.5 border rounded-xl cursor-pointer transition-all flex flex-col justify-between h-22 relative ${
+                          isCurrent 
+                            ? 'bg-[#8ab4f8]/10 border-[#8ab4f8]' 
+                            : 'bg-[#1e1f22]/50 border-[#3f4046] hover:border-gray-500'
+                        }`}
                       >
-                        <td className="py-4 px-6">
-                          <div className="flex items-center gap-3">
-                            <div className="p-2 bg-[#8ab4f8]/10 border border-[#8ab4f8]/20 rounded-lg text-[#8ab4f8] shrink-0">
-                              <Cpu size={16} />
-                            </div>
-                            <div>
-                              <p className="font-extrabold text-white text-sm tracking-wide">{model.name}</p>
-                              <p className="text-[10px] text-gray-500 font-mono mt-0.5">ID: {model.id}</p>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="py-4 px-4 text-gray-300 font-mono">
-                          <span className="flex items-center gap-1.5">
-                            <GitBranch size={12} className="text-[#8ab4f8]" />
-                            {model.version}
-                          </span>
-                        </td>
-                        <td className="py-4 px-4">
-                          <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full border text-[10px] font-black tracking-wide ${badge.bg} ${badge.text} ${badge.border}`}>
-                            <span>{badge.emoji}</span>
-                            <span>{model.framework}</span>
-                          </span>
-                        </td>
-                        <td className="py-4 px-4 text-center font-mono">
-                          <span className="text-white font-extrabold">{(model.accuracy * 100).toFixed(2)}%</span>
-                        </td>
-                        <td className="py-4 px-4 text-gray-400 font-medium">
-                          <span className="flex items-center gap-1.5">
-                            <Calendar size={12} className="text-gray-500" />
-                            {new Date(model.createdAt).toLocaleDateString()}
-                          </span>
-                        </td>
-                        <td className="py-4 px-6 text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            <button
-                              onClick={() => handleDeployClick(model.projectId)}
-                              className="flex items-center gap-1 px-3 py-1.5 bg-[#8ab4f8] hover:bg-[#a8c7fa] text-[#1e1f22] text-[10px] font-black rounded-lg transition-all cursor-pointer"
-                              title="Go to Deployment Center"
-                            >
-                              <CloudLightning size={12} />
-                              <span>Deploy Center</span>
-                            </button>
-                            <button
-                              onClick={() => {
-                                setActiveProjectId(model.projectId);
-                                router.push(`/editor/${model.projectId}/inference`);
-                              }}
-                              className="flex items-center gap-1 px-3 py-1.5 bg-[#2b2d31] hover:bg-[#313338] border border-[#3f4046] text-[#e3e3e3] text-[10px] font-bold rounded-lg transition-all cursor-pointer"
-                              title="Test model on playground"
-                            >
-                              <Play size={10} className="text-[#80cbc4]" />
-                              <span>Playground</span>
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-black text-white font-mono">{v.versionTag}</span>
+                          {isActive && (
+                            <span className="px-1.5 py-0.5 bg-[#80cbc4]/15 border border-[#80cbc4]/35 text-[#80cbc4] text-[8px] font-black uppercase tracking-wider rounded">
+                              Active Env
+                            </span>
+                          )}
+                        </div>
+                        
+                        <div className="text-[9px] text-gray-400 mt-2 font-semibold">
+                          <p>Author: {v.author}</p>
+                          <p className="text-gray-500 mt-0.5">Acc: {(v.accuracy * 100).toFixed(1)}% • {v.timestamp}</p>
+                        </div>
+                      </div>
                     );
-                  })
+                  })}
+                  
+                </div>
+
+                {/* Rollback Trigger CTA */}
+                {!selectedVersion.isActive && (
+                  <div className="pt-2 border-t border-[#3f4046]/40 flex items-center justify-between">
+                    <span className="text-[10px] text-gray-500 font-bold">This version is offline. Rollback deployment to sync active routes.</span>
+                    <button
+                      onClick={() => handleRollback(selectedVersion.id)}
+                      className="px-3.5 py-1.5 bg-[#ffe082] hover:bg-[#ffecb3] text-[#1e1f22] text-[10px] font-black uppercase tracking-wider rounded-lg transition-all cursor-pointer"
+                    >
+                      Restore Version
+                    </button>
+                  </div>
                 )}
-              </tbody>
-            </table>
+              </div>
+            )}
+
+            {/* 2. Tabbed Artifact Viewer */}
+            <div className="bg-[#2b2d31]/50 border border-[#3f4046] rounded-2xl shadow-xl overflow-hidden">
+              
+              {/* Tabs list */}
+              <div className="flex border-b border-[#3f4046]/80 bg-[#1e1f22]/50 text-xs">
+                {(['metrics', 'configs', 'weights', 'compiler'] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    onClick={() => setActiveTab(tab)}
+                    className={`px-5 py-3.5 font-bold uppercase tracking-wider transition-all border-b-2 cursor-pointer ${
+                      activeTab === tab
+                        ? 'border-[#8ab4f8] text-[#8ab4f8]'
+                        : 'border-transparent text-gray-500 hover:text-white'
+                    }`}
+                  >
+                    {tab}
+                  </button>
+                ))}
+              </div>
+
+              {/* Tab Contents */}
+              <div className="p-6 min-h-[260px]">
+                
+                {/* Metrics tab */}
+                {activeTab === 'metrics' && selectedVersion && (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 animate-fade-in font-sans">
+                    <div className="bg-[#1e1f22]/50 border border-[#3f4046] p-4 rounded-xl space-y-1">
+                      <span className="text-[9px] uppercase font-bold text-gray-500">Audit Accuracy</span>
+                      <h4 className="text-xl font-extrabold text-white">{(selectedVersion.accuracy * 100).toFixed(2)}%</h4>
+                    </div>
+                    <div className="bg-[#1e1f22]/50 border border-[#3f4046] p-4 rounded-xl space-y-1">
+                      <span className="text-[9px] uppercase font-bold text-gray-500">Loss Entropy</span>
+                      <h4 className="text-xl font-extrabold text-[#f28b82]">{selectedVersion.loss.toFixed(4)}</h4>
+                    </div>
+                    <div className="bg-[#1e1f22]/50 border border-[#3f4046] p-4 rounded-xl space-y-1">
+                      <span className="text-[9px] uppercase font-bold text-gray-500">Compilation</span>
+                      <h4 className="text-xl font-extrabold text-[#80cbc4]">Passed</h4>
+                    </div>
+                    <div className="bg-[#1e1f22]/50 border border-[#3f4046] p-4 rounded-xl space-y-1">
+                      <span className="text-[9px] uppercase font-bold text-gray-500">Framework tag</span>
+                      <h4 className="text-xl font-extrabold text-[#c5a3ff]">{selectedVersion.framework}</h4>
+                    </div>
+                  </div>
+                )}
+
+                {/* Configs tab */}
+                {activeTab === 'configs' && (
+                  <div className="relative animate-fade-in">
+                    <button
+                      onClick={handleCopyConfig}
+                      className="absolute right-2 top-2 p-1.5 bg-[#2b2d31] hover:bg-[#313338] border border-[#3f4046] rounded-lg text-gray-400 hover:text-white transition-all cursor-pointer"
+                      title="Copy Config JSON"
+                    >
+                      {copied ? <Check size={14} className="text-[#80cbc4]" /> : <Copy size={14} />}
+                    </button>
+                    <pre className="p-4 bg-[#141517] border border-[#3f4046] rounded-xl text-[10px] text-[#ffe082] font-mono leading-relaxed overflow-x-auto select-text">
+{`{
+  "model_type": "ResNet",
+  "epochs": 50,
+  "batch_size": 64,
+  "optimizer": "AdamW",
+  "learning_rate": 0.0003,
+  "loss": "CrossEntropyLoss",
+  "framework": "${selectedVersion?.framework || 'PyTorch'}"
+}`}
+                    </pre>
+                  </div>
+                )}
+
+                {/* Weights tab */}
+                {activeTab === 'weights' && (
+                  <div className="space-y-3 font-mono text-[10px] text-gray-400 animate-fade-in select-none">
+                    <div className="p-3 bg-[#141517] border border-[#3f4046] rounded-xl space-y-2">
+                      <div className="flex justify-between border-b border-[#3f4046]/40 pb-1.5">
+                        <span className="text-white">model.backbone.stem.weight</span>
+                        <span>[64, 3, 7, 7] • float32</span>
+                      </div>
+                      <div className="flex justify-between border-b border-[#3f4046]/40 pb-1.5">
+                        <span className="text-white">model.backbone.layer1.0.conv1.weight</span>
+                        <span>[64, 64, 3, 3] • float16</span>
+                      </div>
+                      <div className="flex justify-between border-b border-[#3f4046]/40 pb-1.5">
+                        <span className="text-white">model.backbone.layer1.0.bn1.running_mean</span>
+                        <span>[64] • float32</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-white">model.classifier.weight</span>
+                        <span>[10, 512] • float32</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Compiler output tab */}
+                {activeTab === 'compiler' && (
+                  <div className="bg-[#141517] border border-[#3f4046] rounded-xl p-4 font-mono text-[9px] text-[#80cbc4] leading-relaxed max-h-56 overflow-y-auto space-y-1 select-text">
+                    <p className="text-gray-500">[2026-06-10 18:22:10] Initializing Triton GPU compilation pathway...</p>
+                    <p className="text-gray-500">[2026-06-10 18:22:11] Optimizing 14 subgraph kernels on tensor layout.</p>
+                    <p className="text-white">[INFO] Fusing Conv2D and BatchNorm kernels to speed up forward passes.</p>
+                    <p className="text-white">[INFO] Auto-generated TRT compilation cache file: /cache/resnet_fp16.engine</p>
+                    <p className="text-[#8ab4f8]">[SUCCESS] Layer parameter optimizations completed successfully.</p>
+                    <p className="text-[#ffe082]">[WARN] CUDA block size set to default auto-distribution mapping.</p>
+                    <p className="text-[#80cbc4]">[SUCCESS] Engine ready. Target inference latency: 2.14 ms.</p>
+                  </div>
+                )}
+
+              </div>
+            </div>
+
           </div>
+
         </div>
 
       </div>

@@ -98,17 +98,17 @@ export default function ValidationSidebar() {
     const outgoingEdges = store.edges.filter(e => e.source === convNodeId);
     const newX = convNode.x + 120;
     const newY = convNode.y;
-    const bnId = `node_bn_${Math.random().toString(36).substring(2, 9)}`;
 
-    await store.addNode('BatchNorm2D', newX, newY, bnId);
+    const actualBnId = await store.addNode('BatchNorm2D', newX, newY);
+    if (!actualBnId) return;
 
     if (outgoingEdges.length > 0) {
       for (const edge of outgoingEdges) {
         await store.removeEdge(edge.id);
-        await store.addEdge(bnId, edge.target);
+        await store.addEdge(actualBnId, edge.target);
       }
     }
-    await store.addEdge(convNodeId, bnId);
+    await store.addEdge(convNodeId, actualBnId);
     store.addLog('success', `AutoML Fix: Inserted BatchNorm2D after Conv2D Layer ${convNode.name}.`);
     store.triggerCompilation();
   };
@@ -399,15 +399,13 @@ export default function ValidationSidebar() {
             const midX = Math.round((src.x + tgt.x) / 2) / 20 * 20;
             const midY = Math.round((src.y + tgt.y) / 2) / 20 * 20;
             
-            // Generate a random temporary ID for the new Flatten node
-            const flattenId = `node_flatten_${Math.random().toString(36).substr(2, 9)}`;
-            
-            // Add Flatten node
-            await store.addNode('Flatten', midX, midY, flattenId);
+            // Add Flatten node and get its actual ID
+            const actualFlattenId = await store.addNode('Flatten', midX, midY);
+            if (!actualFlattenId) return;
 
             // Connect src -> Flatten -> tgt
-            await store.addEdge(src.id, flattenId);
-            await store.addEdge(flattenId, tgt.id);
+            await store.addEdge(src.id, actualFlattenId);
+            await store.addEdge(actualFlattenId, tgt.id);
 
             store.addLog('success', `AutoML Fix applied: Inserted Flatten Layer between ${src.name} and ${tgt.name}.`);
           }
@@ -474,11 +472,11 @@ export default function ValidationSidebar() {
             const midX = Math.round((targetNode.x + 180) / 20) * 20;
             const midY = Math.round((targetNode.y) / 20) * 20;
             
-            const poolId = `node_pool_${Math.random().toString(36).substr(2, 9)}`;
-            await store.addNode('MaxPool2D', midX, midY, poolId);
+            const actualPoolId = await store.addNode('MaxPool2D', midX, midY);
+            if (!actualPoolId) return;
 
-            await store.addEdge(targetNode.id, poolId);
-            await store.addEdge(poolId, outgoing.target);
+            await store.addEdge(targetNode.id, actualPoolId);
+            await store.addEdge(actualPoolId, outgoing.target);
 
             store.addLog('success', `AutoML Fix applied: Inserted MaxPool2D downsampling after ${targetNode.name}.`);
           } else {
@@ -486,9 +484,9 @@ export default function ValidationSidebar() {
             const midX = Math.round((targetNode.x + 240) / 20) * 20;
             const midY = Math.round((targetNode.y) / 20) * 20;
             
-            const poolId = `node_pool_${Math.random().toString(36).substr(2, 9)}`;
-            await store.addNode('MaxPool2D', midX, midY, poolId);
-            await store.addEdge(targetNode.id, poolId);
+            const actualPoolId = await store.addNode('MaxPool2D', midX, midY);
+            if (!actualPoolId) return;
+            await store.addEdge(targetNode.id, actualPoolId);
             
             store.addLog('success', `AutoML Fix applied: Appended MaxPool2D layer after ${targetNode.name}.`);
           }
@@ -906,10 +904,10 @@ export default function ValidationSidebar() {
             await store.removeEdge(edge.id);
             const midX = Math.round((src.x + tgt.x) / 2 / 20) * 20;
             const midY = Math.round((src.y + tgt.y) / 2 / 20) * 20;
-            const flattenId = `node_flatten_${Math.random().toString(36).substr(2, 9)}`;
-            await store.addNode('Flatten', midX, midY, flattenId);
-            await store.addEdge(src.id, flattenId);
-            await store.addEdge(flattenId, tgt.id);
+            const actualFlattenId = await store.addNode('Flatten', midX, midY);
+            if (!actualFlattenId) return;
+            await store.addEdge(src.id, actualFlattenId);
+            await store.addEdge(actualFlattenId, tgt.id);
             store.addLog('success', `AutoML Fix: Inserted Flatten between ${src.name} and ${tgt.name}.`);
           }
         };
@@ -1068,6 +1066,112 @@ export default function ValidationSidebar() {
           fixLabel: `Reduce Dense Width`,
           applyFix: () => {
             applyReduceDenseWidth(targetNode.id);
+          }
+        };
+      }
+    }
+
+    // 2a. "Parameter Explosion" -> Insert MaxPool2D Downsampling
+    if (bottleneck.includes("Parameter Explosion") || recommendedAction.toLowerCase().includes("parameter explosion")) {
+      const quotes = [...recommendedAction.matchAll(/'([^']+)'/g)].map(m => m[1]);
+      const parentLabel = quotes[2];
+      const childLabel = quotes[3];
+      const parentNode = nodes.find(n => n.name === parentLabel);
+      const childNode = nodes.find(n => n.name === childLabel);
+
+      if (parentNode && childNode) {
+        return {
+          id: `backend_param_explosion_${parentNode.id}_${childNode.id}`,
+          title: `Insert MaxPool2D Downsampling`,
+          category: 'optimization',
+          description: recommendedAction,
+          advice: `Inserting a MaxPool2D downsampler before high-dimensional linear projections reduces parameter counts and prevents out-of-memory errors.`,
+          severity: severity,
+          score: 8.5,
+          nodeId: childNode.id,
+          fixLabel: `Insert MaxPool2D`,
+          applyFix: async () => {
+            const store = useCanvasStore.getState();
+            const edge = store.edges.find(e => e.source === parentNode.id && e.target === childNode.id);
+            if (edge) {
+              await store.removeEdge(edge.id);
+              const midX = Math.round((parentNode.x + childNode.x) / 2) / 20 * 20;
+              const midY = Math.round((parentNode.y + childNode.y) / 2) / 20 * 20;
+              const actualPoolId = await store.addNode('MaxPool2D', midX, midY);
+              if (actualPoolId) {
+                await store.addEdge(parentNode.id, actualPoolId);
+                await store.addEdge(actualPoolId, childNode.id);
+                store.addLog('success', `AutoML Fix: Inserted MaxPool2D downsampler between ${parentNode.name} and ${childNode.name}.`);
+                store.triggerCompilation();
+              }
+            }
+          }
+        };
+      }
+    }
+
+    // 2b. "High Overfitting Risk" -> Insert Dropout after node
+    if (bottleneck.includes("High Overfitting Risk") || recommendedAction.toLowerCase().includes("overfitting")) {
+      const quotes = [...recommendedAction.matchAll(/'([^']+)'/g)].map(m => m[1]);
+      const targetLabel = quotes[1];
+      const targetNode = nodes.find(n => n.name === targetLabel);
+
+      if (targetNode) {
+        return {
+          id: `backend_overfitting_${targetNode.id}`,
+          title: `Add Regularizing Dropout`,
+          category: 'optimization',
+          description: recommendedAction,
+          advice: `Dropout randomly mutes activations during training, preventing neural co-adaptation and overfitting.`,
+          severity: severity,
+          score: 7.0,
+          nodeId: targetNode.id,
+          fixLabel: `Add Dropout Layer`,
+          applyFix: async () => {
+            const store = useCanvasStore.getState();
+            const outgoingEdges = store.edges.filter(e => e.source === targetNode.id);
+            const newX = targetNode.x + 120;
+            const newY = targetNode.y;
+            
+            const actualDropoutId = await store.addNode('Dropout', newX, newY);
+            if (actualDropoutId) {
+              if (outgoingEdges.length > 0) {
+                for (const edge of outgoingEdges) {
+                  await store.removeEdge(edge.id);
+                  await store.addEdge(actualDropoutId, edge.target);
+                }
+              }
+              await store.addEdge(targetNode.id, actualDropoutId);
+              store.addLog('success', `AutoML Fix: Inserted Dropout layer after ${targetNode.name}.`);
+              store.triggerCompilation();
+            }
+          }
+        };
+      }
+    }
+
+    // 2c. "Consecutive Linear Operations" -> Set activation to ReLU
+    if (bottleneck.includes("Consecutive Linear Operations") || recommendedAction.toLowerCase().includes("consecutive linear")) {
+      const quotes = [...bottleneck.matchAll(/'([^']+)'/g)].map(m => m[1]);
+      const targetLabel = quotes[0];
+      const targetNode = nodes.find(n => n.name === targetLabel);
+
+      if (targetNode) {
+        return {
+          id: `backend_linear_ops_${targetNode.id}`,
+          title: `Add Non-Linear Activation`,
+          category: 'anti-pattern',
+          description: recommendedAction,
+          advice: `Without non-linear activations, multi-layer networks collapse mathematically to a single linear layer.`,
+          severity: severity,
+          score: 8.0,
+          nodeId: targetNode.id,
+          fixLabel: `Set Activation to ReLU`,
+          applyFix: async () => {
+            const store = useCanvasStore.getState();
+            store.updateNodeConfig(targetNode.id, { activation: 'ReLU' });
+            store.addLog('success', `AutoML Fix: Set activation of layer ${targetNode.name} to ReLU.`);
+            store.triggerCompilation();
           }
         };
       }

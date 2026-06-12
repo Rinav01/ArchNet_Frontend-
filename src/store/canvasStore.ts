@@ -64,7 +64,7 @@ interface CanvasState {
   
   // Core Actions
   loadGraph: (projectId: string) => Promise<void>;
-  addNode: (type: NodeType, x: number, y: number, presetId?: string, isRemote?: boolean) => Promise<void>;
+  addNode: (type: NodeType, x: number, y: number, presetId?: string, isRemote?: boolean) => Promise<string | undefined>;
   removeNode: (id: string, isUndoRedo?: boolean, isRemote?: boolean) => Promise<void>;
   updateNodeConfig: (id: string, config: Partial<NodeConfig>, isUndoRedo?: boolean, isRemote?: boolean) => void;
   updateNodeName: (id: string, name: string, isUndoRedo?: boolean, isRemote?: boolean) => void;
@@ -211,15 +211,39 @@ export const getTopologicalOrder = (nodes: CanvasNode[], edges: CanvasEdge[]): C
     return [...orderedNodes, ...remainingNodes];
   };
 
-export const computeNodeOutputShape = (type: NodeType, inputShape: number[], config: NodeConfig): number[] => {
+/**
+ * Normalize an incoming shape by stripping the leading null/None batch dimension
+ * that the DB stores (PyTorch 4D format: [null, C, H, W] → [H, W, C] HWC-canvas format).
+ * The frontend canvas always works in [H, W, C] for spatial and [F] for flat.
+ */
+const normalizeInputShape = (shape: number[]): number[] => {
+  // 4D shape with null/undefined batch: [null, C, H, W] → convert to [H, W, C]
+  if (shape.length === 4 && (shape[0] === null || shape[0] === undefined)) {
+    const [, C, H, W] = shape as any[];
+    if (H != null && W != null && C != null) return [H, W, C];
+  }
+  // 3D shape with null/undefined batch: [null, H, W] → [H, W] (edge case)
+  if (shape.length === 3 && (shape[0] === null || shape[0] === undefined)) {
+    const [, H, W] = shape as any[];
+    if (H != null && W != null) return [H, W];
+  }
+  return shape;
+};
+
+export const computeNodeOutputShape = (type: NodeType, rawInputShape: number[], config: NodeConfig): number[] => {
     if (type === 'Input') {
       return config.dim || [224, 224, 3];
     }
-    if (inputShape.length === 0) {
+    if (rawInputShape.length === 0) {
       return [];
     }
 
+    // Normalize to strip DB-stored null batch dimension before all arithmetic
+    const inputShape = normalizeInputShape(rawInputShape);
+
     if (type === 'Conv2D') {
+      // inputShape is [H, W, C] in canvas convention
+      if (inputShape.length < 2) return inputShape;
       const [H, W] = inputShape;
       const filters = config.filters || 64;
       const kernelSize = config.kernelSize || 3;
@@ -245,7 +269,7 @@ export const computeNodeOutputShape = (type: NodeType, inputShape: number[], con
     }
 
     if (type === 'Flatten') {
-      const size = inputShape.reduce((acc, val) => acc * val, 1);
+      const size = inputShape.filter(v => v != null).reduce((acc, val) => acc * (val || 1), 1);
       return [size];
     }
 
@@ -254,8 +278,45 @@ export const computeNodeOutputShape = (type: NodeType, inputShape: number[], con
       return [units];
     }
 
-    if (type === 'BatchNorm2D' || type === 'Dropout') {
+    if (type === 'BatchNorm2D' || type === 'Dropout' || type === 'LayerNorm' || type === 'PositionalEncoding' || type === 'TransformerBlock' || type === 'EncoderBlock' || type === 'DecoderBlock') {
       return inputShape;
+    }
+
+    // ResidualAdd: output the same shape as its first parent (shapes must match — validation handles mismatches)
+    if (type === 'ResidualAdd') {
+      return inputShape;
+    }
+
+    if (type === 'Embedding') {
+      const embedDim = config.embedding_dim || 128;
+      const T = inputShape[0] || 128;
+      return [T, embedDim];
+    }
+
+    if (type === 'Attention' || type === 'MultiHeadAttention') {
+      const T = inputShape[0] || 128;
+      const embedDim = config.embed_dim || config.embedding_dim || inputShape[1] || 128;
+      return [T, embedDim];
+    }
+
+    if (type === 'RNN' || type === 'LSTM' || type === 'GRU') {
+      const T = inputShape[0] || 128;
+      const hiddenSize = config.hidden_size || config.units || 64;
+      const returnSeqs = config.return_sequences !== undefined ? config.return_sequences : true;
+      return returnSeqs ? [T, hiddenSize] : [hiddenSize];
+    }
+
+    if (type === 'BiLSTM') {
+      const T = inputShape[0] || 128;
+      const hiddenSize = config.hidden_size || config.units || 64;
+      const returnSeqs = config.return_sequences !== undefined ? config.return_sequences : true;
+      return returnSeqs ? [T, 2 * hiddenSize] : [2 * hiddenSize];
+    }
+
+    if (type === 'GCN' || type === 'GraphSAGE' || type === 'GAT') {
+      const N = inputShape[0] || 100;
+      const outFeatures = config.out_features || config.units || config.hidden_size || 64;
+      return [N, outFeatures];
     }
 
     return inputShape;
@@ -423,7 +484,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
       });
     },
 
-    addNode: async (type, x, y, presetId, isRemote = false) => {
+    addNode: async (type, x, y, presetId, isRemote = false): Promise<string | undefined> => {
       const isOnline = useProjectStore.getState().isOnline;
       const activeProjId = useProjectStore.getState().activeProjectId;
       const ws = get().ws;
@@ -452,6 +513,24 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
         config = {};
       } else if (type === 'Dropout') {
         config = { rate: 0.5 };
+      } else if (type === 'Embedding') {
+        config = { vocab_size: 10000, embedding_dim: 128 };
+      } else if (type === 'PositionalEncoding') {
+        config = { embed_dim: 128, max_len: 5000 };
+      } else if (type === 'LayerNorm') {
+        config = {};
+      } else if (type === 'Attention') {
+        config = {};
+      } else if (type === 'MultiHeadAttention') {
+        config = { num_heads: 12, embed_dim: 768 };
+      } else if (type === 'ResidualAdd') {
+        config = {};
+      } else if (type === 'TransformerBlock' || type === 'EncoderBlock' || type === 'DecoderBlock') {
+        config = { num_heads: 8, embed_dim: 128, hidden_size: 512 };
+      } else if (type === 'RNN' || type === 'LSTM' || type === 'GRU' || type === 'BiLSTM') {
+        config = { hidden_size: 128, return_sequences: true };
+      } else if (type === 'GCN' || type === 'GraphSAGE' || type === 'GAT') {
+        config = { out_features: 64 };
       }
 
       if (!isWsConnected && (!isOnline || !activeProjId)) {
@@ -484,7 +563,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
           });
         }
         setTimeout(() => get().recalculateShapes(), 50);
-        return;
+        return tempId;
       }
 
       if (isWsConnected) {
@@ -533,7 +612,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
           });
         }
         setTimeout(() => get().recalculateShapes(), 50);
-        return;
+        return generatedId;
       }
 
       // Standard GraphQL fallback path
@@ -576,10 +655,12 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
           }
 
           setTimeout(() => get().recalculateShapes(), 50);
+          return n.id;
         }
       } catch (err: any) {
         alert(`Mutation error adding block: ${err.message || err}`);
       }
+      return undefined;
     },
 
     removeNode: async (id, isUndoRedo = false, isRemote = false) => {
@@ -1035,6 +1116,36 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
       const shapesMap = new Map<string, number[]>();
       const localErrors: ValidationError[] = [];
 
+      // First pass: compute shapes in topological order so parent shapes are always computed first
+      orderedNodes.forEach(n => {
+        const incomingEdges = state.edges.filter(e => e.target === n.id);
+        let inputShape: number[] = [];
+
+        if (incomingEdges.length > 0) {
+          // Always use the first parent's output shape as the primary input shape.
+          // For ResidualAdd and other multi-input merge nodes, the broadcast
+          // conflict check in the second pass handles shape mismatch errors.
+          const parentId = incomingEdges[0].source;
+          const parentOutputShape = shapesMap.get(parentId);
+          if (parentOutputShape && parentOutputShape.length > 0) {
+            inputShape = parentOutputShape;
+          } else {
+            // If first parent shape isn't available yet, try other parents
+            for (let i = 1; i < incomingEdges.length; i++) {
+              const altShape = shapesMap.get(incomingEdges[i].source);
+              if (altShape && altShape.length > 0) {
+                inputShape = altShape;
+                break;
+              }
+            }
+          }
+        }
+
+        const outputShape = computeNodeOutputShape(n.type, inputShape, n.config);
+        shapesMap.set(n.id, outputShape);
+      });
+
+      // Second pass: map state.nodes to attach computed shapes, preserving original array order
       const computedNodes = state.nodes.map(n => {
         const incomingEdges = state.edges.filter(e => e.target === n.id);
         let inputShape: number[] = [];
@@ -1047,8 +1158,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
           }
         }
 
-        const outputShape = computeNodeOutputShape(n.type, inputShape, n.config);
-        shapesMap.set(n.id, outputShape);
+        const outputShape = shapesMap.get(n.id) || [];
 
         return {
           ...n,
@@ -2885,7 +2995,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
           { id: bn1c, type: 'BatchNorm2D', name: 'RES1_BN_C', x: 1720, y: 200, inputShape: [], outputShape: [], config: {} },
           { id: conv1short, type: 'Conv2D', name: 'RES1_CONV_SHORT', x: 1180, y: 400, inputShape: [], outputShape: [], config: { filters: 256, kernelSize: 1, stride: 1, padding: 'same', activation: 'None' } },
           { id: bn1short, type: 'BatchNorm2D', name: 'RES1_BN_SHORT', x: 1360, y: 400, inputShape: [], outputShape: [], config: {} },
-          { id: conv1merge, type: 'Conv2D', name: 'RES1_MERGE_ADD', x: 1900, y: 300, inputShape: [], outputShape: [], config: { filters: 256, kernelSize: 1, stride: 1, padding: 'same', activation: 'ReLU' } },
+          { id: conv1merge, type: 'ResidualAdd', name: 'RES1_MERGE_ADD', x: 1900, y: 300, inputShape: [], outputShape: [], config: {} },
 
           // Block 2 (Identity Block)
           { id: conv2a, type: 'Conv2D', name: 'RES2_CONV_A', x: 2080, y: 200, inputShape: [], outputShape: [], config: { filters: 64, kernelSize: 1, stride: 1, padding: 'same', activation: 'ReLU' } },
@@ -2894,7 +3004,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
           { id: bn2b, type: 'BatchNorm2D', name: 'RES2_BN_B', x: 2620, y: 200, inputShape: [], outputShape: [], config: {} },
           { id: conv2c, type: 'Conv2D', name: 'RES2_CONV_C', x: 2800, y: 200, inputShape: [], outputShape: [], config: { filters: 256, kernelSize: 1, stride: 1, padding: 'same', activation: 'None' } },
           { id: bn2c, type: 'BatchNorm2D', name: 'RES2_BN_C', x: 2980, y: 200, inputShape: [], outputShape: [], config: {} },
-          { id: conv2merge, type: 'Conv2D', name: 'RES2_MERGE_ADD', x: 3160, y: 300, inputShape: [], outputShape: [], config: { filters: 256, kernelSize: 1, stride: 1, padding: 'same', activation: 'ReLU' } },
+          { id: conv2merge, type: 'ResidualAdd', name: 'RES2_MERGE_ADD', x: 3160, y: 300, inputShape: [], outputShape: [], config: {} },
 
           // Head
           { id: poolGlobal, type: 'MaxPool2D', name: 'AVG_POOL_GLOBAL', x: 3340, y: 300, inputShape: [], outputShape: [], config: { poolSize: 7 } },
@@ -2973,14 +3083,14 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
           { id: denseQkv, type: 'Conv2D', name: 'QKV_PROJECTION', x: 820, y: 200, inputShape: [], outputShape: [], config: { filters: 768, kernelSize: 1, stride: 1, padding: 'same', activation: 'ReLU' } },
           { id: denseAttnOut, type: 'Conv2D', name: 'ATTN_OUT_PROJ', x: 1000, y: 200, inputShape: [], outputShape: [], config: { filters: 768, kernelSize: 1, stride: 1, padding: 'same', activation: 'None' } },
           { id: dropoutAttn, type: 'Dropout', name: 'ATTN_DROPOUT', x: 1180, y: 200, inputShape: [], outputShape: [], config: { rate: 0.1 } },
-          { id: attnMerge, type: 'Conv2D', name: 'ATTN_RESIDUAL_ADD', x: 1360, y: 300, inputShape: [], outputShape: [], config: { filters: 768, kernelSize: 1, stride: 1, padding: 'same', activation: 'None' } },
+          { id: attnMerge, type: 'ResidualAdd', name: 'ATTN_RESIDUAL_ADD', x: 1360, y: 300, inputShape: [], outputShape: [], config: {} },
 
           // MLP
           { id: norm2, type: 'BatchNorm2D', name: 'MLP_LAYERNORM', x: 1540, y: 200, inputShape: [], outputShape: [], config: {} },
           { id: denseMlp1, type: 'Conv2D', name: 'MLP_DENSE_HIDE', x: 1720, y: 200, inputShape: [], outputShape: [], config: { filters: 3072, kernelSize: 1, stride: 1, padding: 'same', activation: 'ReLU' } },
           { id: denseMlp2, type: 'Conv2D', name: 'MLP_DENSE_OUT', x: 1900, y: 200, inputShape: [], outputShape: [], config: { filters: 768, kernelSize: 1, stride: 1, padding: 'same', activation: 'None' } },
           { id: dropoutMlp, type: 'Dropout', name: 'MLP_DROPOUT', x: 2080, y: 200, inputShape: [], outputShape: [], config: { rate: 0.1 } },
-          { id: mlpMerge, type: 'Conv2D', name: 'MLP_RESIDUAL_ADD', x: 2260, y: 300, inputShape: [], outputShape: [], config: { filters: 768, kernelSize: 1, stride: 1, padding: 'same', activation: 'None' } },
+          { id: mlpMerge, type: 'ResidualAdd', name: 'MLP_RESIDUAL_ADD', x: 2260, y: 300, inputShape: [], outputShape: [], config: {} },
 
           // Classifier Head
           { id: headFlat, type: 'Flatten', name: 'FLATTEN_TOKENS', x: 2440, y: 300, inputShape: [], outputShape: [], config: {} },
@@ -2996,7 +3106,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
           { id: generateUUID(), source: denseQkv, target: denseAttnOut },
           { id: generateUUID(), source: denseAttnOut, target: dropoutAttn },
           { id: generateUUID(), source: dropoutAttn, target: attnMerge },
-          // Attn shortcut
+          // Attn shortcut (skip connection — same shape [14,14,768])
           { id: generateUUID(), source: patchConvId, target: attnMerge },
 
           // MLP Branch
@@ -3005,7 +3115,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
           { id: generateUUID(), source: denseMlp1, target: denseMlp2 },
           { id: generateUUID(), source: denseMlp2, target: dropoutMlp },
           { id: generateUUID(), source: dropoutMlp, target: mlpMerge },
-          // MLP shortcut
+          // MLP shortcut (skip connection — same shape [14,14,768])
           { id: generateUUID(), source: attnMerge, target: mlpMerge },
 
           // Head connections
@@ -3201,6 +3311,567 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
           { id: generateUUID(), name: 'MobileNet Attention Block', color: '#ffe082', nodeIds: [attnNorm, attnQkv, attnOut, attnDrop, attnAdd] },
           { id: generateUUID(), name: 'Classifier Head', color: '#c5a3ff', nodeIds: [poolGlobal, flatten, classifier] }
         ];
+      } else if (templateName === 'Sentiment Classifier') {
+        const inputId = generateUUID();
+        const embedId = generateUUID();
+        const lstmId = generateUUID();
+        const denseId = generateUUID();
+
+        newNodes = [
+          { id: inputId, type: 'Input', name: 'TOKEN_SEQUENCES', x: 250, y: 100, inputShape: [], outputShape: [128], config: { dim: [128], shape: [null, 128] } },
+          { id: embedId, type: 'Embedding', name: 'WORD_EMBEDDINGS', x: 250, y: 220, inputShape: [], outputShape: [], config: { vocab_size: 10000, embedding_dim: 256 } },
+          { id: lstmId, type: 'LSTM', name: 'LSTM_PROCESSING', x: 250, y: 340, inputShape: [], outputShape: [], config: { hidden_size: 128, return_sequences: false } },
+          { id: denseId, type: 'Dense', name: 'SENTIMENT_OUT', x: 250, y: 460, inputShape: [], outputShape: [], config: { units: 2 } }
+        ];
+
+        newEdges = [
+          { id: generateUUID(), source: inputId, target: embedId },
+          { id: generateUUID(), source: embedId, target: lstmId },
+          { id: generateUUID(), source: lstmId, target: denseId }
+        ];
+
+        newNodeGroups = [
+          { id: generateUUID(), name: 'NLP Sentiment Classifier', color: '#8ab4f8', nodeIds: [inputId, embedId, lstmId, denseId] }
+        ];
+
+      } else if (templateName === 'Text Classifier') {
+        const inputId = generateUUID();
+        const embedId = generateUUID();
+        const bilstmId = generateUUID();
+        const gruId = generateUUID();
+        const dense1Id = generateUUID();
+        const dense2Id = generateUUID();
+
+        newNodes = [
+          { id: inputId, type: 'Input', name: 'TEXT_TOKENS', x: 250, y: 50, inputShape: [], outputShape: [128], config: { dim: [128], shape: [null, 128] } },
+          { id: embedId, type: 'Embedding', name: 'TOKEN_EMBEDDINGS', x: 250, y: 170, inputShape: [], outputShape: [], config: { vocab_size: 10000, embedding_dim: 128 } },
+          { id: bilstmId, type: 'BiLSTM', name: 'BIDIRECTIONAL_LSTM', x: 250, y: 290, inputShape: [], outputShape: [], config: { hidden_size: 64, return_sequences: true } },
+          { id: gruId, type: 'GRU', name: 'GRU_PROCESSING', x: 250, y: 410, inputShape: [], outputShape: [], config: { hidden_size: 64, return_sequences: false } },
+          { id: dense1Id, type: 'Dense', name: 'DENSE_PROJECTION', x: 250, y: 530, inputShape: [], outputShape: [], config: { units: 64 } },
+          { id: dense2Id, type: 'Dense', name: 'TEXT_CLASSES_OUT', x: 250, y: 650, inputShape: [], outputShape: [], config: { units: 5 } }
+        ];
+
+        newEdges = [
+          { id: generateUUID(), source: inputId, target: embedId },
+          { id: generateUUID(), source: embedId, target: bilstmId },
+          { id: generateUUID(), source: bilstmId, target: gruId },
+          { id: generateUUID(), source: gruId, target: dense1Id },
+          { id: generateUUID(), source: dense1Id, target: dense2Id }
+        ];
+
+        newNodeGroups = [
+          { id: generateUUID(), name: 'Text Classifier Pipeline', color: '#ffe082', nodeIds: [inputId, embedId, bilstmId, gruId, dense1Id, dense2Id] }
+        ];
+
+      } else if (templateName === 'Seq2Seq') {
+        const inputId = generateUUID();
+        const embedId = generateUUID();
+        const encLstmId = generateUUID();
+        const decLstmId = generateUUID();
+        const denseId = generateUUID();
+
+        newNodes = [
+          { id: inputId, type: 'Input', name: 'SOURCE_SEQUENCES', x: 250, y: 100, inputShape: [], outputShape: [80], config: { dim: [80], shape: [null, 80] } },
+          { id: embedId, type: 'Embedding', name: 'SOURCE_EMBEDDINGS', x: 250, y: 220, inputShape: [], outputShape: [], config: { vocab_size: 5000, embedding_dim: 256 } },
+          { id: encLstmId, type: 'LSTM', name: 'ENCODER_LSTM', x: 250, y: 340, inputShape: [], outputShape: [], config: { hidden_size: 256, return_sequences: true } },
+          { id: decLstmId, type: 'LSTM', name: 'DECODER_LSTM', x: 250, y: 460, inputShape: [], outputShape: [], config: { hidden_size: 256, return_sequences: true } },
+          { id: denseId, type: 'Dense', name: 'TARGET_VOCAB_OUT', x: 250, y: 580, inputShape: [], outputShape: [], config: { units: 5000 } }
+        ];
+
+        newEdges = [
+          { id: generateUUID(), source: inputId, target: embedId },
+          { id: generateUUID(), source: embedId, target: encLstmId },
+          { id: generateUUID(), source: encLstmId, target: decLstmId },
+          { id: generateUUID(), source: decLstmId, target: denseId }
+        ];
+
+        newNodeGroups = [
+          { id: generateUUID(), name: 'Seq2Seq Translator', color: '#81c784', nodeIds: [inputId, embedId, encLstmId, decLstmId, denseId] }
+        ];
+
+      } else if (templateName === 'Mini-BERT') {
+        const inputId = generateUUID();
+        const embedId = generateUUID();
+        const posId = generateUUID();
+        const normId = generateUUID();
+        const enc1Id = generateUUID();
+        const enc2Id = generateUUID();
+        const denseId = generateUUID();
+
+        newNodes = [
+          { id: inputId, type: 'Input', name: 'MASKED_TOKEN_INPUTS', x: 250, y: 50, inputShape: [], outputShape: [128], config: { dim: [128], shape: [null, 128] } },
+          { id: embedId, type: 'Embedding', name: 'WORD_EMBEDDINGS', x: 250, y: 170, inputShape: [], outputShape: [], config: { vocab_size: 10000, embedding_dim: 256 } },
+          { id: posId, type: 'PositionalEncoding', name: 'POSITIONAL_ENCODINGS', x: 250, y: 290, inputShape: [], outputShape: [], config: { embedding_dim: 256, max_len: 128 } },
+          { id: normId, type: 'LayerNorm', name: 'BERT_LAYERNORM_1', x: 250, y: 410, inputShape: [], outputShape: [], config: {} },
+          { id: enc1Id, type: 'TransformerBlock', name: 'ENCODER_BLOCK_1', x: 250, y: 530, inputShape: [], outputShape: [], config: { num_heads: 4, embed_dim: 256 } },
+          { id: enc2Id, type: 'TransformerBlock', name: 'ENCODER_BLOCK_2', x: 250, y: 650, inputShape: [], outputShape: [], config: { num_heads: 4, embed_dim: 256 } },
+          { id: denseId, type: 'Dense', name: 'VOCAB_PROJECTIONS', x: 250, y: 770, inputShape: [], outputShape: [], config: { units: 10000 } }
+        ];
+
+        newEdges = [
+          { id: generateUUID(), source: inputId, target: embedId },
+          { id: generateUUID(), source: embedId, target: posId },
+          { id: generateUUID(), source: posId, target: normId },
+          { id: generateUUID(), source: normId, target: enc1Id },
+          { id: generateUUID(), source: enc1Id, target: enc2Id },
+          { id: generateUUID(), source: enc2Id, target: denseId }
+        ];
+
+        newNodeGroups = [
+          { id: generateUUID(), name: 'Mini-BERT Encoder', color: '#c5a3ff', nodeIds: [inputId, embedId, posId, normId, enc1Id, enc2Id, denseId] }
+        ];
+
+      } else if (templateName === 'Mini-GPT') {
+        const inputId = generateUUID();
+        const embedId = generateUUID();
+        const posId = generateUUID();
+        const dec1Id = generateUUID();
+        const dec2Id = generateUUID();
+        const denseId = generateUUID();
+
+        newNodes = [
+          { id: inputId, type: 'Input', name: 'CONTEXT_TOKEN_INPUTS', x: 250, y: 50, inputShape: [], outputShape: [128], config: { dim: [128], shape: [null, 128] } },
+          { id: embedId, type: 'Embedding', name: 'TOKEN_EMBEDDINGS', x: 250, y: 170, inputShape: [], outputShape: [], config: { vocab_size: 10000, embedding_dim: 256 } },
+          { id: posId, type: 'PositionalEncoding', name: 'POSITIONAL_SIGNATURES', x: 250, y: 290, inputShape: [], outputShape: [], config: { embedding_dim: 256, max_len: 128 } },
+          { id: dec1Id, type: 'TransformerBlock', name: 'DECODER_BLOCK_1', x: 250, y: 410, inputShape: [], outputShape: [], config: { num_heads: 4, embed_dim: 256 } },
+          { id: dec2Id, type: 'TransformerBlock', name: 'DECODER_BLOCK_2', x: 250, y: 530, inputShape: [], outputShape: [], config: { num_heads: 4, embed_dim: 256 } },
+          { id: denseId, type: 'Dense', name: 'NEXT_TOKEN_PREDICTIONS', x: 250, y: 650, inputShape: [], outputShape: [], config: { units: 10000 } }
+        ];
+
+        newEdges = [
+          { id: generateUUID(), source: inputId, target: embedId },
+          { id: generateUUID(), source: embedId, target: posId },
+          { id: generateUUID(), source: posId, target: dec1Id },
+          { id: generateUUID(), source: dec1Id, target: dec2Id },
+          { id: generateUUID(), source: dec2Id, target: denseId }
+        ];
+
+        newNodeGroups = [
+          { id: generateUUID(), name: 'Mini-GPT Generator', color: '#ffe082', nodeIds: [inputId, embedId, posId, dec1Id, dec2Id, denseId] }
+        ];
+
+      } else if (templateName === 'Transformer Encoder') {
+        const inputId = generateUUID();
+        const embedId = generateUUID();
+        const posId = generateUUID();
+        const stackId = generateUUID();
+        const normId = generateUUID();
+        const flatId = generateUUID();
+        const denseId = generateUUID();
+
+        newNodes = [
+          { id: inputId, type: 'Input', name: 'INPUT_SEQUENCES', x: 250, y: 50, inputShape: [], outputShape: [64], config: { dim: [64], shape: [null, 64] } },
+          { id: embedId, type: 'Embedding', name: 'SEQUENCE_EMBEDDINGS', x: 250, y: 170, inputShape: [], outputShape: [], config: { vocab_size: 1000, embedding_dim: 512 } },
+          { id: posId, type: 'PositionalEncoding', name: 'POSITIONAL_SIGNATURES', x: 250, y: 290, inputShape: [], outputShape: [], config: { embedding_dim: 512, max_len: 64 } },
+          { id: stackId, type: 'TransformerBlock', name: 'ENCODER_STACK', x: 250, y: 410, inputShape: [], outputShape: [], config: { num_heads: 8, embed_dim: 512 } },
+          { id: normId, type: 'LayerNorm', name: 'STACK_NORMALIZATION', x: 250, y: 530, inputShape: [], outputShape: [], config: {} },
+          { id: flatId, type: 'Flatten', name: 'FLATTEN_SEQUENCE', x: 250, y: 650, inputShape: [], outputShape: [], config: {} },
+          { id: denseId, type: 'Dense', name: 'CLASSIFIER_OUT', x: 250, y: 770, inputShape: [], outputShape: [], config: { units: 2 } }
+        ];
+
+        newEdges = [
+          { id: generateUUID(), source: inputId, target: embedId },
+          { id: generateUUID(), source: embedId, target: posId },
+          { id: generateUUID(), source: posId, target: stackId },
+          { id: generateUUID(), source: stackId, target: normId },
+          { id: generateUUID(), source: normId, target: flatId },
+          { id: generateUUID(), source: flatId, target: denseId }
+        ];
+
+        newNodeGroups = [
+          { id: generateUUID(), name: 'Transformer Representation Block', color: '#8ab4f8', nodeIds: [inputId, embedId, posId, stackId, normId, flatId, denseId] }
+        ];
+
+      } else if (templateName === 'ResNet18') {
+        const inputId = generateUUID();
+        const convStemId = generateUUID();
+        const bnStemId = generateUUID();
+        const poolStemId = generateUUID();
+
+        const conv1a = generateUUID();
+        const bn1a = generateUUID();
+        const conv1b = generateUUID();
+        const bn1b = generateUUID();
+        const resAdd = generateUUID();
+
+        const poolGlobal = generateUUID();
+        const flatten = generateUUID();
+        const classifier = generateUUID();
+
+        newNodes = [
+          { id: inputId, type: 'Input', name: 'INPUT_IMAGE', x: 250, y: 50, inputShape: [], outputShape: [224, 224, 3], config: { dim: [224, 224, 3] } },
+          { id: convStemId, type: 'Conv2D', name: 'CONV_STEM', x: 250, y: 170, inputShape: [], outputShape: [], config: { filters: 64, kernelSize: 7, stride: 2, padding: 'same', activation: 'None' } },
+          { id: bnStemId, type: 'BatchNorm2D', name: 'BN_STEM', x: 250, y: 290, inputShape: [], outputShape: [], config: {} },
+          { id: poolStemId, type: 'MaxPool2D', name: 'POOL_STEM', x: 250, y: 410, inputShape: [], outputShape: [], config: { poolSize: 3 } },
+
+          // Stage 1 (Residual Add Block)
+          { id: conv1a, type: 'Conv2D', name: 'RES1_CONV_A', x: 120, y: 530, inputShape: [], outputShape: [], config: { filters: 64, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' } },
+          { id: bn1a, type: 'BatchNorm2D', name: 'RES1_BN_A', x: 120, y: 650, inputShape: [], outputShape: [], config: {} },
+          { id: conv1b, type: 'Conv2D', name: 'RES1_CONV_B', x: 120, y: 770, inputShape: [], outputShape: [], config: { filters: 64, kernelSize: 3, stride: 1, padding: 'same', activation: 'None' } },
+          { id: bn1b, type: 'BatchNorm2D', name: 'RES1_BN_B', x: 120, y: 890, inputShape: [], outputShape: [], config: {} },
+          { id: resAdd, type: 'ResidualAdd', name: 'RES1_ADD_MERGE', x: 250, y: 1010, inputShape: [], outputShape: [], config: {} },
+
+          // Head
+          { id: poolGlobal, type: 'MaxPool2D', name: 'AVG_POOL_GLOBAL', x: 250, y: 1130, inputShape: [], outputShape: [], config: { poolSize: 56 } },
+          { id: flatten, type: 'Flatten', name: 'FLATTEN_HEAD', x: 250, y: 1250, inputShape: [], outputShape: [], config: {} },
+          { id: classifier, type: 'Dense', name: 'DENSE_CLASSIFIER', x: 250, y: 1370, inputShape: [], outputShape: [], config: { units: 10 } }
+        ];
+
+        newEdges = [
+          { id: generateUUID(), source: inputId, target: convStemId },
+          { id: generateUUID(), source: convStemId, target: bnStemId },
+          { id: generateUUID(), source: bnStemId, target: poolStemId },
+
+          // Branch path
+          { id: generateUUID(), source: poolStemId, target: conv1a },
+          { id: generateUUID(), source: conv1a, target: bn1a },
+          { id: generateUUID(), source: bn1a, target: conv1b },
+          { id: generateUUID(), source: conv1b, target: bn1b },
+          { id: generateUUID(), source: bn1b, target: resAdd },
+
+          // Shortcut path
+          { id: generateUUID(), source: poolStemId, target: resAdd },
+
+          // Head
+          { id: generateUUID(), source: resAdd, target: poolGlobal },
+          { id: generateUUID(), source: poolGlobal, target: flatten },
+          { id: generateUUID(), source: flatten, target: classifier }
+        ];
+
+        newNodeGroups = [
+          { id: generateUUID(), name: 'ResNet Stem', color: '#8ab4f8', nodeIds: [convStemId, bnStemId, poolStemId] },
+          { id: generateUUID(), name: 'Residual Stage 1', color: '#ffe082', nodeIds: [conv1a, bn1a, conv1b, bn1b, resAdd] },
+          { id: generateUUID(), name: 'Classification Head', color: '#c5a3ff', nodeIds: [poolGlobal, flatten, classifier] }
+        ];
+
+      } else if (templateName === 'U-Net' || templateName === 'UNet') {
+        const inputId = generateUUID();
+        const convEnc1 = generateUUID();
+        const poolEnc1 = generateUUID();
+        const convEnc2 = generateUUID();
+        const poolEnc2 = generateUUID();
+
+        const convBottle = generateUUID();
+
+        const dec2Up = generateUUID();
+        const dec2Conv1 = generateUUID();
+        const dec2Bn1 = generateUUID();
+        const dec2Conv2 = generateUUID();
+        const dec2Bn2 = generateUUID();
+
+        const dec1Up = generateUUID();
+        const dec1Conv1 = generateUUID();
+        const dec1Bn1 = generateUUID();
+        const dec1Conv2 = generateUUID();
+        const dec1Bn2 = generateUUID();
+
+        const convOut = generateUUID();
+
+        newNodes = [
+          { id: inputId, type: 'Input', name: 'INPUT_IMAGE', x: 100, y: 300, inputShape: [], outputShape: [256, 256, 3], config: { dim: [256, 256, 3] } },
+
+          // Encoder
+          { id: convEnc1, type: 'Conv2D', name: 'ENC1_CONV_64', x: 280, y: 300, inputShape: [], outputShape: [], config: { filters: 64, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' } },
+          { id: poolEnc1, type: 'MaxPool2D', name: 'ENC1_MAXPOOL', x: 460, y: 300, inputShape: [], outputShape: [], config: { poolSize: 2 } },
+          { id: convEnc2, type: 'Conv2D', name: 'ENC2_CONV_128', x: 640, y: 450, inputShape: [], outputShape: [], config: { filters: 128, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' } },
+          { id: poolEnc2, type: 'MaxPool2D', name: 'ENC2_MAXPOOL', x: 820, y: 450, inputShape: [], outputShape: [], config: { poolSize: 2 } },
+
+          // Bottleneck
+          { id: convBottle, type: 'Conv2D', name: 'BOTTLENECK_CONV', x: 1000, y: 600, inputShape: [], outputShape: [], config: { filters: 256, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' } },
+
+          // Decoder Stage 2
+          { id: dec2Up, type: 'Conv2D', name: 'DEC2_UP_CONV', x: 1180, y: 450, inputShape: [], outputShape: [], config: { filters: 128, kernelSize: 2, stride: 1, padding: 'same', activation: 'ReLU' } },
+          { id: dec2Conv1, type: 'Conv2D', name: 'DEC2_CONV_1', x: 1360, y: 450, inputShape: [], outputShape: [], config: { filters: 128, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' } },
+          { id: dec2Bn1, type: 'BatchNorm2D', name: 'DEC2_BN_1', x: 1540, y: 450, inputShape: [], outputShape: [], config: {} },
+          { id: dec2Conv2, type: 'Conv2D', name: 'DEC2_CONV_2', x: 1720, y: 450, inputShape: [], outputShape: [], config: { filters: 128, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' } },
+          { id: dec2Bn2, type: 'BatchNorm2D', name: 'DEC2_BN_2', x: 1900, y: 450, inputShape: [], outputShape: [], config: {} },
+
+          // Decoder Stage 1
+          { id: dec1Up, type: 'Conv2D', name: 'DEC1_UP_CONV', x: 2080, y: 300, inputShape: [], outputShape: [], config: { filters: 64, kernelSize: 2, stride: 1, padding: 'same', activation: 'ReLU' } },
+          { id: dec1Conv1, type: 'Conv2D', name: 'DEC1_CONV_1', x: 2260, y: 300, inputShape: [], outputShape: [], config: { filters: 64, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' } },
+          { id: dec1Bn1, type: 'BatchNorm2D', name: 'DEC1_BN_1', x: 2440, y: 300, inputShape: [], outputShape: [], config: {} },
+          { id: dec1Conv2, type: 'Conv2D', name: 'DEC1_CONV_2', x: 2620, y: 300, inputShape: [], outputShape: [], config: { filters: 64, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' } },
+          { id: dec1Bn2, type: 'BatchNorm2D', name: 'DEC1_BN_2', x: 2800, y: 300, inputShape: [], outputShape: [], config: {} },
+
+          // Head
+          { id: convOut, type: 'Conv2D', name: 'OUTPUT_SEG_MASK', x: 2980, y: 300, inputShape: [], outputShape: [], config: { filters: 2, kernelSize: 1, stride: 1, padding: 'same', activation: 'Softmax' } }
+        ];
+
+        newEdges = [
+          { id: generateUUID(), source: inputId, target: convEnc1 },
+          { id: generateUUID(), source: convEnc1, target: poolEnc1 },
+          { id: generateUUID(), source: poolEnc1, target: convEnc2 },
+          { id: generateUUID(), source: convEnc2, target: poolEnc2 },
+          { id: generateUUID(), source: poolEnc2, target: convBottle },
+
+          // Dec 2 connects bottleneck + Enc 2 skip
+          { id: generateUUID(), source: convBottle, target: dec2Up },
+          { id: generateUUID(), source: dec2Up, target: dec2Conv1 },
+          { id: generateUUID(), source: convEnc2, target: dec2Conv1 },
+          { id: generateUUID(), source: dec2Conv1, target: dec2Bn1 },
+          { id: generateUUID(), source: dec2Bn1, target: dec2Conv2 },
+          { id: generateUUID(), source: dec2Conv2, target: dec2Bn2 },
+
+          // Dec 1 connects Dec 2 + Enc 1 skip
+          { id: generateUUID(), source: dec2Bn2, target: dec1Up },
+          { id: generateUUID(), source: dec1Up, target: dec1Conv1 },
+          { id: generateUUID(), source: convEnc1, target: dec1Conv1 },
+          { id: generateUUID(), source: dec1Conv1, target: dec1Bn1 },
+          { id: generateUUID(), source: dec1Bn1, target: dec1Conv2 },
+          { id: generateUUID(), source: dec1Conv2, target: dec1Bn2 },
+
+          // Output
+          { id: generateUUID(), source: dec1Bn2, target: convOut }
+        ];
+
+        newNodeGroups = [
+          { id: generateUUID(), name: 'Encoder Stage 1', color: '#8ab4f8', nodeIds: [convEnc1, poolEnc1] },
+          { id: generateUUID(), name: 'Encoder Stage 2', color: '#ffe082', nodeIds: [convEnc2, poolEnc2] },
+          { id: generateUUID(), name: 'UNet Bottleneck', color: '#80cbc4', nodeIds: [convBottle] },
+          { id: generateUUID(), name: 'Decoder Stage 2', color: '#81c784', nodeIds: [dec2Up, dec2Conv1, dec2Bn1, dec2Conv2, dec2Bn2] },
+          { id: generateUUID(), name: 'Decoder Stage 1', color: '#c5a3ff', nodeIds: [dec1Up, dec1Conv1, dec1Bn1, dec1Conv2, dec1Bn2] },
+          { id: generateUUID(), name: 'Segmentation Head', color: '#ffe082', nodeIds: [convOut] }
+        ];
+
+      } else if (templateName === 'GCN') {
+        const featId = generateUUID();
+        const adjId = generateUUID();
+        const gcn1Id = generateUUID();
+        const gcn2Id = generateUUID();
+
+        newNodes = [
+          { id: featId, type: 'Input', name: 'NODE_FEATURES', x: 250, y: 100, inputShape: [], outputShape: [1433], config: { dim: [1433], shape: [null, 1433] } },
+          { id: adjId, type: 'Input', name: 'EDGE_INDEX', x: 250, y: 300, inputShape: [], outputShape: [2, 0], config: { dim: [2, 0], shape: [2, null] } },
+          { id: gcn1Id, type: 'GCN', name: 'GCN_LAYER_1', x: 500, y: 200, inputShape: [], outputShape: [], config: { out_features: 64 } },
+          { id: gcn2Id, type: 'GCN', name: 'GCN_LAYER_2', x: 750, y: 200, inputShape: [], outputShape: [], config: { out_features: 7 } }
+        ];
+
+        newEdges = [
+          { id: generateUUID(), source: featId, target: gcn1Id },
+          { id: generateUUID(), source: adjId, target: gcn1Id },
+          { id: generateUUID(), source: gcn1Id, target: gcn2Id },
+          { id: generateUUID(), source: adjId, target: gcn2Id }
+        ];
+
+        newNodeGroups = [
+          { id: generateUUID(), name: 'Graph Convolutional Network', color: '#81c784', nodeIds: [featId, adjId, gcn1Id, gcn2Id] }
+        ];
+
+      } else if (templateName === 'GraphSAGE') {
+        const featId = generateUUID();
+        const adjId = generateUUID();
+        const sage1Id = generateUUID();
+        const sage2Id = generateUUID();
+
+        newNodes = [
+          { id: featId, type: 'Input', name: 'NODE_FEATURES', x: 250, y: 100, inputShape: [], outputShape: [1433], config: { dim: [1433], shape: [null, 1433] } },
+          { id: adjId, type: 'Input', name: 'EDGE_INDEX', x: 250, y: 300, inputShape: [], outputShape: [2, 0], config: { dim: [2, 0], shape: [2, null] } },
+          { id: sage1Id, type: 'GraphSAGE', name: 'SAGE_LAYER_1', x: 500, y: 200, inputShape: [], outputShape: [], config: { out_features: 64 } },
+          { id: sage2Id, type: 'GraphSAGE', name: 'SAGE_LAYER_2', x: 750, y: 200, inputShape: [], outputShape: [], config: { out_features: 7 } }
+        ];
+
+        newEdges = [
+          { id: generateUUID(), source: featId, target: sage1Id },
+          { id: generateUUID(), source: adjId, target: sage1Id },
+          { id: generateUUID(), source: sage1Id, target: sage2Id },
+          { id: generateUUID(), source: adjId, target: sage2Id }
+        ];
+
+        newNodeGroups = [
+          { id: generateUUID(), name: 'SAGE Graph Network', color: '#ffe082', nodeIds: [featId, adjId, sage1Id, sage2Id] }
+        ];
+
+      } else if (templateName === 'DenseNet') {
+        // DenseNet-inspired architecture: each block's output is concatenated to ALL subsequent inputs
+        // Simulated here as dense skip connections via ResidualAdd nodes
+        const inputId = generateUUID();
+        const conv0 = generateUUID();
+        const bn0 = generateUUID();
+
+        const conv1 = generateUUID(); const bn1 = generateUUID(); const add1 = generateUUID();
+        const conv2 = generateUUID(); const bn2 = generateUUID(); const add2 = generateUUID();
+        const conv3 = generateUUID(); const bn3 = generateUUID(); const add3 = generateUUID();
+        const conv4 = generateUUID(); const bn4 = generateUUID(); const add4 = generateUUID();
+
+        const pool = generateUUID();
+        const flatten = generateUUID();
+        const dense1 = generateUUID();
+        const drop1 = generateUUID();
+        const dense2 = generateUUID();
+
+        newNodes = [
+          { id: inputId, type: 'Input', name: 'INPUT_IMAGE', x: 80, y: 300, inputShape: [], outputShape: [224, 224, 3], config: { dim: [224, 224, 3] } },
+
+          // Stem
+          { id: conv0, type: 'Conv2D', name: 'STEM_CONV', x: 260, y: 300, inputShape: [], outputShape: [], config: { filters: 64, kernelSize: 7, stride: 2, padding: 'same', activation: 'ReLU' } },
+          { id: bn0, type: 'BatchNorm2D', name: 'STEM_BN', x: 420, y: 300, inputShape: [], outputShape: [], config: {} },
+
+          // Dense Block 1 (growth rate = 32)
+          { id: conv1, type: 'Conv2D', name: 'DENSE1_CONV', x: 580, y: 200, inputShape: [], outputShape: [], config: { filters: 96, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' } },
+          { id: bn1, type: 'BatchNorm2D', name: 'DENSE1_BN', x: 740, y: 200, inputShape: [], outputShape: [], config: {} },
+          { id: add1, type: 'ResidualAdd', name: 'DENSE1_SKIP', x: 900, y: 300, inputShape: [], outputShape: [], config: {} },
+
+          // Dense Block 2
+          { id: conv2, type: 'Conv2D', name: 'DENSE2_CONV', x: 1060, y: 200, inputShape: [], outputShape: [], config: { filters: 128, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' } },
+          { id: bn2, type: 'BatchNorm2D', name: 'DENSE2_BN', x: 1220, y: 200, inputShape: [], outputShape: [], config: {} },
+          { id: add2, type: 'ResidualAdd', name: 'DENSE2_SKIP', x: 1380, y: 300, inputShape: [], outputShape: [], config: {} },
+
+          // Dense Block 3
+          { id: conv3, type: 'Conv2D', name: 'DENSE3_CONV', x: 1540, y: 200, inputShape: [], outputShape: [], config: { filters: 192, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' } },
+          { id: bn3, type: 'BatchNorm2D', name: 'DENSE3_BN', x: 1700, y: 200, inputShape: [], outputShape: [], config: {} },
+          { id: add3, type: 'ResidualAdd', name: 'DENSE3_SKIP', x: 1860, y: 300, inputShape: [], outputShape: [], config: {} },
+
+          // Dense Block 4
+          { id: conv4, type: 'Conv2D', name: 'DENSE4_CONV', x: 2020, y: 200, inputShape: [], outputShape: [], config: { filters: 256, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' } },
+          { id: bn4, type: 'BatchNorm2D', name: 'DENSE4_BN', x: 2180, y: 200, inputShape: [], outputShape: [], config: {} },
+          { id: add4, type: 'ResidualAdd', name: 'DENSE4_SKIP', x: 2340, y: 300, inputShape: [], outputShape: [], config: {} },
+
+          // Head
+          { id: pool, type: 'MaxPool2D', name: 'GLOBAL_POOL', x: 2500, y: 300, inputShape: [], outputShape: [], config: { poolSize: 7 } },
+          { id: flatten, type: 'Flatten', name: 'FLATTEN', x: 2660, y: 300, inputShape: [], outputShape: [], config: {} },
+          { id: dense1, type: 'Dense', name: 'FC_1024', x: 2820, y: 300, inputShape: [], outputShape: [], config: { units: 1024 } },
+          { id: drop1, type: 'Dropout', name: 'DROPOUT_0_5', x: 2980, y: 300, inputShape: [], outputShape: [], config: { rate: 0.5 } },
+          { id: dense2, type: 'Dense', name: 'CLASSIFIER', x: 3140, y: 300, inputShape: [], outputShape: [], config: { units: 1000 } },
+        ];
+
+        newEdges = [
+          { id: generateUUID(), source: inputId, target: conv0 },
+          { id: generateUUID(), source: conv0, target: bn0 },
+
+          // Dense Block 1
+          { id: generateUUID(), source: bn0, target: conv1 },
+          { id: generateUUID(), source: conv1, target: bn1 },
+          { id: generateUUID(), source: bn1, target: add1 },
+          { id: generateUUID(), source: bn0, target: add1 }, // skip from stem
+
+          // Dense Block 2
+          { id: generateUUID(), source: add1, target: conv2 },
+          { id: generateUUID(), source: conv2, target: bn2 },
+          { id: generateUUID(), source: bn2, target: add2 },
+          { id: generateUUID(), source: add1, target: add2 }, // skip from block 1
+
+          // Dense Block 3
+          { id: generateUUID(), source: add2, target: conv3 },
+          { id: generateUUID(), source: conv3, target: bn3 },
+          { id: generateUUID(), source: bn3, target: add3 },
+          { id: generateUUID(), source: add2, target: add3 }, // skip from block 2
+
+          // Dense Block 4
+          { id: generateUUID(), source: add3, target: conv4 },
+          { id: generateUUID(), source: conv4, target: bn4 },
+          { id: generateUUID(), source: bn4, target: add4 },
+          { id: generateUUID(), source: add3, target: add4 }, // skip from block 3
+
+          // Head
+          { id: generateUUID(), source: add4, target: pool },
+          { id: generateUUID(), source: pool, target: flatten },
+          { id: generateUUID(), source: flatten, target: dense1 },
+          { id: generateUUID(), source: dense1, target: drop1 },
+          { id: generateUUID(), source: drop1, target: dense2 },
+        ];
+
+        newNodeGroups = [
+          { id: generateUUID(), name: 'Stem', color: '#8ab4f8', nodeIds: [conv0, bn0] },
+          { id: generateUUID(), name: 'Dense Block 1', color: '#ffe082', nodeIds: [conv1, bn1, add1] },
+          { id: generateUUID(), name: 'Dense Block 2', color: '#81c784', nodeIds: [conv2, bn2, add2] },
+          { id: generateUUID(), name: 'Dense Block 3', color: '#c5a3ff', nodeIds: [conv3, bn3, add3] },
+          { id: generateUUID(), name: 'Dense Block 4', color: '#f28b82', nodeIds: [conv4, bn4, add4] },
+          { id: generateUUID(), name: 'Classification Head', color: '#80cbc4', nodeIds: [pool, flatten, dense1, drop1, dense2] },
+        ];
+
+      } else if (templateName === 'AlexNet') {
+        const inputId = generateUUID();
+        const conv1Id = generateUUID(); const pool1Id = generateUUID();
+        const conv2Id = generateUUID(); const pool2Id = generateUUID();
+        const conv3Id = generateUUID();
+        const conv4Id = generateUUID();
+        const conv5Id = generateUUID(); const pool5Id = generateUUID();
+        const flatId = generateUUID();
+        const fc1Id = generateUUID(); const drop1Id = generateUUID();
+        const fc2Id = generateUUID(); const drop2Id = generateUUID();
+        const fc3Id = generateUUID();
+
+        newNodes = [
+          { id: inputId, type: 'Input', name: 'INPUT_IMAGE', x: 80, y: 300, inputShape: [], outputShape: [224, 224, 3], config: { dim: [224, 224, 3] } },
+
+          // Conv layers
+          { id: conv1Id, type: 'Conv2D', name: 'CONV1_96', x: 260, y: 300, inputShape: [], outputShape: [], config: { filters: 96, kernelSize: 11, stride: 4, padding: 'valid', activation: 'ReLU' } },
+          { id: pool1Id, type: 'MaxPool2D', name: 'POOL1', x: 440, y: 300, inputShape: [], outputShape: [], config: { poolSize: 3 } },
+          { id: conv2Id, type: 'Conv2D', name: 'CONV2_256', x: 620, y: 300, inputShape: [], outputShape: [], config: { filters: 256, kernelSize: 5, stride: 1, padding: 'same', activation: 'ReLU' } },
+          { id: pool2Id, type: 'MaxPool2D', name: 'POOL2', x: 800, y: 300, inputShape: [], outputShape: [], config: { poolSize: 3 } },
+          { id: conv3Id, type: 'Conv2D', name: 'CONV3_384', x: 980, y: 300, inputShape: [], outputShape: [], config: { filters: 384, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' } },
+          { id: conv4Id, type: 'Conv2D', name: 'CONV4_384', x: 1160, y: 300, inputShape: [], outputShape: [], config: { filters: 384, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' } },
+          { id: conv5Id, type: 'Conv2D', name: 'CONV5_256', x: 1340, y: 300, inputShape: [], outputShape: [], config: { filters: 256, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' } },
+          { id: pool5Id, type: 'MaxPool2D', name: 'POOL5', x: 1520, y: 300, inputShape: [], outputShape: [], config: { poolSize: 3 } },
+
+          // Classifier
+          { id: flatId, type: 'Flatten', name: 'FLATTEN', x: 1700, y: 300, inputShape: [], outputShape: [], config: {} },
+          { id: fc1Id, type: 'Dense', name: 'FC1_4096', x: 1880, y: 300, inputShape: [], outputShape: [], config: { units: 4096 } },
+          { id: drop1Id, type: 'Dropout', name: 'DROPOUT_1', x: 2060, y: 300, inputShape: [], outputShape: [], config: { rate: 0.5 } },
+          { id: fc2Id, type: 'Dense', name: 'FC2_4096', x: 2240, y: 300, inputShape: [], outputShape: [], config: { units: 4096 } },
+          { id: drop2Id, type: 'Dropout', name: 'DROPOUT_2', x: 2420, y: 300, inputShape: [], outputShape: [], config: { rate: 0.5 } },
+          { id: fc3Id, type: 'Dense', name: 'CLASSIFIER_1000', x: 2600, y: 300, inputShape: [], outputShape: [], config: { units: 1000 } },
+        ];
+
+        newEdges = [
+          { id: generateUUID(), source: inputId, target: conv1Id },
+          { id: generateUUID(), source: conv1Id, target: pool1Id },
+          { id: generateUUID(), source: pool1Id, target: conv2Id },
+          { id: generateUUID(), source: conv2Id, target: pool2Id },
+          { id: generateUUID(), source: pool2Id, target: conv3Id },
+          { id: generateUUID(), source: conv3Id, target: conv4Id },
+          { id: generateUUID(), source: conv4Id, target: conv5Id },
+          { id: generateUUID(), source: conv5Id, target: pool5Id },
+          { id: generateUUID(), source: pool5Id, target: flatId },
+          { id: generateUUID(), source: flatId, target: fc1Id },
+          { id: generateUUID(), source: fc1Id, target: drop1Id },
+          { id: generateUUID(), source: drop1Id, target: fc2Id },
+          { id: generateUUID(), source: fc2Id, target: drop2Id },
+          { id: generateUUID(), source: drop2Id, target: fc3Id },
+        ];
+
+        newNodeGroups = [
+          { id: generateUUID(), name: 'Feature Extraction (Conv)', color: '#8ab4f8', nodeIds: [conv1Id, pool1Id, conv2Id, pool2Id, conv3Id, conv4Id, conv5Id, pool5Id] },
+          { id: generateUUID(), name: 'Classifier (FC)', color: '#c5a3ff', nodeIds: [flatId, fc1Id, drop1Id, fc2Id, drop2Id, fc3Id] },
+        ];
+
+      } else if (templateName === 'LeNet') {
+        const inputId = generateUUID();
+        const conv1Id = generateUUID(); const pool1Id = generateUUID();
+        const conv2Id = generateUUID(); const pool2Id = generateUUID();
+        const flatId = generateUUID();
+        const fc1Id = generateUUID();
+        const fc2Id = generateUUID();
+        const fc3Id = generateUUID();
+
+        newNodes = [
+          { id: inputId, type: 'Input', name: 'INPUT_32x32', x: 80, y: 300, inputShape: [], outputShape: [32, 32, 1], config: { dim: [32, 32, 1] } },
+          { id: conv1Id, type: 'Conv2D', name: 'C1_CONV_6', x: 260, y: 300, inputShape: [], outputShape: [], config: { filters: 6, kernelSize: 5, stride: 1, padding: 'valid', activation: 'Tanh' } },
+          { id: pool1Id, type: 'MaxPool2D', name: 'S2_AVG_POOL', x: 440, y: 300, inputShape: [], outputShape: [], config: { poolSize: 2 } },
+          { id: conv2Id, type: 'Conv2D', name: 'C3_CONV_16', x: 620, y: 300, inputShape: [], outputShape: [], config: { filters: 16, kernelSize: 5, stride: 1, padding: 'valid', activation: 'Tanh' } },
+          { id: pool2Id, type: 'MaxPool2D', name: 'S4_AVG_POOL', x: 800, y: 300, inputShape: [], outputShape: [], config: { poolSize: 2 } },
+          { id: flatId, type: 'Flatten', name: 'FLATTEN', x: 980, y: 300, inputShape: [], outputShape: [], config: {} },
+          { id: fc1Id, type: 'Dense', name: 'F5_DENSE_120', x: 1160, y: 300, inputShape: [], outputShape: [], config: { units: 120 } },
+          { id: fc2Id, type: 'Dense', name: 'F6_DENSE_84', x: 1340, y: 300, inputShape: [], outputShape: [], config: { units: 84 } },
+          { id: fc3Id, type: 'Dense', name: 'OUTPUT_10', x: 1520, y: 300, inputShape: [], outputShape: [], config: { units: 10 } },
+        ];
+
+        newEdges = [
+          { id: generateUUID(), source: inputId, target: conv1Id },
+          { id: generateUUID(), source: conv1Id, target: pool1Id },
+          { id: generateUUID(), source: pool1Id, target: conv2Id },
+          { id: generateUUID(), source: conv2Id, target: pool2Id },
+          { id: generateUUID(), source: pool2Id, target: flatId },
+          { id: generateUUID(), source: flatId, target: fc1Id },
+          { id: generateUUID(), source: fc1Id, target: fc2Id },
+          { id: generateUUID(), source: fc2Id, target: fc3Id },
+        ];
+
+        newNodeGroups = [
+          { id: generateUUID(), name: 'Feature Maps (Conv)', color: '#8ab4f8', nodeIds: [conv1Id, pool1Id, conv2Id, pool2Id] },
+          { id: generateUUID(), name: 'Classifier (FC)', color: '#c5a3ff', nodeIds: [flatId, fc1Id, fc2Id, fc3Id] },
+        ];
+
       } else {
         return;
       }

@@ -10,7 +10,13 @@ import {
   Cpu, 
   Settings, 
   HelpCircle, 
-  FileText 
+  FileText,
+  Sparkles,
+  TrendingUp,
+  ShieldCheck,
+  CloudLightning,
+  DollarSign,
+  GitBranch
 } from 'lucide-react';
 
 export default function Sidebar() {
@@ -23,6 +29,12 @@ export default function Sidebar() {
     { name: 'Datasets', icon: Database, path: '/datasets' },
     { name: 'Notebook', icon: BookOpen, path: '/notebook' },
     { name: 'Models', icon: Cpu, path: '/models' },
+    { name: 'Research', icon: Sparkles, path: '/models/research' },
+    { name: 'Experiments', icon: TrendingUp, path: '/experiments' },
+    { name: 'Registry', icon: ShieldCheck, path: '/models/registry' },
+    { name: 'Deployments', icon: CloudLightning, path: '/deployments' },
+    { name: 'Costs', icon: DollarSign, path: '/costs' },
+    { name: 'Workflows', icon: GitBranch, path: '/workflows' },
     { name: 'Settings', icon: Settings, path: '/settings' },
   ];
 

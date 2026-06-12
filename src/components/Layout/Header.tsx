@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { Search, Bell, Settings, ArrowLeft, Play, Cpu, Code, Undo, Redo, Zap, Clock, Save, Check, RotateCw, AlertTriangle, Trash2, LogOut, Layers, Sliders, Terminal, Activity, LayoutGrid, ChevronDown, GitCompare, Box, CloudLightning, GitBranch } from 'lucide-react';
+import { Search, Bell, Settings, ArrowLeft, Play, Cpu, Code, Undo, Redo, Zap, Clock, Save, Check, RotateCw, AlertTriangle, Trash2, LogOut, Layers, Sliders, Terminal, Activity, LayoutGrid, ChevronDown, GitCompare, Box, CloudLightning, GitBranch, BarChart2 } from 'lucide-react';
 import { useProjectStore } from '@/store/projectStore';
 import { toast } from '@/store/notificationStore';
 import BlockGuideModal from '@/components/Modals/BlockGuideModal';
@@ -565,6 +565,24 @@ export default function Header({
                         <span>Diagnostics & AutoML</span>
                       </div>
                       {panels.diagnostics?.isOpen && (
+                        <Check size={14} className="text-[#8ab4f8]" />
+                      )}
+                    </button>
+
+                    {/* Explainability & Analytics */}
+                    <button
+                      onClick={() => togglePanel('explainability')}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold text-left transition-all border-none bg-transparent cursor-pointer ${
+                        panels.explainability?.isOpen 
+                          ? 'text-white bg-[#8ab4f8]/10' 
+                          : 'text-[#9aa0a6] hover:text-white hover:bg-[#2b2d31]/50'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <BarChart2 size={14} className={panels.explainability?.isOpen ? 'text-[#8ab4f8]' : 'text-[#9aa0a6]'} />
+                        <span>Explainability Panel</span>
+                      </div>
+                      {panels.explainability?.isOpen && (
                         <Check size={14} className="text-[#8ab4f8]" />
                       )}
                     </button>

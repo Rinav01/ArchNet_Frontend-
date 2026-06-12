@@ -7,6 +7,7 @@ import Header from './Header';
 import ToastContainer from './ToastContainer';
 import { useProjectStore } from '@/store/projectStore';
 import { Loader2 } from 'lucide-react';
+import AICopilotPanel from '@/components/Panels/AICopilotPanel';
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -81,6 +82,7 @@ export default function MainLayout({
           {children}
         </main>
         <ToastContainer />
+        <AICopilotPanel />
       </div>
     </div>
   );
