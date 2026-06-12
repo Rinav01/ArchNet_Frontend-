@@ -497,7 +497,7 @@ export default function ExperimentsPage() {
                   <div className="bg-[#2b2d31]/40 border border-[#3f4046] p-5 rounded-2xl space-y-3 shadow-md">
                     <span className="text-[10px] uppercase font-black tracking-wider text-gray-500">Validation Accuracy (%) - Higher is Better</span>
                     <div className="h-[200px] w-full text-[10px] font-mono">
-                      <ResponsiveContainer width="100%" height="100%">
+                      <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                         <BarChart data={chartData} margin={{ top: 10, right: 10, left: -25, bottom: 5 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#2b2d31" />
                           <XAxis dataKey="name" stroke="#5f6368" />
@@ -513,7 +513,7 @@ export default function ExperimentsPage() {
                   <div className="bg-[#2b2d31]/40 border border-[#3f4046] p-5 rounded-2xl space-y-3 shadow-md">
                     <span className="text-[10px] uppercase font-black tracking-wider text-gray-500">Training Loss (Cross Entropy) - Lower is Better</span>
                     <div className="h-[200px] w-full text-[10px] font-mono">
-                      <ResponsiveContainer width="100%" height="100%">
+                      <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                         <BarChart data={chartData} margin={{ top: 10, right: 10, left: -25, bottom: 5 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#2b2d31" />
                           <XAxis dataKey="name" stroke="#5f6368" />
@@ -529,7 +529,7 @@ export default function ExperimentsPage() {
                   <div className="bg-[#2b2d31]/40 border border-[#3f4046] p-5 rounded-2xl space-y-3 shadow-md">
                     <span className="text-[10px] uppercase font-black tracking-wider text-gray-500">Latency (milliseconds) - Lower is Better</span>
                     <div className="h-[200px] w-full text-[10px] font-mono">
-                      <ResponsiveContainer width="100%" height="100%">
+                      <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                         <BarChart data={chartData} margin={{ top: 10, right: 10, left: -25, bottom: 5 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#2b2d31" />
                           <XAxis dataKey="name" stroke="#5f6368" />
@@ -545,7 +545,7 @@ export default function ExperimentsPage() {
                   <div className="bg-[#2b2d31]/40 border border-[#3f4046] p-5 rounded-2xl space-y-3 shadow-md">
                     <span className="text-[10px] uppercase font-black tracking-wider text-gray-500">Memory Allocation (MB) - Lower is Better</span>
                     <div className="h-[200px] w-full text-[10px] font-mono">
-                      <ResponsiveContainer width="100%" height="100%">
+                      <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                         <BarChart data={chartData} margin={{ top: 10, right: 10, left: -25, bottom: 5 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#2b2d31" />
                           <XAxis dataKey="name" stroke="#5f6368" />

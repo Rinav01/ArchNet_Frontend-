@@ -12,6 +12,13 @@ MLBuilder is an enterprise-grade, high-fidelity visual workspace for designing, 
 * **Multi-Framework Compiler**: Generates clean, production-grade Python classes (`class GeneratedModel`) conforming to standard PyTorch, TensorFlow, Flax (JAX), and ONNX specifications.
 * **Dataset Manager**: Ingestion area featuring drag-and-drop CSV/ZIP uploading, tabular data previews, and database processing status tracking.
 * **Training telemetry & Monitor**: stacked vertical monitor panel plotting training/validation loss and validation accuracy curves in real-time using `recharts` connected to live WebSockets.
+## 🆕 Recent Updates
+
+- Added support for a dedicated training page with updated navigation in the header.
+- Introduced `onOpenTrainingConfig` prop to Header for opening training configurations.
+- Conditional rendering of undo/redo, version history, and panels based on page context.
+- Refactored back button behavior to navigate appropriately from training pages.
+- Updated UI components to improve usability in training mode.
 
 ---
 

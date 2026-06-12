@@ -94,7 +94,7 @@ export default function InferencePlaygroundPage() {
         setLatency(mockLatency);
         
         // Push a live metrics tick to the deploy store to show load activity!
-        updateLiveMetrics(projectId);
+        updateLiveMetrics(projectId, deployment?.id || 'simulation');
       } catch (err) {
         setJsonOutput(JSON.stringify({ error: 'Inference pipeline failure execution' }, null, 2));
       } finally {
@@ -155,7 +155,7 @@ export default function InferencePlaygroundPage() {
             <div>
               <h4 className="text-sm font-bold text-[#81c784]">Container Ingress Active</h4>
               <p className="text-xs text-gray-400 font-semibold">
-                Routing payloads directly to cluster instance at <span className="font-mono text-[#8ab4f8] font-bold">{deployment.url}</span>
+                Routing payloads directly to cluster instance at <span className="font-mono text-[#8ab4f8] font-bold">{deployment.endpointUrl}</span>
               </p>
             </div>
           </div>

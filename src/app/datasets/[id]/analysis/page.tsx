@@ -250,7 +250,7 @@ export default function DatasetAnalysisPage({ params }: { params: Promise<{ id: 
                 <div className="bg-[#2b2d31]/50 border border-[#3f4046] rounded-2xl p-6 shadow-xl">
                   <h3 className="text-sm font-bold text-white mb-4">Class Cardinality Distribution</h3>
                   <div className="h-64 w-full">
-                    <ResponsiveContainer width="100%" height="100%">
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                       <BarChart data={imageClassData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#3f4046" opacity={0.3} />
                         <XAxis dataKey="name" stroke="#9aa0a6" tick={{ fontSize: 9, fontWeight: 700 }} />
@@ -279,7 +279,7 @@ export default function DatasetAnalysisPage({ params }: { params: Promise<{ id: 
                       <p className="text-[10px] text-gray-500 font-semibold mb-4">Distribution of image width vs. height bounds.</p>
                     </div>
                     <div className="h-44 w-full">
-                      <ResponsiveContainer width="100%" height="100%">
+                      <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                         <ScatterChart margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                           <CartesianGrid stroke="#3f4046" opacity={0.3} />
                           <XAxis type="number" dataKey="x" name="Width" stroke="#9aa0a6" unit="px" tick={{ fontSize: 9 }} />
@@ -343,7 +343,7 @@ export default function DatasetAnalysisPage({ params }: { params: Promise<{ id: 
                 <div className="bg-[#2b2d31]/50 border border-[#3f4046] rounded-2xl p-6 shadow-xl">
                   <h3 className="text-sm font-bold text-white mb-4">Null Value Incomplete Counts</h3>
                   <div className="h-60 w-full">
-                    <ResponsiveContainer width="100%" height="100%">
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                       <BarChart data={csvMissingData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#3f4046" opacity={0.3} />
                         <XAxis dataKey="column" stroke="#9aa0a6" tick={{ fontSize: 9 }} />
@@ -395,7 +395,7 @@ export default function DatasetAnalysisPage({ params }: { params: Promise<{ id: 
                       <p className="text-[10px] text-gray-500 font-semibold mb-4">Scatter layout mapping Room count vs. pricing anomalies.</p>
                     </div>
                     <div className="h-44 w-full">
-                      <ResponsiveContainer width="100%" height="100%">
+                      <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                         <ScatterChart margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                           <CartesianGrid stroke="#3f4046" opacity={0.3} />
                           <XAxis type="number" dataKey="x" name="Rooms" stroke="#9aa0a6" tick={{ fontSize: 9 }} />
@@ -416,7 +416,7 @@ export default function DatasetAnalysisPage({ params }: { params: Promise<{ id: 
                 <div className="bg-[#2b2d31]/50 border border-[#3f4046] rounded-2xl p-6 shadow-xl">
                   <h3 className="text-sm font-bold text-white mb-4">Target Feature Pricing Distribution</h3>
                   <div className="h-48 w-full">
-                    <ResponsiveContainer width="100%" height="100%">
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                       <AreaChart data={csvFeatureDist} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#3f4046" opacity={0.3} />
                         <XAxis dataKey="name" stroke="#9aa0a6" tick={{ fontSize: 9 }} />
@@ -455,7 +455,7 @@ export default function DatasetAnalysisPage({ params }: { params: Promise<{ id: 
                 <div className="bg-[#2b2d31]/50 border border-[#3f4046] rounded-2xl p-6 shadow-xl">
                   <h3 className="text-sm font-bold text-white mb-4">Top 8 Vocabulary Frequencies</h3>
                   <div className="h-60 w-full">
-                    <ResponsiveContainer width="100%" height="100%">
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                       <BarChart data={textTokenFrequency} margin={{ top: 10, right: 10, left: -20, bottom: 0 }} layout="vertical">
                         <CartesianGrid strokeDasharray="3 3" stroke="#3f4046" opacity={0.3} />
                         <XAxis type="number" stroke="#9aa0a6" tick={{ fontSize: 9 }} />
@@ -471,7 +471,7 @@ export default function DatasetAnalysisPage({ params }: { params: Promise<{ id: 
                 <div className="bg-[#2b2d31]/50 border border-[#3f4046] rounded-2xl p-6 shadow-xl">
                   <h3 className="text-sm font-bold text-white mb-4">Sequence Tokens Length Distribution</h3>
                   <div className="h-52 w-full">
-                    <ResponsiveContainer width="100%" height="100%">
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                       <AreaChart data={textSequenceLength} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#3f4046" opacity={0.3} />
                         <XAxis dataKey="length" stroke="#9aa0a6" tick={{ fontSize: 9 }} />

@@ -46,70 +46,157 @@ export default function ModelRegistryPage() {
   
   // Zustand Stores
   const registeredModels = useDeploymentStore((state) => state.registeredModels);
+  const loadRegistryAndDeployments = useDeploymentStore((state) => state.loadRegistryAndDeployments);
+  
   const projects = useProjectStore((state) => state.projects);
+  const activeProjectId = useProjectStore((state) => state.activeProjectId);
+  const loadProjects = useProjectStore((state) => state.loadProjects);
   const setActiveProjectId = useProjectStore((state) => state.setActiveProjectId);
+  
+  const experiments = useExperimentStore((state) => state.experiments);
   const modelVersions = useExperimentStore((state) => state.modelVersions);
+  const loadExperimentsAndVersions = useExperimentStore((state) => state.loadExperimentsAndVersions);
   const rollbackVersion = useExperimentStore((state) => state.rollbackVersion);
 
   // UI state
-  const [selectedVersion, setSelectedVersion] = useState<ModelVersion>(modelVersions[0]);
+  const [selectedVersion, setSelectedVersion] = useState<ModelVersion | null>(null);
   const [activeTab, setActiveTab] = useState<'metrics' | 'configs' | 'weights' | 'compiler'>('metrics');
   const [copied, setCopied] = useState(false);
-  const [expandedNodes, setExpandedNodes] = useState<Record<string, boolean>>({
-    'proj_1': true,
-    'exp_1': true,
-    'run_1': true
-  });
+  const [expandedNodes, setExpandedNodes] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    if (projects.length === 0) {
+      loadProjects();
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!activeProjectId && projects.length > 0) {
+      setActiveProjectId(projects[0].id);
+    }
+  }, [projects, activeProjectId]);
+
+  useEffect(() => {
+    if (activeProjectId) {
+      loadExperimentsAndVersions(activeProjectId);
+      loadRegistryAndDeployments(activeProjectId);
+    }
+  }, [activeProjectId]);
+
+  useEffect(() => {
+    if (modelVersions.length > 0) {
+      if (selectedVersion) {
+        const found = modelVersions.find(v => v.id === selectedVersion.id);
+        if (found) {
+          setSelectedVersion(found);
+          return;
+        }
+      }
+      setSelectedVersion(modelVersions[0]);
+    } else {
+      setSelectedVersion(null);
+    }
+  }, [modelVersions]);
+
+  useEffect(() => {
+    if (projects.length > 0) {
+      setExpandedNodes(prev => {
+        const next = { ...prev };
+        projects.forEach(p => {
+          if (next[p.id] === undefined) {
+            next[p.id] = true;
+          }
+        });
+        return next;
+      });
+    } else {
+      setExpandedNodes(prev => ({
+        ...prev,
+        'proj_mock': true,
+        'exp_1': true,
+        'run_1': true
+      }));
+    }
+  }, [projects]);
 
   // Hierarchical Explorer structure representation
-  const explorerTree: ExplorerNode[] = [
-    {
-      id: 'proj_1',
-      name: 'ResNet Optimization Study',
-      type: 'project',
-      children: [
+  const explorerTree: ExplorerNode[] = projects.length > 0 
+    ? projects.map(proj => {
+        const isMainProject = proj.id === activeProjectId;
+        const projectExps = isMainProject ? experiments : [];
+        return {
+          id: proj.id,
+          name: proj.name,
+          type: 'project' as const,
+          children: projectExps.map(exp => ({
+            id: exp.id,
+            name: exp.name,
+            type: 'experiment' as const,
+            children: exp.runs.map(run => {
+              const versionMeta = modelVersions.find(v => v.id === run.id);
+              const versionNode: ExplorerNode = {
+                id: run.id,
+                name: versionMeta ? `${versionMeta.versionTag}${versionMeta.isActive ? ' (Active)' : ''}` : `Model v${run.id.substring(0, 3)}`,
+                type: 'version' as const,
+                metadata: versionMeta || {
+                  id: run.id,
+                  versionTag: `Model v${run.id.substring(0, 3)}`,
+                  commitHash: `sha256:${run.id.replace(/-/g, '').substring(0, 12)}`,
+                  accuracy: run.accuracy,
+                  loss: run.loss,
+                  framework: run.framework,
+                  author: 'SandboxArchitect',
+                  timestamp: new Date(run.createdAt).toLocaleDateString(),
+                  isActive: false
+                }
+              };
+              return {
+                id: `run_${run.id}`,
+                name: run.name,
+                type: 'run' as const,
+                children: [versionNode]
+              };
+            })
+          }))
+        };
+      })
+    : [
         {
-          id: 'exp_1',
-          name: 'Learning Rate Grid',
-          type: 'experiment',
-          children: [
-            {
-              id: 'run_1',
-              name: 'AdamW + Cosine Decay',
-              type: 'run',
-              children: [
-                { id: 'v_3', name: 'Model v3 (Active)', type: 'version', metadata: modelVersions[0] },
-                { id: 'v_2', name: 'Model v2', type: 'version', metadata: modelVersions[1] },
-                { id: 'v_1', name: 'Model v1', type: 'version', metadata: modelVersions[2] },
-              ]
-            }
-          ]
+          id: 'proj_mock',
+          name: 'Offline Sandbox Project',
+          type: 'project' as const,
+          children: experiments.map(exp => ({
+            id: exp.id,
+            name: exp.name,
+            type: 'experiment' as const,
+            children: exp.runs.map(run => {
+              const versionMeta = modelVersions.find(v => v.id === run.id);
+              const versionNode: ExplorerNode = {
+                id: run.id,
+                name: versionMeta ? `${versionMeta.versionTag}${versionMeta.isActive ? ' (Active)' : ''}` : `Model v${run.id.substring(0, 3)}`,
+                type: 'version' as const,
+                metadata: versionMeta || {
+                  id: run.id,
+                  versionTag: `Model v${run.id.substring(0, 3)}`,
+                  commitHash: `sha256:${run.id.replace(/-/g, '').substring(0, 12)}`,
+                  accuracy: run.accuracy,
+                  loss: run.loss,
+                  framework: run.framework,
+                  author: 'SandboxArchitect',
+                  timestamp: new Date(run.createdAt).toLocaleDateString(),
+                  isActive: false
+                }
+              };
+              return {
+                id: `run_${run.id}`,
+                name: run.name,
+                type: 'run' as const,
+                children: [versionNode]
+              };
+            })
+          }))
         }
-      ]
-    },
-    {
-      id: 'proj_2',
-      name: 'CIFAR-10 Transformer',
-      type: 'project',
-      children: [
-        {
-          id: 'exp_2',
-          name: 'Attention Heads Scan',
-          type: 'experiment',
-          children: [
-            {
-              id: 'run_2',
-              name: 'ViT Baseline',
-              type: 'run',
-              children: [
-                { id: 'v_vit_1', name: 'Model v1.0.0', type: 'version', metadata: { id: 'v_vit_1', versionTag: 'Model v1.0.0', commitHash: 'sha256:88fa2b1897de', accuracy: 0.934, loss: 0.112, framework: 'PyTorch', author: 'SandboxArchitect', timestamp: '3 days ago', isActive: true } }
-              ]
-            }
-          ]
-        }
-      ]
-    }
-  ];
+      ];
 
   // Helper toggle explorer node
   const toggleNode = (nodeId: string) => {
@@ -143,7 +230,7 @@ export default function ModelRegistryPage() {
       optimizer: "AdamW",
       learning_rate: 0.0003,
       loss: "CrossEntropyLoss",
-      framework: selectedVersion.framework
+      framework: selectedVersion?.framework || 'PyTorch'
     }, null, 2);
     
     navigator.clipboard.writeText(configStr);
@@ -153,7 +240,10 @@ export default function ModelRegistryPage() {
   };
 
   // Find top accuracy
-  const topAccuracy = Math.max(...registeredModels.map(m => m.accuracy), 0) * 100;
+  const topAccuracy = Math.max(
+    ...registeredModels.flatMap(m => m.versions || []).map(v => v.metrics?.accuracy || 0),
+    0
+  ) * 100;
 
   // Render recursive explorer nodes
   const renderExplorerNode = (node: ExplorerNode, depth = 0) => {

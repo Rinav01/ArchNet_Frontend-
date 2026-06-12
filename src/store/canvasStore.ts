@@ -3129,95 +3129,8 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
           { id: generateUUID(), name: 'Transformer Block 1 (MLP)', color: '#81c784', nodeIds: [norm2, denseMlp1, denseMlp2, dropoutMlp, mlpMerge] },
           { id: generateUUID(), name: 'Classification Head', color: '#c5a3ff', nodeIds: [headFlat, classifier] }
         ];
-      } else if (templateName === 'UNet') {
-        const inputId = generateUUID();
-        const convEnc1 = generateUUID();
-        const poolEnc1 = generateUUID();
-        const convEnc2 = generateUUID();
-        const poolEnc2 = generateUUID();
-
-        const convBottle = generateUUID();
-
-        const dec2Up = generateUUID();
-        const dec2Conv1 = generateUUID();
-        const dec2Bn1 = generateUUID();
-        const dec2Conv2 = generateUUID();
-        const dec2Bn2 = generateUUID();
-
-        const dec1Up = generateUUID();
-        const dec1Conv1 = generateUUID();
-        const dec1Bn1 = generateUUID();
-        const dec1Conv2 = generateUUID();
-        const dec1Bn2 = generateUUID();
-
-        const convOut = generateUUID();
-
-        newNodes = [
-          { id: inputId, type: 'Input', name: 'INPUT_IMAGE', x: 100, y: 300, inputShape: [], outputShape: [256, 256, 3], config: { dim: [256, 256, 3] } },
-
-          // Encoder
-          { id: convEnc1, type: 'Conv2D', name: 'ENC1_CONV_64', x: 280, y: 300, inputShape: [], outputShape: [], config: { filters: 64, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' } },
-          { id: poolEnc1, type: 'MaxPool2D', name: 'ENC1_MAXPOOL', x: 460, y: 300, inputShape: [], outputShape: [], config: { poolSize: 1 } },
-          { id: convEnc2, type: 'Conv2D', name: 'ENC2_CONV_128', x: 640, y: 450, inputShape: [], outputShape: [], config: { filters: 128, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' } },
-          { id: poolEnc2, type: 'MaxPool2D', name: 'ENC2_MAXPOOL', x: 820, y: 450, inputShape: [], outputShape: [], config: { poolSize: 1 } },
-
-          // Bottleneck
-          { id: convBottle, type: 'Conv2D', name: 'BOTTLENECK_CONV', x: 1000, y: 600, inputShape: [], outputShape: [], config: { filters: 256, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' } },
-
-          // Decoder Stage 2
-          { id: dec2Up, type: 'Conv2D', name: 'DEC2_UP_CONV', x: 1180, y: 450, inputShape: [], outputShape: [], config: { filters: 128, kernelSize: 2, stride: 1, padding: 'same', activation: 'ReLU' } },
-          { id: dec2Conv1, type: 'Conv2D', name: 'DEC2_CONV_1', x: 1360, y: 450, inputShape: [], outputShape: [], config: { filters: 128, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' } },
-          { id: dec2Bn1, type: 'BatchNorm2D', name: 'DEC2_BN_1', x: 1540, y: 450, inputShape: [], outputShape: [], config: {} },
-          { id: dec2Conv2, type: 'Conv2D', name: 'DEC2_CONV_2', x: 1720, y: 450, inputShape: [], outputShape: [], config: { filters: 128, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' } },
-          { id: dec2Bn2, type: 'BatchNorm2D', name: 'DEC2_BN_2', x: 1900, y: 450, inputShape: [], outputShape: [], config: {} },
-
-          // Decoder Stage 1
-          { id: dec1Up, type: 'Conv2D', name: 'DEC1_UP_CONV', x: 2080, y: 300, inputShape: [], outputShape: [], config: { filters: 64, kernelSize: 2, stride: 1, padding: 'same', activation: 'ReLU' } },
-          { id: dec1Conv1, type: 'Conv2D', name: 'DEC1_CONV_1', x: 2260, y: 300, inputShape: [], outputShape: [], config: { filters: 64, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' } },
-          { id: dec1Bn1, type: 'BatchNorm2D', name: 'DEC1_BN_1', x: 2440, y: 300, inputShape: [], outputShape: [], config: {} },
-          { id: dec1Conv2, type: 'Conv2D', name: 'DEC1_CONV_2', x: 2620, y: 300, inputShape: [], outputShape: [], config: { filters: 64, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' } },
-          { id: dec1Bn2, type: 'BatchNorm2D', name: 'DEC1_BN_2', x: 2800, y: 300, inputShape: [], outputShape: [], config: {} },
-
-          // Head
-          { id: convOut, type: 'Conv2D', name: 'OUTPUT_SEG_MASK', x: 2980, y: 300, inputShape: [], outputShape: [], config: { filters: 2, kernelSize: 1, stride: 1, padding: 'same', activation: 'Softmax' } }
-        ];
-
-        newEdges = [
-          { id: generateUUID(), source: inputId, target: convEnc1 },
-          { id: generateUUID(), source: convEnc1, target: poolEnc1 },
-          { id: generateUUID(), source: poolEnc1, target: convEnc2 },
-          { id: generateUUID(), source: convEnc2, target: poolEnc2 },
-          { id: generateUUID(), source: poolEnc2, target: convBottle },
-
-          // Dec 2 connects bottleneck + Enc 2 skip
-          { id: generateUUID(), source: convBottle, target: dec2Up },
-          { id: generateUUID(), source: dec2Up, target: dec2Conv1 },
-          { id: generateUUID(), source: convEnc2, target: dec2Conv1 },
-          { id: generateUUID(), source: dec2Conv1, target: dec2Bn1 },
-          { id: generateUUID(), source: dec2Bn1, target: dec2Conv2 },
-          { id: generateUUID(), source: dec2Conv2, target: dec2Bn2 },
-
-          // Dec 1 connects Dec 2 + Enc 1 skip
-          { id: generateUUID(), source: dec2Bn2, target: dec1Up },
-          { id: generateUUID(), source: dec1Up, target: dec1Conv1 },
-          { id: generateUUID(), source: convEnc1, target: dec1Conv1 },
-          { id: generateUUID(), source: dec1Conv1, target: dec1Bn1 },
-          { id: generateUUID(), source: dec1Bn1, target: dec1Conv2 },
-          { id: generateUUID(), source: dec1Conv2, target: dec1Bn2 },
-
-          // Output
-          { id: generateUUID(), source: dec1Bn2, target: convOut }
-        ];
-
-        newNodeGroups = [
-          { id: generateUUID(), name: 'Encoder Stage 1', color: '#8ab4f8', nodeIds: [convEnc1, poolEnc1] },
-          { id: generateUUID(), name: 'Encoder Stage 2', color: '#ffe082', nodeIds: [convEnc2, poolEnc2] },
-          { id: generateUUID(), name: 'UNet Bottleneck', color: '#80cbc4', nodeIds: [convBottle] },
-          { id: generateUUID(), name: 'Decoder Stage 2', color: '#81c784', nodeIds: [dec2Up, dec2Conv1, dec2Bn1, dec2Conv2, dec2Bn2] },
-          { id: generateUUID(), name: 'Decoder Stage 1', color: '#c5a3ff', nodeIds: [dec1Up, dec1Conv1, dec1Bn1, dec1Conv2, dec1Bn2] },
-          { id: generateUUID(), name: 'Segmentation Head', color: '#ffe082', nodeIds: [convOut] }
-        ];
-      } else if (templateName === 'MobileNet') {
+      } // NOTE: UNet template is handled by the 'U-Net' || 'UNet' branch below.
+      else if (templateName === 'MobileNet') {
         const inputId = generateUUID();
         const convStemId = generateUUID();
         const bnStemId = generateUUID();
@@ -3265,7 +3178,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
           { id: attnQkv, type: 'Conv2D', name: 'ATTN_QKV_PROJ', x: 2260, y: 200, inputShape: [], outputShape: [], config: { filters: 128, kernelSize: 1, stride: 1, padding: 'same', activation: 'ReLU' } },
           { id: attnOut, type: 'Conv2D', name: 'ATTN_OUT_PROJ', x: 2440, y: 200, inputShape: [], outputShape: [], config: { filters: 128, kernelSize: 1, stride: 1, padding: 'same', activation: 'None' } },
           { id: attnDrop, type: 'Dropout', name: 'ATTN_DROPOUT', x: 2620, y: 200, inputShape: [], outputShape: [], config: { rate: 0.1 } },
-          { id: attnAdd, type: 'Conv2D', name: 'ATTN_RESIDUAL_ADD', x: 2800, y: 300, inputShape: [], outputShape: [], config: { filters: 128, kernelSize: 1, stride: 1, padding: 'same', activation: 'None' } },
+          { id: attnAdd, type: 'ResidualAdd', name: 'ATTN_RESIDUAL_ADD', x: 2800, y: 300, inputShape: [], outputShape: [], config: {} },
 
           // Head
           { id: poolGlobal, type: 'MaxPool2D', name: 'AVG_POOL_GLOBAL', x: 2980, y: 300, inputShape: [], outputShape: [], config: { poolSize: 7 } },
@@ -3401,7 +3314,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
         newNodes = [
           { id: inputId, type: 'Input', name: 'MASKED_TOKEN_INPUTS', x: 250, y: 50, inputShape: [], outputShape: [128], config: { dim: [128], shape: [null, 128] } },
           { id: embedId, type: 'Embedding', name: 'WORD_EMBEDDINGS', x: 250, y: 170, inputShape: [], outputShape: [], config: { vocab_size: 10000, embedding_dim: 256 } },
-          { id: posId, type: 'PositionalEncoding', name: 'POSITIONAL_ENCODINGS', x: 250, y: 290, inputShape: [], outputShape: [], config: { embedding_dim: 256, max_len: 128 } },
+          { id: posId, type: 'PositionalEncoding', name: 'POSITIONAL_ENCODINGS', x: 250, y: 290, inputShape: [], outputShape: [], config: { embed_dim: 256, max_len: 128 } },
           { id: normId, type: 'LayerNorm', name: 'BERT_LAYERNORM_1', x: 250, y: 410, inputShape: [], outputShape: [], config: {} },
           { id: enc1Id, type: 'TransformerBlock', name: 'ENCODER_BLOCK_1', x: 250, y: 530, inputShape: [], outputShape: [], config: { num_heads: 4, embed_dim: 256 } },
           { id: enc2Id, type: 'TransformerBlock', name: 'ENCODER_BLOCK_2', x: 250, y: 650, inputShape: [], outputShape: [], config: { num_heads: 4, embed_dim: 256 } },
@@ -3432,7 +3345,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
         newNodes = [
           { id: inputId, type: 'Input', name: 'CONTEXT_TOKEN_INPUTS', x: 250, y: 50, inputShape: [], outputShape: [128], config: { dim: [128], shape: [null, 128] } },
           { id: embedId, type: 'Embedding', name: 'TOKEN_EMBEDDINGS', x: 250, y: 170, inputShape: [], outputShape: [], config: { vocab_size: 10000, embedding_dim: 256 } },
-          { id: posId, type: 'PositionalEncoding', name: 'POSITIONAL_SIGNATURES', x: 250, y: 290, inputShape: [], outputShape: [], config: { embedding_dim: 256, max_len: 128 } },
+          { id: posId, type: 'PositionalEncoding', name: 'POSITIONAL_SIGNATURES', x: 250, y: 290, inputShape: [], outputShape: [], config: { embed_dim: 256, max_len: 128 } },
           { id: dec1Id, type: 'TransformerBlock', name: 'DECODER_BLOCK_1', x: 250, y: 410, inputShape: [], outputShape: [], config: { num_heads: 4, embed_dim: 256 } },
           { id: dec2Id, type: 'TransformerBlock', name: 'DECODER_BLOCK_2', x: 250, y: 530, inputShape: [], outputShape: [], config: { num_heads: 4, embed_dim: 256 } },
           { id: denseId, type: 'Dense', name: 'NEXT_TOKEN_PREDICTIONS', x: 250, y: 650, inputShape: [], outputShape: [], config: { units: 10000 } }
@@ -3462,7 +3375,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
         newNodes = [
           { id: inputId, type: 'Input', name: 'INPUT_SEQUENCES', x: 250, y: 50, inputShape: [], outputShape: [64], config: { dim: [64], shape: [null, 64] } },
           { id: embedId, type: 'Embedding', name: 'SEQUENCE_EMBEDDINGS', x: 250, y: 170, inputShape: [], outputShape: [], config: { vocab_size: 1000, embedding_dim: 512 } },
-          { id: posId, type: 'PositionalEncoding', name: 'POSITIONAL_SIGNATURES', x: 250, y: 290, inputShape: [], outputShape: [], config: { embedding_dim: 512, max_len: 64 } },
+          { id: posId, type: 'PositionalEncoding', name: 'POSITIONAL_SIGNATURES', x: 250, y: 290, inputShape: [], outputShape: [], config: { embed_dim: 512, max_len: 64 } },
           { id: stackId, type: 'TransformerBlock', name: 'ENCODER_STACK', x: 250, y: 410, inputShape: [], outputShape: [], config: { num_heads: 8, embed_dim: 512 } },
           { id: normId, type: 'LayerNorm', name: 'STACK_NORMALIZATION', x: 250, y: 530, inputShape: [], outputShape: [], config: {} },
           { id: flatId, type: 'Flatten', name: 'FLATTEN_SEQUENCE', x: 250, y: 650, inputShape: [], outputShape: [], config: {} },
@@ -3512,7 +3425,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
           { id: resAdd, type: 'ResidualAdd', name: 'RES1_ADD_MERGE', x: 250, y: 1010, inputShape: [], outputShape: [], config: {} },
 
           // Head
-          { id: poolGlobal, type: 'MaxPool2D', name: 'AVG_POOL_GLOBAL', x: 250, y: 1130, inputShape: [], outputShape: [], config: { poolSize: 56 } },
+          { id: poolGlobal, type: 'MaxPool2D', name: 'AVG_POOL_GLOBAL', x: 250, y: 1130, inputShape: [], outputShape: [], config: { poolSize: 7 } },
           { id: flatten, type: 'Flatten', name: 'FLATTEN_HEAD', x: 250, y: 1250, inputShape: [], outputShape: [], config: {} },
           { id: classifier, type: 'Dense', name: 'DENSE_CLASSIFIER', x: 250, y: 1370, inputShape: [], outputShape: [], config: { units: 10 } }
         ];
@@ -3706,23 +3619,23 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
           { id: conv0, type: 'Conv2D', name: 'STEM_CONV', x: 260, y: 300, inputShape: [], outputShape: [], config: { filters: 64, kernelSize: 7, stride: 2, padding: 'same', activation: 'ReLU' } },
           { id: bn0, type: 'BatchNorm2D', name: 'STEM_BN', x: 420, y: 300, inputShape: [], outputShape: [], config: {} },
 
-          // Dense Block 1 (growth rate = 32)
-          { id: conv1, type: 'Conv2D', name: 'DENSE1_CONV', x: 580, y: 200, inputShape: [], outputShape: [], config: { filters: 96, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' } },
+          // Dense Block 1 — all blocks use filters=64 to match stem output for valid ResidualAdd element-wise addition
+          { id: conv1, type: 'Conv2D', name: 'DENSE1_CONV', x: 580, y: 200, inputShape: [], outputShape: [], config: { filters: 64, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' } },
           { id: bn1, type: 'BatchNorm2D', name: 'DENSE1_BN', x: 740, y: 200, inputShape: [], outputShape: [], config: {} },
           { id: add1, type: 'ResidualAdd', name: 'DENSE1_SKIP', x: 900, y: 300, inputShape: [], outputShape: [], config: {} },
 
           // Dense Block 2
-          { id: conv2, type: 'Conv2D', name: 'DENSE2_CONV', x: 1060, y: 200, inputShape: [], outputShape: [], config: { filters: 128, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' } },
+          { id: conv2, type: 'Conv2D', name: 'DENSE2_CONV', x: 1060, y: 200, inputShape: [], outputShape: [], config: { filters: 64, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' } },
           { id: bn2, type: 'BatchNorm2D', name: 'DENSE2_BN', x: 1220, y: 200, inputShape: [], outputShape: [], config: {} },
           { id: add2, type: 'ResidualAdd', name: 'DENSE2_SKIP', x: 1380, y: 300, inputShape: [], outputShape: [], config: {} },
 
           // Dense Block 3
-          { id: conv3, type: 'Conv2D', name: 'DENSE3_CONV', x: 1540, y: 200, inputShape: [], outputShape: [], config: { filters: 192, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' } },
+          { id: conv3, type: 'Conv2D', name: 'DENSE3_CONV', x: 1540, y: 200, inputShape: [], outputShape: [], config: { filters: 64, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' } },
           { id: bn3, type: 'BatchNorm2D', name: 'DENSE3_BN', x: 1700, y: 200, inputShape: [], outputShape: [], config: {} },
           { id: add3, type: 'ResidualAdd', name: 'DENSE3_SKIP', x: 1860, y: 300, inputShape: [], outputShape: [], config: {} },
 
           // Dense Block 4
-          { id: conv4, type: 'Conv2D', name: 'DENSE4_CONV', x: 2020, y: 200, inputShape: [], outputShape: [], config: { filters: 256, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' } },
+          { id: conv4, type: 'Conv2D', name: 'DENSE4_CONV', x: 2020, y: 200, inputShape: [], outputShape: [], config: { filters: 64, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' } },
           { id: bn4, type: 'BatchNorm2D', name: 'DENSE4_BN', x: 2180, y: 200, inputShape: [], outputShape: [], config: {} },
           { id: add4, type: 'ResidualAdd', name: 'DENSE4_SKIP', x: 2340, y: 300, inputShape: [], outputShape: [], config: {} },
 
@@ -3998,6 +3911,31 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
                   toNodeId: newTarget
                 });
               }
+            }
+
+            // Map old client IDs to new database UUIDs in nodeGroups
+            const updatedNodeGroups = newNodeGroups.map(group => ({
+              ...group,
+              nodeIds: group.nodeIds.map(oldId => oldToNewIdMap.get(oldId) || oldId)
+            }));
+
+            // Save the updated draft to localStorage immediately so loadGraph loads it correctly
+            if (typeof window !== 'undefined') {
+              const mappedNodes = newNodes.map(n => ({
+                ...n,
+                id: oldToNewIdMap.get(n.id) || n.id
+              }));
+              const mappedEdges = newEdges.map(e => ({
+                ...e,
+                source: oldToNewIdMap.get(e.source) || e.source,
+                target: oldToNewIdMap.get(e.target) || e.target
+              }));
+              const draftData = JSON.stringify({
+                nodes: mappedNodes,
+                edges: mappedEdges,
+                nodeGroups: updatedNodeGroups
+              });
+              localStorage.setItem(`mlbuilder_project_draft_${activeProjId}`, draftData);
             }
 
             // Since GraphQL mutations generated new database IDs, reload graph to align client IDs

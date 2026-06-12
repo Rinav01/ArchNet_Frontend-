@@ -295,5 +295,211 @@ export const RECOMMEND_ARCHITECTURE = `
   }
 `;
 
+export const GET_DEPLOYMENTS = `
+  query GetDeployments($projectId: ID!) {
+    deployments(projectId: $projectId) {
+      id
+      projectId
+      modelArtifactId
+      target
+      status
+      endpointUrl
+      createdAt
+      updatedAt
+    }
+  }
+`;
+
+export const DEPLOY_MODEL = `
+  mutation DeployModel($artifactId: ID!, $target: String!) {
+    deployModel(artifactId: $artifactId, target: $target) {
+      id
+      projectId
+      modelArtifactId
+      target
+      status
+      endpointUrl
+      createdAt
+    }
+  }
+`;
+
+export const REGISTER_MODEL = `
+  mutation RegisterModel($projectId: ID!, $name: String!, $description: String) {
+    registerModel(projectId: $projectId, name: $name, description: $description) {
+      id
+      projectId
+      name
+      description
+      createdAt
+    }
+  }
+`;
+
+export const GET_EXPERIMENTS = `
+  query GetExperiments($projectId: ID!) {
+    experiments(projectId: $projectId) {
+      id
+      projectId
+      name
+      description
+      createdAt
+      updatedAt
+      trainingRuns {
+        id
+        project_id
+        trainingJobId
+        accuracy
+        loss
+        metricsJson
+        configJson
+        createdAt
+      }
+    }
+  }
+`;
+
+export const CREATE_EXPERIMENT = `
+  mutation CreateExperiment($projectId: ID!, $name: String!, $description: String) {
+    createExperiment(projectId: $projectId, name: $name, description: $description) {
+      id
+      projectId
+      name
+      description
+      createdAt
+    }
+  }
+`;
+
+export const ADD_RUN_TO_EXPERIMENT = `
+  mutation AddRunToExperiment($experimentId: ID!, $runId: ID!) {
+    addRunToExperiment(experimentId: $experimentId, runId: $runId) {
+      id
+      projectId
+      trainingJobId
+      accuracy
+      loss
+    }
+  }
+`;
+
+export const GET_DEPLOYMENT_METRICS = `
+  query GetDeploymentMetrics($deploymentId: ID!) {
+    deploymentMetrics(deploymentId: $deploymentId) {
+      id
+      timestamp
+      requestsCount
+      latencyMs
+      errorCount
+      memoryMb
+      gpuUsagePct
+    }
+  }
+`;
+
+export const GET_WORKFLOWS = `
+  query GetWorkflows($projectId: ID) {
+    workflows(projectId: $projectId) {
+      id
+      projectId
+      name
+      triggerEvent
+      actionType
+      config
+      isActive
+      createdAt
+    }
+  }
+`;
+
+export const CREATE_WORKFLOW = `
+  mutation CreateWorkflow($projectId: ID, $name: String!, $triggerEvent: String!, $actionType: String!, $config: JSON!) {
+    createWorkflow(projectId: $projectId, name: $name, triggerEvent: $triggerEvent, actionType: $actionType, config: $config) {
+      id
+      projectId
+      name
+      triggerEvent
+      actionType
+      config
+      isActive
+    }
+  }
+`;
+
+export const DELETE_WORKFLOW = `
+  mutation DeleteWorkflow($workflowId: ID!) {
+    deleteWorkflow(workflowId: $workflowId)
+  }
+`;
+
+export const ESTIMATE_COSTS = `
+  query EstimateCosts($projectId: ID!, $datasetId: ID, $epochs: Int, $gpuType: String) {
+    estimateCosts(projectId: $projectId, datasetId: $datasetId, epochs: $epochs, gpuType: $gpuType) {
+      trainingCost
+      inferenceCostPerMillion
+      gpuHourlyCost
+      storageMonthlyCost
+      estimatedTrainingTimeHours
+      estimatedInferenceLatencyMs
+    }
+  }
+`;
+
+export const EXECUTE_NOTEBOOK_CELL = `
+  mutation ExecuteNotebookCell($projectId: ID!, $code: String!) {
+    executeNotebookCell(projectId: $projectId, code: $code) {
+      success
+      stdout
+      stderr
+      executionTimeMs
+    }
+  }
+`;
+
+export const GET_REGISTERED_MODELS = `
+  query GetRegisteredModels($projectId: ID!) {
+    registeredModels(projectId: $projectId) {
+      id
+      projectId
+      name
+      description
+      createdAt
+      versions {
+        id
+        version
+        description
+        status
+        modelArtifactId
+        metrics
+        config
+        compilerOutput
+        createdAt
+      }
+    }
+  }
+`;
+
+export const PROMOTE_MODEL_VERSION = `
+  mutation PromoteModelVersion($versionId: ID!, $status: String!) {
+    promoteModelVersion(versionId: $versionId, status: $status) {
+      id
+      modelId
+      version
+      status
+    }
+  }
+`;
+
+export const GET_TRAINING_RUNS = `
+  query GetTrainingRuns($projectId: ID!) {
+    trainingRuns(projectId: $projectId) {
+      id
+      accuracy
+      loss
+      createdAt
+    }
+  }
+`;
+
 
 

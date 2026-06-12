@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { isBackendOnline, graphqlRequest, GET_TRAINING_RUNS } from '@/lib/graphql/client';
 
 export interface MetricPoint {
   epoch: number;
@@ -28,6 +29,7 @@ interface TrainingStoreState {
   disconnectSocket: () => void;
   startTraining: (projectId: string) => void;
   stopTraining: () => void;
+  loadTrainingHistory: (projectId: string) => Promise<void>;
 }
 
 let socketInstance: WebSocket | null = null;
@@ -40,11 +42,7 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
   loss: 0,
   accuracy: 0,
   metrics: [],
-  history: [
-    { id: '1', name: 'Run #1', accuracy: 0.92 },
-    { id: '2', name: 'Run #2', accuracy: 0.89 },
-    { id: '3', name: 'Run #3', accuracy: 0.95 },
-  ],
+  history: [],
 
   connectSocket: (projectId) => {
     // Prevent multiple sockets
@@ -232,5 +230,34 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
     }
     get().disconnectSocket();
     set({ status: 'IDLE' });
+  },
+
+  loadTrainingHistory: async (projectId) => {
+    const online = await isBackendOnline();
+    if (online) {
+      try {
+        const data = await graphqlRequest(GET_TRAINING_RUNS, { projectId });
+        if (data && data.trainingRuns) {
+          const formatted: TrainingRun[] = data.trainingRuns.map((r: any, idx: number) => ({
+            id: r.id,
+            name: `Run #${r.id.substring(0, 4)}`,
+            accuracy: r.accuracy || 0
+          }));
+          set({ history: formatted });
+          return;
+        }
+      } catch (err) {
+        console.warn('Failed to load training history from database.', err);
+      }
+    }
+
+    // Fallback mock history
+    set({
+      history: [
+        { id: 'mock_1', name: 'Run #1 (Mock)', accuracy: 0.92 },
+        { id: 'mock_2', name: 'Run #2 (Mock)', accuracy: 0.89 },
+        { id: 'mock_3', name: 'Run #3 (Mock)', accuracy: 0.95 },
+      ]
+    });
   },
 }));

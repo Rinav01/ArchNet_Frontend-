@@ -33,7 +33,7 @@ export default function AccuracyChart({ metrics }: AccuracyChartProps) {
             {!mounted ? 'Initializing curves chart...' : 'No telemetry logs queued. Start training execution loop.'}
           </div>
         ) : (
-          <ResponsiveContainer width="100%" height="100%">
+          <ResponsiveContainer width="100%" height="100%" minWidth={0}>
             <LineChart data={metrics} margin={{ top: 10, right: 10, left: -25, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#2b2d31" />
               <XAxis dataKey="epoch" stroke="#5f6368" />

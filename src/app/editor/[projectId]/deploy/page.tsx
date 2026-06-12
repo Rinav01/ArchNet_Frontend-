@@ -86,7 +86,7 @@ export default function DeployPage() {
     let interval: NodeJS.Timeout;
     if (deployment && deployment.status === 'active') {
       interval = setInterval(() => {
-        updateLiveMetrics(projectId);
+        updateLiveMetrics(projectId, deployment.id);
         
         // Append a random request access log
         const paths = ['/predict', '/healthz', '/metrics', '/predict'];
@@ -130,7 +130,7 @@ export default function DeployPage() {
     }, 2100);
 
     setTimeout(async () => {
-      await deployModel(projectId, selectedRun, selectedFramework, projName);
+      await deployModel(projectId, selectedRun, selectedFramework);
       setIsDeploying(false);
       setDeployStep(0);
       setDeployLogs([]);
@@ -210,11 +210,11 @@ export default function DeployPage() {
                   <div className="space-y-1.5 font-mono text-[10px] bg-[#1e1f22] border border-[#3f4046]/70 p-3 rounded-xl">
                     <div className="flex justify-between py-1 border-b border-[#3f4046]/35">
                       <span className="text-gray-500">Framework</span>
-                      <span className="text-[#8ab4f8] font-bold">{deployment.framework}</span>
+                      <span className="text-[#8ab4f8] font-bold">{deployment.target}</span>
                     </div>
                     <div className="flex justify-between py-1 border-b border-[#3f4046]/35">
                       <span className="text-gray-500">Base Run</span>
-                      <span className="text-white truncate max-w-[150px] font-bold">Run #{deployment.runId}</span>
+                      <span className="text-white truncate max-w-[150px] font-bold">Run #{deployment.modelArtifactId}</span>
                     </div>
                     <div className="flex justify-between py-1">
                       <span className="text-gray-500">Deployed At</span>
@@ -228,12 +228,12 @@ export default function DeployPage() {
                       <input 
                         type="text" 
                         readOnly 
-                        value={deployment.url} 
+                        value={deployment.endpointUrl} 
                         className="bg-transparent border-none text-[10px] font-mono text-[#8ab4f8] focus:outline-none w-full truncate font-bold"
                       />
                       <button 
                         onClick={() => {
-                          navigator.clipboard.writeText(deployment.url);
+                          navigator.clipboard.writeText(deployment.endpointUrl);
                           alert('REST API Endpoint URL copied to clipboard!');
                         }}
                         className="text-[9px] px-2 py-0.5 bg-[#2b2d31] hover:bg-[#3f4046] text-white rounded border border-[#3f4046] cursor-pointer font-bold"
@@ -415,7 +415,7 @@ export default function DeployPage() {
                   </div>
 
                   <div className="h-[250px] w-full text-[10px] font-mono">
-                    <ResponsiveContainer width="100%" height="100%">
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                       <AreaChart data={historyData} margin={{ top: 10, right: 10, left: -25, bottom: 5 }}>
                         <defs>
                           <linearGradient id="colorRps" x1="0" y1="0" x2="0" y2="1">

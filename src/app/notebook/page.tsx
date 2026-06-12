@@ -1,8 +1,10 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import MainLayout from '@/components/Layout/MainLayout';
 import { BookOpen, Play, FileCode } from 'lucide-react';
+import { useProjectStore } from '@/store/projectStore';
+import { graphqlRequest, isBackendOnline, EXECUTE_NOTEBOOK_CELL } from '@/lib/graphql/client';
 
 export default function NotebookPage() {
   const [codeCell, setCodeCell] = useState(
@@ -19,10 +21,85 @@ print("Output tensor shape:", output.shape)`
   const [isRunning, setIsRunning] = useState(false);
   const [outputs, setOutputs] = useState<string[]>([]);
 
-  const handleRunCell = () => {
+  const activeProjectId = useProjectStore((state) => state.activeProjectId);
+  const projects = useProjectStore((state) => state.projects);
+  const loadProjects = useProjectStore((state) => state.loadProjects);
+  const setActiveProjectId = useProjectStore((state) => state.setActiveProjectId);
+
+  useEffect(() => {
+    if (projects.length === 0) {
+      loadProjects();
+    }
+  }, []);
+
+  const handleRunCell = async () => {
     setIsRunning(true);
     setOutputs(['Initializing Python runtime kernel...']);
     
+    const online = await isBackendOnline();
+    if (online) {
+      let projId = activeProjectId;
+      if (!projId) {
+        if (projects.length === 0) {
+          await loadProjects();
+        }
+        const freshProjects = useProjectStore.getState().projects;
+        if (freshProjects.length > 0) {
+          projId = freshProjects[0].id;
+          setActiveProjectId(projId);
+        }
+      }
+
+      if (!projId) {
+        setOutputs(prev => [
+          ...prev,
+          'Error: No project context found. Please create or open a project first.'
+        ]);
+        setIsRunning(false);
+        return;
+      }
+
+      try {
+        setOutputs(prev => [...prev, 'Sending execution request to sandbox kernel...']);
+        const res = await graphqlRequest(EXECUTE_NOTEBOOK_CELL, {
+          projectId: projId,
+          code: codeCell
+        });
+
+        if (res && res.executeNotebookCell) {
+          const runResult = res.executeNotebookCell;
+          const outputLines: string[] = [];
+          
+          if (runResult.stdout) {
+            outputLines.push(...runResult.stdout.split('\n'));
+          }
+          if (runResult.stderr) {
+            outputLines.push(...runResult.stderr.split('\n'));
+          }
+          if (runResult.executionTimeMs !== undefined && runResult.executionTimeMs !== null) {
+            outputLines.push(`[Execution completed in ${runResult.executionTimeMs.toFixed(1)}ms]`);
+          }
+
+          if (runResult.success) {
+            outputLines.push('Success! Cell executed inside server subprocess sandbox.');
+          } else {
+            outputLines.push('Execution failed with errors listed above.');
+          }
+
+          setOutputs(outputLines.filter(line => line.trim() !== ''));
+        }
+      } catch (err: any) {
+        setOutputs(prev => [
+          ...prev,
+          `Connection error: ${err.message || 'Failed to communicate with runtime kernel.'}`
+        ]);
+      } finally {
+        setIsRunning(false);
+      }
+      return;
+    }
+
+    // Fallback Offline Simulation
     setTimeout(() => {
       setOutputs(prev => [
         ...prev,

@@ -1,9 +1,11 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import MainLayout from '@/components/Layout/MainLayout';
 import { toast } from '@/store/notificationStore';
+import { useProjectStore } from '@/store/projectStore';
+import { graphqlRequest, GET_WORKFLOWS, CREATE_WORKFLOW, DELETE_WORKFLOW } from '@/lib/graphql/client';
 import { 
   GitBranch, 
   ArrowRight, 
@@ -42,27 +44,77 @@ export default function WorkflowsPage() {
   const [isMounted, setIsMounted] = useState(false);
 
   // States
-  const [nodes, setNodes] = useState<WorkflowNode[]>([
-    { id: 'node_t1', type: 'trigger', label: 'Dataset Uploaded', config: { target: 'cifar10_train_images.zip' }, x: 100, y: 150 },
-    { id: 'node_a1', type: 'action', label: 'Analyze Dataset', config: { pipeline: 'Fast Data profiling' }, x: 340, y: 150 },
-    
-    { id: 'node_t2', type: 'trigger', label: 'Training Finished', config: { criteria: 'Accuracy > 90%' }, x: 100, y: 350 },
-    { id: 'node_a2', type: 'action', label: 'Deploy Model', config: { cluster: 'Kubernetes RTX 4090' }, x: 340, y: 280 },
-    { id: 'node_a3', type: 'action', label: 'Send Notification', config: { webhook: 'Slack Alert' }, x: 340, y: 420 },
-  ]);
-
-  const [connections, setConnections] = useState<WorkflowConnection[]>([
-    { id: 'conn_1', source: 'node_t1', target: 'node_a1' },
-    { id: 'conn_2', source: 'node_t2', target: 'node_a2' },
-    { id: 'conn_3', source: 'node_t2', target: 'node_a3' },
-  ]);
-
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>('node_t2');
+  const [nodes, setNodes] = useState<WorkflowNode[]>([]);
+  const [connections, setConnections] = useState<WorkflowConnection[]>([]);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [activeSignal, setActiveSignal] = useState<string | null>(null);
+
+  const { activeProjectId, projects, isOnline } = useProjectStore();
+  const targetProject = activeProjectId || (projects[0]?.id);
+
+  // Load workflows effect
+  const loadWorkflows = useCallback(async () => {
+    if (!isOnline || !targetProject) return;
+    try {
+      const res = await graphqlRequest(GET_WORKFLOWS, { projectId: targetProject });
+      if (res && res.workflows) {
+        const backendWorkflows = res.workflows;
+        const spawnedNodes: WorkflowNode[] = [];
+        const spawnedConns: WorkflowConnection[] = [];
+
+        backendWorkflows.forEach((w: any, idx: number) => {
+          const trigId = `trig_${w.id}`;
+          const actId = `act_${w.id}`;
+          const yPos = 120 + (idx * 110) % 280;
+
+          // Parse configs
+          const config = typeof w.config === 'string' ? JSON.parse(w.config) : (w.config || {});
+
+          spawnedNodes.push({
+            id: trigId,
+            type: 'trigger',
+            label: w.triggerEvent,
+            config: config.trigger || { target: 'Default Target' },
+            x: 100,
+            y: yPos
+          });
+
+          spawnedNodes.push({
+            id: actId,
+            type: 'action',
+            label: w.actionType,
+            config: config.action || { webhook: 'Slack Channel' },
+            x: 340,
+            y: yPos
+          });
+
+          spawnedConns.push({
+            id: `conn_${w.id}`,
+            source: trigId,
+            target: actId
+          });
+        });
+
+        // Only override state if we have backend workflows
+        if (spawnedNodes.length > 0) {
+          setNodes(spawnedNodes);
+          setConnections(spawnedConns);
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to load workflows from backend.', err);
+    }
+  }, [targetProject, isOnline]);
 
   useEffect(() => {
     setIsMounted(true);
   }, []);
+
+  useEffect(() => {
+    if (isMounted) {
+      loadWorkflows();
+    }
+  }, [isMounted, loadWorkflows]);
 
   if (!isMounted) {
     return (
@@ -107,18 +159,59 @@ export default function WorkflowsPage() {
     toast.success('Node Added', `Added workflow ${type} node "${label}".`);
   };
 
-  const handleDeleteNode = (id: string, e: React.MouseEvent) => {
+  const handleDeleteNode = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    
+    // Extract workflow UUID if node ID maps to an S3/DB object
+    const workflowId = id.replace('trig_', '').replace('act_', '');
+    const isBackendNode = workflowId.length > 8 && workflowId.includes('-');
+
+    if (isOnline && isBackendNode) {
+      try {
+        await graphqlRequest(DELETE_WORKFLOW, { workflowId });
+        toast.info('Workflow Deleted', 'Removed workflow from backend database.');
+        loadWorkflows();
+        return;
+      } catch (err: any) {
+        toast.error('Delete Error', err.message || 'Failed to remove workflow.');
+      }
+    }
+
     setNodes(prev => prev.filter(n => n.id !== id));
     setConnections(prev => prev.filter(c => c.source !== id && c.target !== id));
     if (selectedNodeId === id) setSelectedNodeId(null);
-    toast.info('Node Removed', 'Removed node and its connections.');
+    toast.info('Node Removed', 'Removed node and its connections locally.');
   };
 
-  const handleConnect = (sourceId: string, targetId: string) => {
+  const handleConnect = async (sourceId: string, targetId: string) => {
+    const sourceNode = nodes.find(n => n.id === sourceId);
+    const targetNode = nodes.find(n => n.id === targetId);
+    if (!sourceNode || !targetNode) return;
+ 
     // Check if connection already exists
     const exists = connections.some(c => c.source === sourceId && c.target === targetId);
     if (exists) return;
+ 
+    if (isOnline && targetProject) {
+      try {
+        const configJson = {
+          trigger: sourceNode.config,
+          action: targetNode.config
+        };
+        await graphqlRequest(CREATE_WORKFLOW, {
+          projectId: targetProject,
+          name: `${sourceNode.label} -> ${targetNode.label}`,
+          triggerEvent: sourceNode.label,
+          actionType: targetNode.label,
+          config: configJson
+        });
+        toast.success('Workflow Saved', `Successfully persisted automation on backend.`);
+        loadWorkflows();
+        return;
+      } catch (err: any) {
+        toast.error('Sync Error', err.message || 'Failed to save workflow.');
+      }
+    }
 
     const newConn = {
       id: `conn_${Math.random().toString(36).substring(2, 9)}`,
