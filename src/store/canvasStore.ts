@@ -3287,7 +3287,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
           { id: inputId, type: 'Input', name: 'SOURCE_SEQUENCES', x: 250, y: 100, inputShape: [], outputShape: [80], config: { dim: [80], shape: [null, 80] } },
           { id: embedId, type: 'Embedding', name: 'SOURCE_EMBEDDINGS', x: 250, y: 220, inputShape: [], outputShape: [], config: { vocab_size: 5000, embedding_dim: 256 } },
           { id: encLstmId, type: 'LSTM', name: 'ENCODER_LSTM', x: 250, y: 340, inputShape: [], outputShape: [], config: { hidden_size: 256, return_sequences: true } },
-          { id: decLstmId, type: 'LSTM', name: 'DECODER_LSTM', x: 250, y: 460, inputShape: [], outputShape: [], config: { hidden_size: 256, return_sequences: true } },
+          { id: decLstmId, type: 'LSTM', name: 'DECODER_LSTM', x: 250, y: 460, inputShape: [], outputShape: [], config: { hidden_size: 256, return_sequences: false } },
           { id: denseId, type: 'Dense', name: 'TARGET_VOCAB_OUT', x: 250, y: 580, inputShape: [], outputShape: [], config: { units: 5000 } }
         ];
 
@@ -3309,6 +3309,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
         const normId = generateUUID();
         const enc1Id = generateUUID();
         const enc2Id = generateUUID();
+        const flatId = generateUUID();
         const denseId = generateUUID();
 
         newNodes = [
@@ -3318,7 +3319,8 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
           { id: normId, type: 'LayerNorm', name: 'BERT_LAYERNORM_1', x: 250, y: 410, inputShape: [], outputShape: [], config: {} },
           { id: enc1Id, type: 'TransformerBlock', name: 'ENCODER_BLOCK_1', x: 250, y: 530, inputShape: [], outputShape: [], config: { num_heads: 4, embed_dim: 256 } },
           { id: enc2Id, type: 'TransformerBlock', name: 'ENCODER_BLOCK_2', x: 250, y: 650, inputShape: [], outputShape: [], config: { num_heads: 4, embed_dim: 256 } },
-          { id: denseId, type: 'Dense', name: 'VOCAB_PROJECTIONS', x: 250, y: 770, inputShape: [], outputShape: [], config: { units: 10000 } }
+          { id: flatId, type: 'Flatten', name: 'SEQUENCE_FLATTEN', x: 250, y: 770, inputShape: [], outputShape: [], config: {} },
+          { id: denseId, type: 'Dense', name: 'VOCAB_PROJECTIONS', x: 250, y: 890, inputShape: [], outputShape: [], config: { units: 10000 } }
         ];
 
         newEdges = [
@@ -3327,11 +3329,12 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
           { id: generateUUID(), source: posId, target: normId },
           { id: generateUUID(), source: normId, target: enc1Id },
           { id: generateUUID(), source: enc1Id, target: enc2Id },
-          { id: generateUUID(), source: enc2Id, target: denseId }
+          { id: generateUUID(), source: enc2Id, target: flatId },
+          { id: generateUUID(), source: flatId, target: denseId }
         ];
 
         newNodeGroups = [
-          { id: generateUUID(), name: 'Mini-BERT Encoder', color: '#c5a3ff', nodeIds: [inputId, embedId, posId, normId, enc1Id, enc2Id, denseId] }
+          { id: generateUUID(), name: 'Mini-BERT Encoder', color: '#c5a3ff', nodeIds: [inputId, embedId, posId, normId, enc1Id, enc2Id, flatId, denseId] }
         ];
 
       } else if (templateName === 'Mini-GPT') {
@@ -3340,6 +3343,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
         const posId = generateUUID();
         const dec1Id = generateUUID();
         const dec2Id = generateUUID();
+        const flatId = generateUUID();
         const denseId = generateUUID();
 
         newNodes = [
@@ -3348,7 +3352,8 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
           { id: posId, type: 'PositionalEncoding', name: 'POSITIONAL_SIGNATURES', x: 250, y: 290, inputShape: [], outputShape: [], config: { embed_dim: 256, max_len: 128 } },
           { id: dec1Id, type: 'TransformerBlock', name: 'DECODER_BLOCK_1', x: 250, y: 410, inputShape: [], outputShape: [], config: { num_heads: 4, embed_dim: 256 } },
           { id: dec2Id, type: 'TransformerBlock', name: 'DECODER_BLOCK_2', x: 250, y: 530, inputShape: [], outputShape: [], config: { num_heads: 4, embed_dim: 256 } },
-          { id: denseId, type: 'Dense', name: 'NEXT_TOKEN_PREDICTIONS', x: 250, y: 650, inputShape: [], outputShape: [], config: { units: 10000 } }
+          { id: flatId, type: 'Flatten', name: 'SEQUENCE_FLATTEN', x: 250, y: 650, inputShape: [], outputShape: [], config: {} },
+          { id: denseId, type: 'Dense', name: 'NEXT_TOKEN_PREDICTIONS', x: 250, y: 770, inputShape: [], outputShape: [], config: { units: 10000 } }
         ];
 
         newEdges = [
@@ -3356,11 +3361,12 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
           { id: generateUUID(), source: embedId, target: posId },
           { id: generateUUID(), source: posId, target: dec1Id },
           { id: generateUUID(), source: dec1Id, target: dec2Id },
-          { id: generateUUID(), source: dec2Id, target: denseId }
+          { id: generateUUID(), source: dec2Id, target: flatId },
+          { id: generateUUID(), source: flatId, target: denseId }
         ];
 
         newNodeGroups = [
-          { id: generateUUID(), name: 'Mini-GPT Generator', color: '#ffe082', nodeIds: [inputId, embedId, posId, dec1Id, dec2Id, denseId] }
+          { id: generateUUID(), name: 'Mini-GPT Generator', color: '#ffe082', nodeIds: [inputId, embedId, posId, dec1Id, dec2Id, flatId, denseId] }
         ];
 
       } else if (templateName === 'Transformer Encoder') {
@@ -3467,6 +3473,9 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
         const convBottle = generateUUID();
 
         const dec2Up = generateUUID();
+        // dec2SkipMerge: ResidualAdd that merges dec2Up [64,64,128] + poolEnc2 [64,64,128]
+        // Both have identical spatial dims since shape engine keeps same-padding H,W unchanged
+        const dec2SkipMerge = generateUUID();
         const dec2Conv1 = generateUUID();
         const dec2Bn1 = generateUUID();
         const dec2Conv2 = generateUUID();
@@ -3492,22 +3501,24 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
           // Bottleneck
           { id: convBottle, type: 'Conv2D', name: 'BOTTLENECK_CONV', x: 1000, y: 600, inputShape: [], outputShape: [], config: { filters: 256, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' } },
 
-          // Decoder Stage 2
+          // Decoder Stage 2 — uses ResidualAdd to merge upsampled decoder with poolEnc2 skip
+          // dec2Up and poolEnc2 both output [H_bottleneck, W_bottleneck, 128] → shapes match
           { id: dec2Up, type: 'Conv2D', name: 'DEC2_UP_CONV', x: 1180, y: 450, inputShape: [], outputShape: [], config: { filters: 128, kernelSize: 2, stride: 1, padding: 'same', activation: 'ReLU' } },
-          { id: dec2Conv1, type: 'Conv2D', name: 'DEC2_CONV_1', x: 1360, y: 450, inputShape: [], outputShape: [], config: { filters: 128, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' } },
-          { id: dec2Bn1, type: 'BatchNorm2D', name: 'DEC2_BN_1', x: 1540, y: 450, inputShape: [], outputShape: [], config: {} },
-          { id: dec2Conv2, type: 'Conv2D', name: 'DEC2_CONV_2', x: 1720, y: 450, inputShape: [], outputShape: [], config: { filters: 128, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' } },
-          { id: dec2Bn2, type: 'BatchNorm2D', name: 'DEC2_BN_2', x: 1900, y: 450, inputShape: [], outputShape: [], config: {} },
+          { id: dec2SkipMerge, type: 'ResidualAdd', name: 'DEC2_SKIP_MERGE', x: 1360, y: 450, inputShape: [], outputShape: [], config: {} },
+          { id: dec2Conv1, type: 'Conv2D', name: 'DEC2_CONV_1', x: 1540, y: 450, inputShape: [], outputShape: [], config: { filters: 128, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' } },
+          { id: dec2Bn1, type: 'BatchNorm2D', name: 'DEC2_BN_1', x: 1720, y: 450, inputShape: [], outputShape: [], config: {} },
+          { id: dec2Conv2, type: 'Conv2D', name: 'DEC2_CONV_2', x: 1900, y: 450, inputShape: [], outputShape: [], config: { filters: 128, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' } },
+          { id: dec2Bn2, type: 'BatchNorm2D', name: 'DEC2_BN_2', x: 2080, y: 450, inputShape: [], outputShape: [], config: {} },
 
-          // Decoder Stage 1
-          { id: dec1Up, type: 'Conv2D', name: 'DEC1_UP_CONV', x: 2080, y: 300, inputShape: [], outputShape: [], config: { filters: 64, kernelSize: 2, stride: 1, padding: 'same', activation: 'ReLU' } },
-          { id: dec1Conv1, type: 'Conv2D', name: 'DEC1_CONV_1', x: 2260, y: 300, inputShape: [], outputShape: [], config: { filters: 64, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' } },
-          { id: dec1Bn1, type: 'BatchNorm2D', name: 'DEC1_BN_1', x: 2440, y: 300, inputShape: [], outputShape: [], config: {} },
-          { id: dec1Conv2, type: 'Conv2D', name: 'DEC1_CONV_2', x: 2620, y: 300, inputShape: [], outputShape: [], config: { filters: 64, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' } },
-          { id: dec1Bn2, type: 'BatchNorm2D', name: 'DEC1_BN_2', x: 2800, y: 300, inputShape: [], outputShape: [], config: {} },
+          // Decoder Stage 1 — linear path (spatial dim mismatch prevents skip from enc1)
+          { id: dec1Up, type: 'Conv2D', name: 'DEC1_UP_CONV', x: 2260, y: 300, inputShape: [], outputShape: [], config: { filters: 64, kernelSize: 2, stride: 1, padding: 'same', activation: 'ReLU' } },
+          { id: dec1Conv1, type: 'Conv2D', name: 'DEC1_CONV_1', x: 2440, y: 300, inputShape: [], outputShape: [], config: { filters: 64, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' } },
+          { id: dec1Bn1, type: 'BatchNorm2D', name: 'DEC1_BN_1', x: 2620, y: 300, inputShape: [], outputShape: [], config: {} },
+          { id: dec1Conv2, type: 'Conv2D', name: 'DEC1_CONV_2', x: 2800, y: 300, inputShape: [], outputShape: [], config: { filters: 64, kernelSize: 3, stride: 1, padding: 'same', activation: 'ReLU' } },
+          { id: dec1Bn2, type: 'BatchNorm2D', name: 'DEC1_BN_2', x: 2980, y: 300, inputShape: [], outputShape: [], config: {} },
 
           // Head
-          { id: convOut, type: 'Conv2D', name: 'OUTPUT_SEG_MASK', x: 2980, y: 300, inputShape: [], outputShape: [], config: { filters: 2, kernelSize: 1, stride: 1, padding: 'same', activation: 'Softmax' } }
+          { id: convOut, type: 'Conv2D', name: 'OUTPUT_SEG_MASK', x: 3160, y: 300, inputShape: [], outputShape: [], config: { filters: 2, kernelSize: 1, stride: 1, padding: 'same', activation: 'Softmax' } }
         ];
 
         newEdges = [
@@ -3517,18 +3528,19 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
           { id: generateUUID(), source: convEnc2, target: poolEnc2 },
           { id: generateUUID(), source: poolEnc2, target: convBottle },
 
-          // Dec 2 connects bottleneck + Enc 2 skip
+          // Dec 2: bottleneck → dec2Up → dec2SkipMerge ← poolEnc2 (skip)
+          // poolEnc2 and dec2Up both carry [H,W,128] → ResidualAdd receives matching shapes
           { id: generateUUID(), source: convBottle, target: dec2Up },
-          { id: generateUUID(), source: dec2Up, target: dec2Conv1 },
-          { id: generateUUID(), source: convEnc2, target: dec2Conv1 },
+          { id: generateUUID(), source: dec2Up, target: dec2SkipMerge },
+          { id: generateUUID(), source: poolEnc2, target: dec2SkipMerge },
+          { id: generateUUID(), source: dec2SkipMerge, target: dec2Conv1 },
           { id: generateUUID(), source: dec2Conv1, target: dec2Bn1 },
           { id: generateUUID(), source: dec2Bn1, target: dec2Conv2 },
           { id: generateUUID(), source: dec2Conv2, target: dec2Bn2 },
 
-          // Dec 1 connects Dec 2 + Enc 1 skip
+          // Dec 1: linear path from dec2Bn2
           { id: generateUUID(), source: dec2Bn2, target: dec1Up },
           { id: generateUUID(), source: dec1Up, target: dec1Conv1 },
-          { id: generateUUID(), source: convEnc1, target: dec1Conv1 },
           { id: generateUUID(), source: dec1Conv1, target: dec1Bn1 },
           { id: generateUUID(), source: dec1Bn1, target: dec1Conv2 },
           { id: generateUUID(), source: dec1Conv2, target: dec1Bn2 },
@@ -3541,57 +3553,55 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
           { id: generateUUID(), name: 'Encoder Stage 1', color: '#8ab4f8', nodeIds: [convEnc1, poolEnc1] },
           { id: generateUUID(), name: 'Encoder Stage 2', color: '#ffe082', nodeIds: [convEnc2, poolEnc2] },
           { id: generateUUID(), name: 'UNet Bottleneck', color: '#80cbc4', nodeIds: [convBottle] },
-          { id: generateUUID(), name: 'Decoder Stage 2', color: '#81c784', nodeIds: [dec2Up, dec2Conv1, dec2Bn1, dec2Conv2, dec2Bn2] },
+          { id: generateUUID(), name: 'Decoder Stage 2', color: '#81c784', nodeIds: [dec2Up, dec2SkipMerge, dec2Conv1, dec2Bn1, dec2Conv2, dec2Bn2] },
           { id: generateUUID(), name: 'Decoder Stage 1', color: '#c5a3ff', nodeIds: [dec1Up, dec1Conv1, dec1Bn1, dec1Conv2, dec1Bn2] },
           { id: generateUUID(), name: 'Segmentation Head', color: '#ffe082', nodeIds: [convOut] }
         ];
 
       } else if (templateName === 'GCN') {
         const featId = generateUUID();
-        const adjId = generateUUID();
         const gcn1Id = generateUUID();
         const gcn2Id = generateUUID();
 
+        // Edge index removed: shape [2, num_edges] is incompatible with node feature shape
+        // causing broadcast validation errors at every GCN layer. The edge structure is
+        // handled internally by the GCN layer type during code generation.
         newNodes = [
           { id: featId, type: 'Input', name: 'NODE_FEATURES', x: 250, y: 100, inputShape: [], outputShape: [1433], config: { dim: [1433], shape: [null, 1433] } },
-          { id: adjId, type: 'Input', name: 'EDGE_INDEX', x: 250, y: 300, inputShape: [], outputShape: [2, 0], config: { dim: [2, 0], shape: [2, null] } },
-          { id: gcn1Id, type: 'GCN', name: 'GCN_LAYER_1', x: 500, y: 200, inputShape: [], outputShape: [], config: { out_features: 64 } },
-          { id: gcn2Id, type: 'GCN', name: 'GCN_LAYER_2', x: 750, y: 200, inputShape: [], outputShape: [], config: { out_features: 7 } }
+          { id: gcn1Id, type: 'GCN', name: 'GCN_LAYER_1', x: 500, y: 100, inputShape: [], outputShape: [], config: { out_features: 64 } },
+          { id: gcn2Id, type: 'GCN', name: 'GCN_LAYER_2', x: 750, y: 100, inputShape: [], outputShape: [], config: { out_features: 7 } }
         ];
 
         newEdges = [
           { id: generateUUID(), source: featId, target: gcn1Id },
-          { id: generateUUID(), source: adjId, target: gcn1Id },
-          { id: generateUUID(), source: gcn1Id, target: gcn2Id },
-          { id: generateUUID(), source: adjId, target: gcn2Id }
+          { id: generateUUID(), source: gcn1Id, target: gcn2Id }
         ];
 
         newNodeGroups = [
-          { id: generateUUID(), name: 'Graph Convolutional Network', color: '#81c784', nodeIds: [featId, adjId, gcn1Id, gcn2Id] }
+          { id: generateUUID(), name: 'Graph Convolutional Network', color: '#81c784', nodeIds: [featId, gcn1Id, gcn2Id] }
         ];
 
       } else if (templateName === 'GraphSAGE') {
         const featId = generateUUID();
-        const adjId = generateUUID();
         const sage1Id = generateUUID();
         const sage2Id = generateUUID();
 
+        // Edge index removed: shape [2, num_edges] is incompatible with node feature shape
+        // causing broadcast validation errors at every SAGE layer. The neighborhood
+        // aggregation is handled internally by the GraphSAGE layer during code generation.
         newNodes = [
           { id: featId, type: 'Input', name: 'NODE_FEATURES', x: 250, y: 100, inputShape: [], outputShape: [1433], config: { dim: [1433], shape: [null, 1433] } },
-          { id: adjId, type: 'Input', name: 'EDGE_INDEX', x: 250, y: 300, inputShape: [], outputShape: [2, 0], config: { dim: [2, 0], shape: [2, null] } },
-          { id: sage1Id, type: 'GraphSAGE', name: 'SAGE_LAYER_1', x: 500, y: 200, inputShape: [], outputShape: [], config: { out_features: 64 } },
-          { id: sage2Id, type: 'GraphSAGE', name: 'SAGE_LAYER_2', x: 750, y: 200, inputShape: [], outputShape: [], config: { out_features: 7 } }
+          { id: sage1Id, type: 'GraphSAGE', name: 'SAGE_LAYER_1', x: 500, y: 100, inputShape: [], outputShape: [], config: { out_features: 64 } },
+          { id: sage2Id, type: 'GraphSAGE', name: 'SAGE_LAYER_2', x: 750, y: 100, inputShape: [], outputShape: [], config: { out_features: 7 } }
         ];
 
         newEdges = [
           { id: generateUUID(), source: featId, target: sage1Id },
-          { id: generateUUID(), source: adjId, target: sage1Id },
-          { id: generateUUID(), source: sage1Id, target: sage2Id },
-          { id: generateUUID(), source: adjId, target: sage2Id }
+          { id: generateUUID(), source: sage1Id, target: sage2Id }
         ];
 
         newNodeGroups = [
-          { id: generateUUID(), name: 'SAGE Graph Network', color: '#ffe082', nodeIds: [featId, adjId, sage1Id, sage2Id] }
+          { id: generateUUID(), name: 'SAGE Graph Network', color: '#ffe082', nodeIds: [featId, sage1Id, sage2Id] }
         ];
 
       } else if (templateName === 'DenseNet') {
