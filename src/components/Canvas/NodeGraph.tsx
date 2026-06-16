@@ -741,8 +741,7 @@ export default function NodeGraph() {
           
           const hasBroadcastError = validationErrors.some(err => 
             err.nodeId === edge.target && 
-            err.category === 'broadcast' && 
-            err.message.includes(`'${srcNode.name}'`)
+            (err.category === 'broadcast' || err.category === 'reshape')
           );
           
           // Modulate execution intensity

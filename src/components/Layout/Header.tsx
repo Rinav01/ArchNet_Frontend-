@@ -77,12 +77,12 @@ export default function Header({
   React.useEffect(() => {
     let mounted = true;
     if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('mlbuilder_username');
+      const stored = localStorage.getItem('archnet_username');
       if (stored) {
         setUsername(stored);
       }
       
-      const token = localStorage.getItem('mlbuilder_token');
+      const token = localStorage.getItem('archnet_token');
       if (token) {
         graphqlRequest(GET_USER_PREFERENCES).then(data => {
           if (mounted && data?.me) {
@@ -106,8 +106,8 @@ export default function Header({
   }, []);
 
   const handleLogout = () => {
-    localStorage.removeItem('mlbuilder_token');
-    localStorage.removeItem('mlbuilder_username');
+    localStorage.removeItem('archnet_token');
+    localStorage.removeItem('archnet_username');
     router.push('/login');
   };
 
@@ -159,6 +159,8 @@ export default function Header({
   const handleBack = () => {
     if ((isTrainingPage || isDeployPage || isInferencePage || isExperimentsPage) && activeProjectId) {
       router.push(`/editor/${activeProjectId}`);
+    } else if (activeProjectId === 'sandbox') {
+      router.push('/');
     } else {
       router.push('/dashboard');
     }
@@ -834,7 +836,7 @@ export default function Header({
           <button
             onClick={() => {
               setHasSeenTour(true);
-              const token = localStorage.getItem('mlbuilder_token');
+              const token = localStorage.getItem('archnet_token');
               if (token) {
                 graphqlRequest(UPDATE_USER_PREFERENCES, { preferences: { hasSeenCanvasTour: true } })
                   .catch(e => console.warn('Failed to sync tour state to backend', e));

@@ -479,7 +479,7 @@ export default function ValidationPanel() {
           <div className="space-y-3 font-mono text-[10.5px]">
             {!isOnline ? (
               <div className="text-[#ffe082] font-semibold flex flex-col gap-1.5 max-w-lg leading-relaxed font-sans">
-                <span className="font-mono text-[11px] text-purple-400">$ python -m mlbuilder.compiler --verify</span>
+                <span className="font-mono text-[11px] text-purple-400">$ python -m archnet.compiler --verify</span>
                 <span className="text-gray-400 mt-1">
                   Offline Local Sandbox fallback is active. Python compiler sandbox cannot run executions while FastAPI is disconnected. AST verification is simulated locally on structural layer blocks.
                 </span>
@@ -487,7 +487,7 @@ export default function ValidationPanel() {
             ) : (
               <div className="space-y-4">
                 <div>
-                  <span className="text-purple-400 select-none font-bold">$ python -m mlbuilder.sandbox --project-id={useProjectStore.getState().activeProjectId || 'root'}</span>
+                  <span className="text-purple-400 select-none font-bold">$ python -m archnet.sandbox --project-id={useProjectStore.getState().activeProjectId || 'root'}</span>
                   <span className="text-gray-500 block select-none">&gt; Initializing Docker-less isolated execution environment...</span>
                   <span className="text-gray-500 block select-none">&gt; Injecting PyTorch graph representations... verified.</span>
                   <span className="text-gray-500 block select-none">&gt; Sandboxed Execution started.</span>
@@ -1643,7 +1643,7 @@ export default function ValidationPanel() {
                   </div>
                   <div>
                     <h4 className="text-xs font-black text-white uppercase tracking-wider">WebSocket Session</h4>
-                    <span className="text-[8px] text-gray-500 font-mono font-bold truncate block">Room: mlbuilder_collaboration</span>
+                    <span className="text-[8px] text-gray-500 font-mono font-bold truncate block">Room: archnet_collaboration</span>
                   </div>
                   
                   <div className="space-y-2 pt-1 border-t border-[#2b2d31]">

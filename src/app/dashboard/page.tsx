@@ -28,8 +28,15 @@ export default function Dashboard() {
   const addLog = useCanvasStore((state) => state.addLog);
 
   useEffect(() => {
-    loadProjects();
-  }, [loadProjects]);
+    const initDashboard = async () => {
+      await loadProjects();
+      const hasCompletedOnboarding = localStorage.getItem('hasCompletedOnboarding');
+      if (!hasCompletedOnboarding && useProjectStore.getState().projects.length === 0) {
+        router.replace('/onboarding');
+      }
+    };
+    initDashboard();
+  }, [loadProjects, router]);
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -155,7 +162,7 @@ export default function Dashboard() {
               <div className="space-y-3 flex-1">
                 <h3 className="text-xl font-bold text-white tracking-wide">Strawberry GraphQL API Sync Offline</h3>
                 <p className="text-sm text-[#9aa0a6] leading-relaxed max-w-2xl font-semibold">
-                  MLBuilder is running in strict live-sync mode. A running instance of the FastAPI backend database is required to load neural topologies, configure layers, and compile models.
+                  ArchNet is running in strict live-sync mode. A running instance of the FastAPI backend database is required to load neural topologies, configure layers, and compile models.
                 </p>
                 <div className="pt-2 space-y-2">
                   <span className="text-xs font-bold text-[#9aa0a6] uppercase tracking-wider block">Diagnostics:</span>

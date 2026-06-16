@@ -45,7 +45,7 @@ export default function InferencePlaygroundPage() {
     if (deployment) {
       const projSlug = currentProject?.name.toLowerCase().replace(/\s+/g, '-') || 'model';
       setRequestHeaders(
-        `POST /v1/models/${projSlug}/predict HTTP/1.1\nHost: inference.archnet.ai\nContent-Type: application/json\nAuthorization: Bearer mlbuilder_token_abc123`
+        `POST /v1/models/${projSlug}/predict HTTP/1.1\nHost: inference.archnet.ai\nContent-Type: application/json\nAuthorization: Bearer archnet_token_abc123`
       );
     } else {
       setRequestHeaders(

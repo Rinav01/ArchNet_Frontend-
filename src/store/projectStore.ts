@@ -132,8 +132,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     }));
     
     if (typeof window !== 'undefined') {
-      localStorage.removeItem(`mlbuilder_project_draft_${id}`);
-      localStorage.removeItem(`mlbuilder_project_checkpoints_${id}`);
+      localStorage.removeItem(`archnet_project_draft_${id}`);
+      localStorage.removeItem(`archnet_project_checkpoints_${id}`);
     }
     
     toast.success('Project Deleted', `Successfully removed project "${project?.name || id}" and cleared all local caches.`);

@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useProjectStore } from '@/store/projectStore';
-import { Loader2 } from 'lucide-react';
+import { Loader2, X, LayoutGrid, Cpu, Scan, Focus } from 'lucide-react';
 import './landing.css';
 
 // ─── Animated Floating Node Component ──────────────────────────────────────────
@@ -105,7 +105,7 @@ const MiniCanvas = () => {
         <span className="mini-canvas-dot" style={{ background: '#ffe082' }} />
         <span className="mini-canvas-dot" style={{ background: '#81c784' }} />
         <span style={{ color: '#5f6368', fontSize: 11, marginLeft: 8, fontFamily: 'monospace' }}>
-          MLBuilder — ResNet-Mini.mlb
+          ArchNet — ResNet-Mini.mlb
         </span>
       </div>
       <div className="mini-canvas-body">
@@ -275,15 +275,16 @@ export default function LandingPage() {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('mlbuilder_token') : null;
+    const token = typeof window !== 'undefined' ? localStorage.getItem('archnet_token') : null;
     if (token) {
       setIsAuthenticated(true);
       
       const handleRedirect = async () => {
         await loadProjects();
         const latestProjects = useProjectStore.getState().projects;
+        const hasCompletedOnboarding = localStorage.getItem('hasCompletedOnboarding');
 
-        if (latestProjects.length === 0) {
+        if (!hasCompletedOnboarding && latestProjects.length === 0) {
           router.replace('/onboarding');
           return;
         }
@@ -343,7 +344,7 @@ export default function LandingPage() {
                 <line x1="3" y1="14" x2="17" y2="14" stroke="#3f4046" strokeWidth="1.2" opacity="0.5" />
               </svg>
             </div>
-            <span className="landing-logo-text">ML<span style={{ color: '#8ab4f8' }}>Builder</span></span>
+            <span className="landing-logo-text">Arch<span style={{ color: '#8ab4f8' }}>Net</span></span>
           </div>
           <div className="landing-nav-links">
             <a href="#features">Features</a>
@@ -394,17 +395,40 @@ export default function LandingPage() {
             <span className="hero-title-accent">Architectures Visually</span>
           </h1>
           <p className="hero-subtitle">
-            MLBuilder is the industry-grade visual workspace for designing, validating, and compiling
+            ArchNet is the industry-grade visual workspace for designing, validating, and compiling
             neural networks to <strong>PyTorch</strong>, <strong>TensorFlow</strong>, <strong>JAX</strong>, and <strong>ONNX</strong> —
             with real-time tensor shape solving and live training telemetry.
           </p>
           <div className="hero-actions">
-            <Link href="/dashboard" id="hero-launch-btn" className="landing-btn-primary landing-btn-lg">
+            <button 
+              onClick={async () => {
+                const token = localStorage.getItem('archnet_token');
+                if (!token) {
+                  router.push('/login');
+                  return;
+                }
+                const hasCompletedOnboarding = localStorage.getItem('hasCompletedOnboarding');
+                const projects = useProjectStore.getState().projects;
+                if (!hasCompletedOnboarding && projects.length === 0) {
+                  router.push('/onboarding');
+                } else {
+                  router.push('/dashboard');
+                }
+              }}
+              id="hero-launch-btn" 
+              className="landing-btn-primary landing-btn-lg cursor-pointer border-none"
+            >
               Open Workspace →
-            </Link>
-            <a href="#demo" className="landing-btn-ghost landing-btn-lg">
-              See Demo
-            </a>
+            </button>
+            <button 
+              onClick={() => {
+                localStorage.removeItem('archnet_project_draft_sandbox');
+                router.push('/editor/sandbox?template=Simple%20CNN');
+              }} 
+              className="landing-btn-ghost landing-btn-lg cursor-pointer"
+            >
+              Try Sandbox
+            </button>
           </div>
 
           {/* Stats row */}
@@ -580,7 +604,7 @@ export default function LandingPage() {
             <span style={{ color: '#ffe082' }}>Deploy Anywhere</span>
           </h2>
           <p className="section-subtitle" style={{ maxWidth: 540, margin: '0 auto 48px' }}>
-            MLBuilder's compiler targets all major production ML frameworks,
+            ArchNet's compiler targets all major production ML frameworks,
             giving you the freedom to switch runtimes without redesigning your architecture.
           </p>
           <div className="frameworks-row">
@@ -689,7 +713,7 @@ export default function LandingPage() {
           </p>
           <div className="hero-actions" style={{ marginTop: 40 }}>
             <Link href="/dashboard" id="cta-launch-btn" className="landing-btn-primary landing-btn-xl">
-              Open MLBuilder →
+              Open ArchNet →
             </Link>
             <Link href="/docs" className="landing-btn-ghost landing-btn-lg">
               Read the Docs
@@ -711,7 +735,7 @@ export default function LandingPage() {
                 <line x1="10" y1="5" x2="17" y2="12" stroke="#8ab4f8" strokeWidth="1.2" opacity="0.6" />
               </svg>
             </div>
-            <span style={{ color: '#5f6368', fontSize: 13 }}>MLBuilder © 2026 — Enterprise Neural Architecture Platform</span>
+            <span style={{ color: '#5f6368', fontSize: 13 }}>ArchNet © 2026 — Enterprise Neural Architecture Platform</span>
           </div>
           <div className="footer-links">
             <Link href="/dashboard">App</Link>

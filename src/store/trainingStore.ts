@@ -48,7 +48,7 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
     // Prevent multiple sockets
     get().disconnectSocket();
 
-    const token = typeof window !== 'undefined' ? localStorage.getItem('mlbuilder_token') : null;
+    const token = typeof window !== 'undefined' ? localStorage.getItem('archnet_token') : null;
     const wsUrl = `ws://127.0.0.1:8000/ws/training/${projectId}?token=${token || ''}`;
 
     let socket: WebSocket;

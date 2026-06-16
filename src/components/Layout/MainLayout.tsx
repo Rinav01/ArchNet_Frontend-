@@ -37,10 +37,10 @@ export default function MainLayout({
   }, [checkBackendStatus]);
 
   useEffect(() => {
-    const token = localStorage.getItem('mlbuilder_token');
+    const token = localStorage.getItem('archnet_token');
     
     // Route guard: if online is active and token is missing, or token is missing entirely, redirect to /login
-    if ((isOnline || !token) && !token && pathname !== '/login') {
+    if ((isOnline || !token) && !token && pathname !== '/login' && !pathname.startsWith('/editor/sandbox')) {
       router.push('/login');
     } else {
       setIsCheckingAuth(false);

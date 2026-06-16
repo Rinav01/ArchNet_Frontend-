@@ -132,7 +132,7 @@ export default function CodePreviewModal({ isOpen, onClose, nodes, edges, onOpen
       label = 'pytorch_module';
     }
 
-    element.download = `mlbuilder_${label}${ext}`;
+    element.download = `archnet_${label}${ext}`;
     document.body.appendChild(element);
     element.click();
     document.body.removeChild(element);

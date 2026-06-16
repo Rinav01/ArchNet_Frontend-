@@ -269,9 +269,9 @@ export function compileToONNX(nodes: CanvasNode[], edges: CanvasEdge[]): string 
 from onnx import helper, TensorProto
 import numpy as np
 
-def create_mlbuilder_onnx_model():
+def create_archnet_onnx_model():
     """
-    Generated automatically by MLBuilder visual designer.
+    Generated automatically by ArchNet visual designer.
     Topology contains ${nodes.length} nodes and ${edges.length} connections.
     Constructs an equivalent ONNX computational graph using standard onnx.helper APIs.
     """
@@ -308,19 +308,19 @@ ${finalLeaves.map(leaf => {
     # --- Construct Computational Graph ---
     graph = helper.make_graph(
         nodes=onnx_nodes,
-        name="MLBuilderVisualGraph",
+        name="ArchNetVisualGraph",
         inputs=[graph_input],
         outputs=graph_outputs,
         initializer=onnx_initializers
     )
 
     # --- Construct ONNX Model ---
-    model = helper.make_model(graph, producer_name="MLBuilder Workspace Compiler")
+    model = helper.make_model(graph, producer_name="ArchNet Workspace Compiler")
     return model
 
 if __name__ == '__main__':
     # Compile the ONNX model graph structure
-    onnx_model = create_mlbuilder_onnx_model()
+    onnx_model = create_archnet_onnx_model()
     
     # Check model consistency and validate topology schemas
     try:
@@ -328,8 +328,8 @@ if __name__ == '__main__':
         print("ONNX Model compiled and successfully validated!")
         
         # Save ONNX model binary to local disk
-        onnx.save(onnx_model, "mlbuilder_graph_model.onnx")
-        print("Saved compiled ONNX binary model as 'mlbuilder_graph_model.onnx'.")
+        onnx.save(onnx_model, "archnet_graph_model.onnx")
+        print("Saved compiled ONNX binary model as 'archnet_graph_model.onnx'.")
     except Exception as e:
         print("ONNX validation trace warning:", e)
 `;

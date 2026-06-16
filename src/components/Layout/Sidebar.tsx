@@ -51,7 +51,7 @@ export default function Sidebar() {
         {!isEditor && (
           <div>
             <span className="text-xl font-bold tracking-tight text-white">
-              MLBuilder
+              ArchNet
             </span>
           </div>
         )}

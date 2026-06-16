@@ -1,5 +1,5 @@
 /**
- * MLBuilder Frontend GraphQL API Connector
+ * ArchNet Frontend GraphQL API Connector
  * Provides live communication with the FastAPI Strawberry GraphQL Backend (http://127.0.0.1:8000/graphql)
  * and incorporates automated local sandbox fallbacks when the server is offline.
  */
@@ -17,7 +17,7 @@ export async function isBackendOnline(): Promise<boolean> {
 }
 
 export async function graphqlRequest<T = any>(query: string, variables: any = {}): Promise<T> {
-  const token = typeof window !== 'undefined' ? localStorage.getItem('mlbuilder_token') : null;
+  const token = typeof window !== 'undefined' ? localStorage.getItem('archnet_token') : null;
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
@@ -42,8 +42,8 @@ export async function graphqlRequest<T = any>(query: string, variables: any = {}
       errorMsg.toLowerCase().includes('signature has expired')
     ) {
       if (typeof window !== 'undefined') {
-        localStorage.removeItem('mlbuilder_token');
-        localStorage.removeItem('mlbuilder_username');
+        localStorage.removeItem('archnet_token');
+        localStorage.removeItem('archnet_username');
         window.location.href = '/login';
       }
     }

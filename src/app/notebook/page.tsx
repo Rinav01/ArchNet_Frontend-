@@ -10,9 +10,9 @@ export default function NotebookPage() {
   const [codeCell, setCodeCell] = useState(
 `# Instantiate visual network and compile graph shapes
 import torch
-from mlbuilder_module import MLBuilderModule
+from archnet_module import ArchNetModule
 
-model = MLBuilderModule()
+model = ArchNetModule()
 x = torch.randn(1, 3, 224, 224)
 output = model(x)
 print("Output tensor shape:", output.shape)`

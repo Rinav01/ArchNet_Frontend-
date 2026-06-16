@@ -47,7 +47,7 @@ export default function OnboardingPage() {
   const [pipelineState, setPipelineState] = useState<'idle' | 'running' | 'success'>('idle');
 
   useEffect(() => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('mlbuilder_token') : null;
+    const token = typeof window !== 'undefined' ? localStorage.getItem('archnet_token') : null;
     if (!token) {
       router.push('/login');
     } else {
@@ -155,6 +155,7 @@ export default function OnboardingPage() {
   };
 
   const handleFinishOnboarding = () => {
+    localStorage.setItem('hasCompletedOnboarding', 'true');
     router.push('/dashboard');
   };
 

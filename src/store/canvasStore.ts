@@ -15,6 +15,7 @@ import {
   GET_DATASETS
 } from '@/lib/graphql/client';
 import { useProjectStore } from './projectStore';
+import { validateGraph } from '@/lib/canvas/validationEngine';
 
 
 let compilationTimeout: NodeJS.Timeout | null = null;
@@ -155,6 +156,7 @@ interface CanvasState {
   // Auto-Layout Suggester Engine Actions
   triggerAutoLayout: () => void;
   loadPrebuiltTemplate: (templateName: string) => Promise<void>;
+  clearCanvas: () => void;
 
   // Admin Allocations State & Actions
   clusterPriority: 'High' | 'Medium' | 'Low';
@@ -400,7 +402,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
       // Always load checkpoints from local storage
       get().loadCheckpoints(projectId);
 
-      if (isOnline) {
+      if (isOnline && projectId !== 'sandbox') {
         try {
           const data = await graphqlRequest(GET_PROJECT_DETAILS, { id: projectId });
           if (data && data.project) {
@@ -425,7 +427,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
             // Retrieve saved node groups from local project draft if available
             let localNodeGroups: CanvasNodeGroup[] = [];
             if (typeof window !== 'undefined') {
-              const savedDraft = localStorage.getItem(`mlbuilder_project_draft_${projectId}`);
+              const savedDraft = localStorage.getItem(`archnet_project_draft_${projectId}`);
               if (savedDraft) {
                 try {
                   const parsed = JSON.parse(savedDraft);
@@ -454,7 +456,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
 
       // Check if there's a saved draft in localStorage as a self-healing sandbox recovery
       if (typeof window !== 'undefined') {
-        const savedDraft = localStorage.getItem(`mlbuilder_project_draft_${projectId}`);
+        const savedDraft = localStorage.getItem(`archnet_project_draft_${projectId}`);
         if (savedDraft) {
           try {
             const parsed = JSON.parse(savedDraft);
@@ -533,7 +535,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
         config = { out_features: 64 };
       }
 
-      if (!isWsConnected && (!isOnline || !activeProjId)) {
+      if (!isWsConnected && (!isOnline || !activeProjId || activeProjId === 'sandbox')) {
         // Offline Sandbox path
         const tempId = presetId || `node_${Math.random().toString(36).substr(2, 9)}`;
         const newNode: CanvasNode = {
@@ -676,7 +678,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
 
       const connectedEdges = get().edges.filter(e => e.source === id || e.target === id);
 
-      if (!isWsConnected && (!isOnline || !activeProjId)) {
+      if (!isWsConnected && (!isOnline || !activeProjId || activeProjId === 'sandbox')) {
         // Offline Sandbox path
         set(state => ({
           nodes: state.nodes.filter(n => n.id !== id),
@@ -892,7 +894,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
         target: targetId,
       };
 
-      if (!isWsConnected && (!isOnline || !activeProjId)) {
+      if (!isWsConnected && (!isOnline || !activeProjId || activeProjId === 'sandbox')) {
         // Offline Sandbox path
         set(state => ({
           edges: [...state.edges, newEdge],
@@ -996,7 +998,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
       const edgeToRemove = get().edges.find(e => e.id === id);
       if (!edgeToRemove) return;
 
-      if (!isWsConnected && (!isOnline || !activeProjId)) {
+      if (!isWsConnected && (!isOnline || !activeProjId || activeProjId === 'sandbox')) {
         // Offline Sandbox path
         set(state => ({
           edges: state.edges.filter(e => e.id !== id),
@@ -1167,134 +1169,17 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
         };
       });
 
-      // 1. DAG DFS Cycle checker
-      const visited = new Set<string>();
-      const recStack = new Set<string>();
-      let hasCycle = false;
+      // 1-4. Validate Graph Using Shared Engine
+      const engineErrors = validateGraph(computedNodes, state.edges);
+      localErrors.push(...engineErrors);
 
-      const hasCycleDFS = (u: string): boolean => {
-        visited.add(u);
-        recStack.add(u);
-
-        const neighbors = state.edges.filter(e => e.source === u).map(e => e.target);
-        for (const v of neighbors) {
-          if (!visited.has(v)) {
-            if (hasCycleDFS(v)) return true;
-          } else if (recStack.has(v)) {
-            return true;
-          }
-        }
-
-        recStack.delete(u);
-        return false;
-      };
-
-      state.nodes.forEach(n => {
-        if (!visited.has(n.id)) {
-          if (hasCycleDFS(n.id)) {
-            hasCycle = true;
-          }
-        }
-      });
-
+      const hasCycle = localErrors.some(e => e.category === 'cycle');
       if (hasCycle) {
-        localErrors.push({
-          type: 'error',
-          category: 'cycle',
-          message: 'DAG loop validation failed: Cyclic connections detected in model architecture! Loops are not allowed.',
-        });
         const wasCycle = state.validationErrors.some(e => e.category === 'cycle');
         if (!wasCycle) {
           toast.error('Cycle Detected', 'DAG loop validation failed: Cyclic connections detected in model!');
         }
       }
-
-      // 2. Disconnected components check
-      const inputNode = computedNodes.find(n => n.type === 'Input');
-      if (inputNode) {
-        const flowVisited = new Set<string>();
-        const queue = [inputNode.id];
-        while (queue.length > 0) {
-          const curr = queue.shift()!;
-          if (!flowVisited.has(curr)) {
-            flowVisited.add(curr);
-            const neighbors = state.edges.filter(e => e.source === curr).map(e => e.target);
-            neighbors.forEach(v => {
-              if (!flowVisited.has(v)) queue.push(v);
-            });
-          }
-        }
-
-        computedNodes.forEach(n => {
-          if (!flowVisited.has(n.id) && n.type !== 'Input') {
-            localErrors.push({
-              nodeId: n.id,
-              type: 'warning',
-              category: 'disconnected',
-              message: `Layer '${n.name}' is disconnected from the main 'Input' graph flow. All active layers must connect.`,
-            });
-          }
-        });
-      }
-
-      // 3. Ranks and shape validation
-      computedNodes.forEach(n => {
-        if (n.type === 'Conv2D' || n.type === 'MaxPool2D') {
-          if (n.inputShape.length > 0 && n.inputShape.length !== 3) {
-            localErrors.push({
-              nodeId: n.id,
-              type: 'error',
-              category: 'rank',
-              message: `Layer '${n.name}' (${n.type}) requires a 3D input tensor [Height, Width, Channels] (implicit batch). Received: [${n.inputShape.join(', ')}] (Rank ${n.inputShape.length}).`,
-            });
-          }
-        } else if (n.type === 'Dense') {
-          if (n.inputShape.length > 0 && n.inputShape.length !== 1) {
-            localErrors.push({
-              nodeId: n.id,
-              type: 'error',
-              category: 'rank',
-              message: `Layer '${n.name}' (${n.type}) requires a 1D input tensor [Features] (implicit batch). Received: [${n.inputShape.join(', ')}] (Rank ${n.inputShape.length}). Insert a Flatten block.`,
-            });
-          }
-        }
-      });
-
-      // 4. Broadcasting validation for merging links
-      computedNodes.forEach(n => {
-        const incomingEdges = state.edges.filter(e => e.target === n.id);
-        if (incomingEdges.length > 1) {
-          const firstParentId = incomingEdges[0].source;
-          const firstShape = shapesMap.get(firstParentId) || [];
-          
-          for (let idx = 1; idx < incomingEdges.length; idx++) {
-            const otherParentId = incomingEdges[idx].source;
-            const otherParent = state.nodes.find(node => node.id === otherParentId);
-            const otherShape = shapesMap.get(otherParentId) || [];
-            
-            let isCompatible = true;
-            if (firstShape.length !== otherShape.length) {
-              isCompatible = false;
-            } else {
-              for (let d = 0; d < firstShape.length; d++) {
-                if (firstShape[d] !== otherShape[d] && firstShape[d] !== 1 && otherShape[d] !== 1) {
-                  isCompatible = false;
-                  break;
-                }
-              }
-            }
-            
-            if (!isCompatible) {
-              localErrors.push({
-                nodeId: n.id,
-                type: 'error',
-                category: 'broadcast',
-                message: `Broadcasting conflict at Layer '${n.name}': Incoming shape from '${otherParent?.name || 'parent'}' [${otherShape.join(', ')}] conflicts with base shape [${firstShape.join(', ')}].`,
-              });
-            }
-          }
-        }
-      });
 
       const updatedLogs = [...state.logs];
       localErrors.forEach(err => {
@@ -1400,7 +1285,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
     triggerCompilation: async () => {
       const isOnline = useProjectStore.getState().isOnline;
       const activeProjId = useProjectStore.getState().activeProjectId;
-      if (!isOnline || !activeProjId) return;
+      if (!isOnline || !activeProjId || activeProjId === 'sandbox') return;
 
       if (compilationTimeout) {
         clearTimeout(compilationTimeout);
@@ -1845,9 +1730,9 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
       if (get().ws) return;
 
       const isOnline = useProjectStore.getState().isOnline;
-      const token = typeof window !== 'undefined' ? localStorage.getItem('mlbuilder_token') : null;
+      const token = typeof window !== 'undefined' ? localStorage.getItem('archnet_token') : null;
 
-      if (!isOnline || !token) {
+      if (!isOnline || !token || projectId === 'sandbox') {
         // Silently fall back to offline sandbox mode and skip connection
         set({ syncStatus: 'disconnected', ws: null });
         return;
@@ -2127,7 +2012,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
 
         const activeProjId = useProjectStore.getState().activeProjectId;
         const online = useProjectStore.getState().isOnline;
-        const activeToken = typeof window !== 'undefined' ? localStorage.getItem('mlbuilder_token') : null;
+        const activeToken = typeof window !== 'undefined' ? localStorage.getItem('archnet_token') : null;
 
         if (activeProjId && event.code !== 1000 && online && activeToken) {
           if (reconnectTimeout) clearTimeout(reconnectTimeout);
@@ -2663,11 +2548,11 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
         try {
           const { nodes, edges, nodeGroups } = get();
           const data = JSON.stringify({ nodes, edges, nodeGroups });
-          localStorage.setItem(`mlbuilder_project_draft_${projectId}`, data);
+          localStorage.setItem(`archnet_project_draft_${projectId}`, data);
           set({ draftSavedStatus: 'saved' });
 
           const activeCheckpoints = get().checkpoints;
-          localStorage.setItem(`mlbuilder_project_checkpoints_${projectId}`, JSON.stringify(activeCheckpoints));
+          localStorage.setItem(`archnet_project_checkpoints_${projectId}`, JSON.stringify(activeCheckpoints));
         } catch (err) {
           console.error('Failed to auto-save draft:', err);
           set({ draftSavedStatus: 'error' });
@@ -2678,7 +2563,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
     loadCheckpoints: (projectId) => {
       if (typeof window === 'undefined') return;
       try {
-        const saved = localStorage.getItem(`mlbuilder_project_checkpoints_${projectId}`);
+        const saved = localStorage.getItem(`archnet_project_checkpoints_${projectId}`);
         if (saved) {
           set({ checkpoints: JSON.parse(saved) });
         } else {
@@ -2705,7 +2590,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
 
       const updated = [newCheckpoint, ...checkpoints];
       set({ checkpoints: updated });
-      localStorage.setItem(`mlbuilder_project_checkpoints_${projectId}`, JSON.stringify(updated));
+      localStorage.setItem(`archnet_project_checkpoints_${projectId}`, JSON.stringify(updated));
       get().addLog('success', `Created named checkpoint snapshot: "${newCheckpoint.name}"`);
     },
 
@@ -2755,14 +2640,14 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
 
       const updated = get().checkpoints.filter(c => c.id !== checkpointId);
       set({ checkpoints: updated });
-      localStorage.setItem(`mlbuilder_project_checkpoints_${projectId}`, JSON.stringify(updated));
+      localStorage.setItem(`archnet_project_checkpoints_${projectId}`, JSON.stringify(updated));
       get().addLog('info', `Deleted checkpoint snapshot.`);
     },
 
     loadCustomBlocks: () => {
       if (typeof window === 'undefined') return;
       try {
-        const saved = localStorage.getItem('mlbuilder_custom_blocks');
+        const saved = localStorage.getItem('archnet_custom_blocks');
         if (saved) {
           set({ customBlocks: JSON.parse(saved) });
         } else {
@@ -2792,7 +2677,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
       const updated = [...get().customBlocks, newBlock];
       set({ customBlocks: updated });
       if (typeof window !== 'undefined') {
-        localStorage.setItem('mlbuilder_custom_blocks', JSON.stringify(updated));
+        localStorage.setItem('archnet_custom_blocks', JSON.stringify(updated));
       }
       get().addLog('success', `Saved reusable custom block: "${newBlock.name}" containing ${targetNodes.length} layers.`);
     },
@@ -2864,7 +2749,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
       const updated = get().customBlocks.filter(b => b.id !== blockId);
       set({ customBlocks: updated });
       if (typeof window !== 'undefined') {
-        localStorage.setItem('mlbuilder_custom_blocks', JSON.stringify(updated));
+        localStorage.setItem('archnet_custom_blocks', JSON.stringify(updated));
       }
       get().addLog('info', 'Deleted custom block.');
     },
@@ -3249,6 +3134,69 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
 
         newNodeGroups = [
           { id: generateUUID(), name: 'NLP Sentiment Classifier', color: '#8ab4f8', nodeIds: [inputId, embedId, lstmId, denseId] }
+        ];
+
+      } else if (templateName === 'Simple CNN') {
+        const inputId = generateUUID();
+        const conv1Id = generateUUID();
+        const pool1Id = generateUUID();
+        const conv2Id = generateUUID();
+        const pool2Id = generateUUID();
+        const flattenId = generateUUID();
+        const denseId = generateUUID();
+
+        newNodes = [
+          { id: inputId, type: 'Input', name: 'INPUT_IMAGE', x: 100, y: 300, inputShape: [], outputShape: [28, 28, 1], config: { dim: [28, 28, 1] } },
+          { id: conv1Id, type: 'Conv2D', name: 'CONV_1', x: 280, y: 300, inputShape: [], outputShape: [], config: { filters: 32, kernelSize: 3, stride: 1, padding: 'valid', activation: 'ReLU' } },
+          { id: pool1Id, type: 'MaxPool2D', name: 'POOL_1', x: 460, y: 300, inputShape: [], outputShape: [], config: { poolSize: 2 } },
+          { id: conv2Id, type: 'Conv2D', name: 'CONV_2', x: 640, y: 300, inputShape: [], outputShape: [], config: { filters: 64, kernelSize: 3, stride: 1, padding: 'valid', activation: 'ReLU' } },
+          { id: pool2Id, type: 'MaxPool2D', name: 'POOL_2', x: 820, y: 300, inputShape: [], outputShape: [], config: { poolSize: 2 } },
+          { id: flattenId, type: 'Flatten', name: 'FLATTEN', x: 1000, y: 300, inputShape: [], outputShape: [], config: {} },
+          { id: denseId, type: 'Dense', name: 'OUTPUT', x: 1180, y: 300, inputShape: [], outputShape: [], config: { units: 10 } }
+        ];
+
+        newEdges = [
+          { id: generateUUID(), source: inputId, target: conv1Id },
+          { id: generateUUID(), source: conv1Id, target: pool1Id },
+          { id: generateUUID(), source: pool1Id, target: conv2Id },
+          { id: generateUUID(), source: conv2Id, target: pool2Id },
+          { id: generateUUID(), source: pool2Id, target: flattenId },
+          { id: generateUUID(), source: flattenId, target: denseId }
+        ];
+
+        newNodeGroups = [
+          { id: generateUUID(), name: 'Feature Extractor', color: '#8ab4f8', nodeIds: [conv1Id, pool1Id, conv2Id, pool2Id] },
+          { id: generateUUID(), name: 'Classifier', color: '#c5a3ff', nodeIds: [flattenId, denseId] }
+        ];
+
+      } else if (templateName === 'Autoencoder') {
+        const inputId = generateUUID();
+        const flattenId = generateUUID();
+        const enc1Id = generateUUID();
+        const bottleneckId = generateUUID();
+        const dec1Id = generateUUID();
+        const outputId = generateUUID();
+
+        newNodes = [
+          { id: inputId, type: 'Input', name: 'INPUT_IMAGE', x: 100, y: 300, inputShape: [], outputShape: [28, 28, 1], config: { dim: [28, 28, 1] } },
+          { id: flattenId, type: 'Flatten', name: 'FLATTEN', x: 280, y: 300, inputShape: [], outputShape: [], config: {} },
+          { id: enc1Id, type: 'Dense', name: 'ENCODER_DENSE', x: 460, y: 300, inputShape: [], outputShape: [], config: { units: 128 } },
+          { id: bottleneckId, type: 'Dense', name: 'BOTTLENECK', x: 640, y: 300, inputShape: [], outputShape: [], config: { units: 32 } },
+          { id: dec1Id, type: 'Dense', name: 'DECODER_DENSE', x: 820, y: 300, inputShape: [], outputShape: [], config: { units: 128 } },
+          { id: outputId, type: 'Dense', name: 'OUTPUT_DENSE', x: 1000, y: 300, inputShape: [], outputShape: [], config: { units: 784 } }
+        ];
+
+        newEdges = [
+          { id: generateUUID(), source: inputId, target: flattenId },
+          { id: generateUUID(), source: flattenId, target: enc1Id },
+          { id: generateUUID(), source: enc1Id, target: bottleneckId },
+          { id: generateUUID(), source: bottleneckId, target: dec1Id },
+          { id: generateUUID(), source: dec1Id, target: outputId }
+        ];
+
+        newNodeGroups = [
+          { id: generateUUID(), name: 'Encoder', color: '#8ab4f8', nodeIds: [enc1Id, bottleneckId] },
+          { id: generateUUID(), name: 'Decoder', color: '#81c784', nodeIds: [dec1Id, outputId] }
         ];
 
       } else if (templateName === 'Text Classifier') {
@@ -3829,7 +3777,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
 
       const syncWithDatabase = async () => {
         const activeProjId = useProjectStore.getState().activeProjectId;
-        if (!activeProjId) return;
+        if (!activeProjId || activeProjId === 'sandbox') return;
 
         // Poll for WebSocket connection readiness up to 15 times (3 seconds)
         let attempts = 0;
@@ -3949,7 +3897,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
                 edges: mappedEdges,
                 nodeGroups: updatedNodeGroups
               });
-              localStorage.setItem(`mlbuilder_project_draft_${activeProjId}`, draftData);
+              localStorage.setItem(`archnet_project_draft_${activeProjId}`, draftData);
             }
 
             // Since GraphQL mutations generated new database IDs, reload graph to align client IDs
@@ -3975,6 +3923,17 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
     setGpuThrottleLimit: (limit) => {
       set({ gpuThrottleLimit: limit });
       get().addLog('info', `Admin: GPU Throttle Limit set to ${limit}%`);
+    },
+    
+    clearCanvas: () => {
+      set({
+        nodes: [],
+        edges: [],
+        nodeGroups: [],
+        selectedNodeIds: [],
+        selectedNodeId: null
+      });
+      get().addLog('info', 'Canvas cleared.');
     },
   };
 });

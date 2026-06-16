@@ -155,7 +155,7 @@ from flax import linen as nn
 
 class GeneratedModel(nn.Module):
     """
-    Generated automatically by MLBuilder visual designer.
+    Generated automatically by ArchNet visual designer.
     Topology contains ${nodes.length} nodes and ${edges.length} connections.
     Uses Flax Linen Compact notation.
     """

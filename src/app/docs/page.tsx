@@ -71,12 +71,12 @@ export default function DocsPage() {
     {
       id: 'overview',
       category: 'getting-started',
-      title: 'MLBuilder Workspace Overview',
+      title: 'ArchNet Workspace Overview',
       icon: BookOpen,
       content: (
         <div className="space-y-4">
           <p className="text-sm text-[#9aa0a6] leading-relaxed">
-            MLBuilder is a state-of-the-art **Visual Deep Learning IDE** that allows machine learning developers to construct, validate, profile, and compile neural network architectures inside an intuitive, collaborative graphical stage.
+            ArchNet is a state-of-the-art **Visual Deep Learning IDE** that allows machine learning developers to construct, validate, profile, and compile neural network architectures inside an intuitive, collaborative graphical stage.
           </p>
           <div className="p-4 bg-[#8ab4f8]/5 border border-[#8ab4f8]/15 rounded-2xl flex gap-3.5 items-start">
             <Sparkles className="text-[#8ab4f8] shrink-0 mt-0.5" size={18} />
@@ -115,7 +115,7 @@ export default function DocsPage() {
       content: (
         <div className="space-y-4">
           <p className="text-sm text-[#9aa0a6] leading-relaxed">
-            MLBuilder provides a robust model lifecycle workflow, combining automated **AI Architecture Generation** with enterprise-grade **Model Registry Auditing** and SOTA **Research Playground** templates.
+            ArchNet provides a robust model lifecycle workflow, combining automated **AI Architecture Generation** with enterprise-grade **Model Registry Auditing** and SOTA **Research Playground** templates.
           </p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
             <div className="p-4 bg-[#2b2d31]/40 border border-[#3f4046]/45 rounded-2xl space-y-2">
@@ -367,12 +367,12 @@ export default function DocsPage() {
       content: (
         <div className="space-y-4">
           <p className="text-sm text-[#9aa0a6] leading-relaxed">
-            Running into server handshakes failure or need custom workspace capabilities? The MLBuilder Support desk is open.
+            Running into server handshakes failure or need custom workspace capabilities? The ArchNet Support desk is open.
           </p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="p-4 bg-[#2b2d31]/40 border border-[#3f4046]/45 rounded-2xl">
               <h5 className="text-xs font-bold text-white uppercase tracking-wider mb-1">Developer Slack Channel</h5>
-              <p className="text-[10.5px] text-[#9aa0a6] leading-relaxed">Join the conversation on visual deep learning blocks at `#mlbuilder-builders`.</p>
+              <p className="text-[10.5px] text-[#9aa0a6] leading-relaxed">Join the conversation on visual deep learning blocks at `#archnet-builders`.</p>
               <a href="#" className="text-xs font-bold text-[#8ab4f8] mt-2 inline-flex items-center gap-1 hover:underline">
                 Join Slack Workspace <ArrowUpRight size={12} />
               </a>
@@ -417,7 +417,7 @@ export default function DocsPage() {
             <span className="font-bold text-[#1e1f22] text-md">M</span>
           </div>
           <div>
-            <h1 className="text-md font-black text-white tracking-wide leading-none">MLBuilder</h1>
+            <h1 className="text-md font-black text-white tracking-wide leading-none">ArchNet</h1>
             <span className="text-[9px] font-extrabold text-[#8ab4f8] uppercase tracking-wider">Docs Center</span>
           </div>
         </div>
@@ -536,9 +536,9 @@ export default function DocsPage() {
 const samplePyTorchCode = `import torch
 import torch.nn as nn
 
-class MLBuilderDAGModel(nn.Module):
+class ArchNetDAGModel(nn.Module):
     def __init__(self):
-        super(MLBuilderDAGModel, self).__init__()
+        super(ArchNetDAGModel, self).__init__()
         
         # Standard Visual Graph layers
         self.conv1 = nn.Conv2d(in_channels=3, out_channels=32, kernel_size=3, stride=1, padding=1)

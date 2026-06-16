@@ -164,7 +164,7 @@ from tensorflow.keras import layers, Model
 
 class GeneratedModel(Model):
     """
-    Generated automatically by MLBuilder visual designer.
+    Generated automatically by ArchNet visual designer.
     Topology contains ${nodes.length} nodes and ${edges.length} connections.
     """
     def __init__(self):

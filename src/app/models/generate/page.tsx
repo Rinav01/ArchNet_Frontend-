@@ -185,7 +185,7 @@ export default function AIArchitectureGeneratePage() {
           ]
         };
 
-        localStorage.setItem(`mlbuilder_project_draft_${projectUuid}`, JSON.stringify(draftData));
+        localStorage.setItem(`archnet_project_draft_${projectUuid}`, JSON.stringify(draftData));
       }
 
       router.push(`/editor/${projectUuid}`);

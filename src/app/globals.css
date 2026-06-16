@@ -162,3 +162,13 @@ input[type="range"]::-webkit-slider-thumb:hover {
 .animate-pulse-vibrant {
   animation: pulse-vibrant 2s infinite cubic-bezier(0.4, 0, 0.2, 1) !important;
 }
+
+@keyframes float-svg {
+  0% { transform: translateY(0px) scale(1); }
+  50% { transform: translateY(-15px) scale(1.02); }
+  100% { transform: translateY(0px) scale(1); }
+}
+
+.animate-float-svg {
+  animation: float-svg 6s ease-in-out infinite;
+}

@@ -54,7 +54,7 @@ export default function AICopilotPanel() {
   // Load chat history from localStorage
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('mlbuilder_copilot_chat');
+      const saved = localStorage.getItem('archnet_copilot_chat');
       if (saved) {
         try {
           setMessages(JSON.parse(saved));
@@ -66,7 +66,7 @@ export default function AICopilotPanel() {
         const welcomeMessage: Message = {
           id: 'welcome',
           sender: 'assistant',
-          text: "Hi! I'm **MLBuilder Copilot**, your real-time deep learning architecture assistant. 🧠✨\n\nI'm aware of your current canvas context, active nodes, and data frameworks. How can I accelerate your ML design pipeline today?",
+          text: "Hi! I'm **ArchNet Copilot**, your real-time deep learning architecture assistant. 🧠✨\n\nI'm aware of your current canvas context, active nodes, and data frameworks. How can I accelerate your ML design pipeline today?",
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         };
         setMessages([welcomeMessage]);
@@ -78,7 +78,7 @@ export default function AICopilotPanel() {
   const saveChat = (newMessages: Message[]) => {
     setMessages(newMessages);
     if (typeof window !== 'undefined') {
-      localStorage.setItem('mlbuilder_copilot_chat', JSON.stringify(newMessages));
+      localStorage.setItem('archnet_copilot_chat', JSON.stringify(newMessages));
     }
   };
 

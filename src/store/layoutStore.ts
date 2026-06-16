@@ -109,6 +109,18 @@ const DEFAULT_PANELS: Record<string, PanelState> = {
     height: 550,
     zIndex: 15,
   },
+  codePreview: {
+    id: 'codePreview',
+    title: 'Real-Time Code',
+    isOpen: false,
+    isFloating: false,
+    dockPosition: 'right',
+    x: 800,
+    y: 100,
+    width: 450,
+    height: 550,
+    zIndex: 16,
+  },
 };
 
 export const useLayoutStore = create<LayoutState>((set, get) => ({
@@ -178,7 +190,7 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
       if (!panel) return {};
 
       // Retrieve default dimensions for docking
-      const defaultWidth = id === 'console' ? 800 : (id === 'inspector' || id === 'copilot') ? 350 : id === 'explainability' ? 340 : 320;
+      const defaultWidth = id === 'console' ? 800 : (id === 'codePreview') ? 450 : (id === 'inspector' || id === 'copilot') ? 350 : id === 'explainability' ? 340 : 320;
       const defaultHeight = id === 'console' ? 256 : 550;
 
       return {
@@ -274,6 +286,7 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
           updatedPanels.inspector = { ...updatedPanels.inspector, isOpen: true, isFloating: false, dockPosition: 'right' };
           updatedPanels.console = { ...updatedPanels.console, isOpen: false };
           updatedPanels.diagnostics = { ...updatedPanels.diagnostics, isOpen: false };
+          updatedPanels.codePreview = { ...updatedPanels.codePreview, isOpen: false };
           consoleTab = 'activity';
           break;
         case 'Canvas Focus':
@@ -281,6 +294,7 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
           updatedPanels.inspector = { ...updatedPanels.inspector, isOpen: false };
           updatedPanels.console = { ...updatedPanels.console, isOpen: false };
           updatedPanels.diagnostics = { ...updatedPanels.diagnostics, isOpen: false };
+          updatedPanels.codePreview = { ...updatedPanels.codePreview, isOpen: false };
           break;
         case 'Training Mode':
           updatedPanels.library = { ...updatedPanels.library, isOpen: false };

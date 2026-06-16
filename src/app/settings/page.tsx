@@ -6,7 +6,7 @@ import { Settings, Save, Shield, HardDrive, Key, User } from 'lucide-react';
 
 export default function SettingsPage() {
   const [graphqlUrl, setGraphqlUrl] = useState('http://127.0.0.1:8000/graphql');
-  const [s3Bucket, setS3Bucket] = useState('mlbuilder-cloud-assets');
+  const [s3Bucket, setS3Bucket] = useState('archnet-cloud-assets');
   const [framework, setFramework] = useState('PyTorch');
 
   const handleSave = (e: React.FormEvent) => {

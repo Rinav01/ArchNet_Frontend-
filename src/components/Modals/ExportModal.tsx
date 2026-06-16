@@ -274,8 +274,8 @@ export default function ExportModal({ isOpen, onClose, nodes, edges, project }: 
     const reqBytes = encoder.encode(reqs);
 
     // 4. README.md
-    const readme = `# MLBuilder Visual Project Export
-This package was compiled and exported from MLBuilder Visual Designer.
+    const readme = `# ArchNet Visual Project Export
+This package was compiled and exported from ArchNet Visual Designer.
 
 ## Structure
 - \`model.py\`: Python module implementation of the model compiled into **${framework}**.

@@ -54,7 +54,7 @@ export default function ValidationSidebar() {
   React.useEffect(() => {
     let active = true;
     const fetchScores = async () => {
-      if (!isOnline || !activeProjectId) {
+      if (!isOnline || !activeProjectId || activeProjectId === 'sandbox') {
         setBackendScore(null);
         setBackendGrade(null);
         setBackendBreakdown(null);
@@ -521,7 +521,7 @@ export default function ValidationSidebar() {
                   return cb;
                 });
                 useCanvasStore.setState({ customBlocks: updated });
-                localStorage.setItem('mlbuilder_custom_blocks', JSON.stringify(updated));
+                localStorage.setItem('archnet_custom_blocks', JSON.stringify(updated));
                 useCanvasStore.getState().addLog('success', `AutoML Fix: Configured ReLU activation for Layer ${node.name} in custom block "${block.name}".`);
               }
             });
@@ -557,7 +557,7 @@ export default function ValidationSidebar() {
                   return cb;
                 });
                 useCanvasStore.setState({ customBlocks: updated });
-                localStorage.setItem('mlbuilder_custom_blocks', JSON.stringify(updated));
+                localStorage.setItem('archnet_custom_blocks', JSON.stringify(updated));
                 useCanvasStore.getState().addLog('success', `AutoML Fix: Resized Input Layer in custom block "${block.name}" to 224x224.`);
               }
             });
@@ -609,7 +609,7 @@ export default function ValidationSidebar() {
                   return cb;
                 });
                 useCanvasStore.setState({ customBlocks: updated });
-                localStorage.setItem('mlbuilder_custom_blocks', JSON.stringify(updated));
+                localStorage.setItem('archnet_custom_blocks', JSON.stringify(updated));
                 useCanvasStore.getState().addLog('success', `AutoML Fix: Inserted Flatten Layer in custom block "${block.name}".`);
               }
             });
@@ -663,7 +663,7 @@ export default function ValidationSidebar() {
                     return cb;
                   });
                   useCanvasStore.setState({ customBlocks: updated });
-                  localStorage.setItem('mlbuilder_custom_blocks', JSON.stringify(updated));
+                  localStorage.setItem('archnet_custom_blocks', JSON.stringify(updated));
                   useCanvasStore.getState().addLog('success', `AutoML Fix: Reduced units of Dense Layer ${n.name} to 128 in custom block "${block.name}".`);
                 }
               });
@@ -738,7 +738,7 @@ export default function ValidationSidebar() {
                 return cb;
               });
               useCanvasStore.setState({ customBlocks: updated });
-              localStorage.setItem('mlbuilder_custom_blocks', JSON.stringify(updated));
+              localStorage.setItem('archnet_custom_blocks', JSON.stringify(updated));
               useCanvasStore.getState().addLog('success', `AutoML Fix: Inserted MaxPool2D after ${targetNode.name} in custom block "${block.name}".`);
             }
           });
@@ -781,7 +781,7 @@ export default function ValidationSidebar() {
               return cb;
             });
             useCanvasStore.setState({ customBlocks: updated });
-            localStorage.setItem('mlbuilder_custom_blocks', JSON.stringify(updated));
+            localStorage.setItem('archnet_custom_blocks', JSON.stringify(updated));
             useCanvasStore.getState().addLog('success', `AutoML Fix: Configured 224x224 shape for Input in custom block "${block.name}".`);
           };
         } else if (isDenseRank) {
@@ -823,7 +823,7 @@ export default function ValidationSidebar() {
               return cb;
             });
             useCanvasStore.setState({ customBlocks: updated });
-            localStorage.setItem('mlbuilder_custom_blocks', JSON.stringify(updated));
+            localStorage.setItem('archnet_custom_blocks', JSON.stringify(updated));
             useCanvasStore.getState().addLog('success', `AutoML Fix: Inserted Flatten Layer in custom block "${block.name}".`);
           };
         } else if (isCycle) {
@@ -844,7 +844,7 @@ export default function ValidationSidebar() {
               return cb;
             });
             useCanvasStore.setState({ customBlocks: updated });
-            localStorage.setItem('mlbuilder_custom_blocks', JSON.stringify(updated));
+            localStorage.setItem('archnet_custom_blocks', JSON.stringify(updated));
             useCanvasStore.getState().addLog('success', `AutoML Fix: Removed cycle connection in custom block "${block.name}".`);
           };
         } else if (isDisconnected) {
@@ -869,7 +869,7 @@ export default function ValidationSidebar() {
               return cb;
             });
             useCanvasStore.setState({ customBlocks: updated });
-            localStorage.setItem('mlbuilder_custom_blocks', JSON.stringify(updated));
+            localStorage.setItem('archnet_custom_blocks', JSON.stringify(updated));
             useCanvasStore.getState().addLog('success', `AutoML Fix: Linked disconnected layer in custom block "${block.name}".`);
           };
         }

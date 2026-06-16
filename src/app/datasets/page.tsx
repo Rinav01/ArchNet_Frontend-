@@ -246,7 +246,7 @@ export default function DatasetsPage() {
       datasetType: dtype,
       status: 'PROCESSING',
       numRecords: 0,
-      description: `Uploaded file archive containing raw training elements processed inside MLBuilder on ${new Date().toLocaleDateString()}.`,
+      description: `Uploaded file archive containing raw training elements processed inside ArchNet on ${new Date().toLocaleDateString()}.`,
       schemaMetadata: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()

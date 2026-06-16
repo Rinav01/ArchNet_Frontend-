@@ -10,7 +10,7 @@ import ValidationSidebar from '@/components/Panels/ValidationSidebar';
 import ExplainabilityPanel from '@/components/Panels/ExplainabilityPanel';
 import AICopilotPanel from '@/components/Panels/AICopilotPanel';
 import CanvasWrapper from '@/components/Canvas/CanvasWrapper';
-import CodePreviewModal from '@/components/Modals/CodePreviewModal';
+import RealTimeCodePanel from '@/components/Panels/RealTimeCodePanel';
 import ExportModal from '@/components/Modals/ExportModal';
 import FrameworkComparisonModal from '@/components/Modals/FrameworkComparisonModal';
 import ErrorBoundary from '@/components/Common/ErrorBoundary';
@@ -18,6 +18,7 @@ import CommandPalette from '@/components/Modals/CommandPalette';
 import GraphSearch from '@/components/Modals/GraphSearch';
 import DiffViewerModal from '@/components/Modals/DiffViewerModal';
 import TrainingConfigModal from '@/components/Modals/TrainingConfigModal';
+import TemplateSelectionModal from '@/components/Modals/TemplateSelectionModal';
 import DockablePanel from '@/components/Common/DockablePanel';
 import { useLayoutStore } from '@/store/layoutStore';
 import { useCanvasStore } from '@/store/canvasStore';
@@ -68,6 +69,7 @@ export default function EditorPage() {
     saveCustomBlock,
     loadCustomBlocks,
     loadPrebuiltTemplate,
+    clearCanvas,
   } = useCanvasStore();
   
   const setActiveProjectId = useProjectStore((state) => state.setActiveProjectId);
@@ -78,15 +80,16 @@ export default function EditorPage() {
   const panels = useLayoutStore((state) => state.panels);
   const dockPreview = useLayoutStore((state) => state.dockPreview);
   const initializeCanvasLayout = useLayoutStore((state) => state.initializeCanvasLayout);
+  const togglePanel = useLayoutStore((state) => state.togglePanel);
 
   // Modals state
-  const [isCodeModalOpen, setIsCodeModalOpen] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isGraphSearchOpen, setIsGraphSearchOpen] = useState(false);
   const [isDiffModalOpen, setIsDiffModalOpen] = useState(false);
   const [isTrainingConfigOpen, setIsTrainingConfigOpen] = useState(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isComparisonModalOpen, setIsComparisonModalOpen] = useState(false);
+  const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
 
   // Keyboard shortcut listener for Undo / Redo and Modals (Command Palette / Graph Search)
   useEffect(() => {
@@ -151,6 +154,9 @@ export default function EditorPage() {
     }
     return () => {
       disconnectCollaboration();
+      if (projectId === 'sandbox') {
+        localStorage.removeItem('archnet_project_draft_sandbox');
+      }
     };
   }, [projectId, templateName, setActiveProjectId, loadProjects, loadGraph, loadPrebuiltTemplate, connectCollaboration, disconnectCollaboration, loadCustomBlocks]);
 
@@ -216,6 +222,12 @@ export default function EditorPage() {
             <AICopilotPanel />
           </ErrorBoundary>
         );
+      case 'codePreview':
+        return (
+          <ErrorBoundary name="Real-Time Code Preview">
+            <RealTimeCodePanel />
+          </ErrorBoundary>
+        );
       default:
         return null;
     }
@@ -225,14 +237,53 @@ export default function EditorPage() {
 
   return (
     <MainLayout 
-      onGenerateCode={() => setIsCodeModalOpen(true)} 
+      onGenerateCode={() => togglePanel('codePreview')} 
       onCompareVersions={() => setIsDiffModalOpen(true)}
       onOpenTrainingConfig={() => setIsTrainingConfigOpen(true)}
       onOpenExport={() => setIsExportModalOpen(true)}
       onOpenCompare={() => setIsComparisonModalOpen(true)}
     >
+      {isExportModalOpen && <ExportModal onClose={() => setIsExportModalOpen(false)} isOpen={false} nodes={[]} edges={[]} project={undefined} />}
+      {isComparisonModalOpen && <FrameworkComparisonModal onClose={() => setIsComparisonModalOpen(false)} isOpen={false} nodes={[]} edges={[]} project={undefined} />}
+      
+      <TemplateSelectionModal 
+        isOpen={isTemplateModalOpen} 
+        onClose={() => setIsTemplateModalOpen(false)} 
+        onSelectTemplate={(template) => {
+          setIsTemplateModalOpen(false);
+          loadPrebuiltTemplate(template);
+        }} 
+      />
+
       <div className="flex h-[calc(100vh-4rem)] overflow-hidden relative z-10 select-none bg-[#090a0f] w-full">
         
+        {projectId === 'sandbox' && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-[#1e1f22]/90 backdrop-blur-md border border-[#8ab4f8]/30 px-6 py-3 rounded-full flex items-center gap-4 shadow-lg shadow-[#8ab4f8]/10 animate-fade-in">
+            <div className="flex items-center gap-2">
+              <span className="relative flex h-3 w-3">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#8ab4f8] opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-[#8ab4f8]"></span>
+              </span>
+              <span className="text-white text-sm font-bold">Welcome to Sandbox Mode</span>
+              <span className="text-[#9aa0a6] text-sm hidden sm:inline">— You're exploring a pre-built CNN.</span>
+            </div>
+            <div className="flex items-center gap-2 ml-2 border-l border-[#3f4046] pl-4">
+              <button 
+                onClick={() => setIsTemplateModalOpen(true)}
+                className="text-xs font-bold text-white bg-[#2b2d31] hover:bg-[#3f4046] px-3 py-1.5 rounded-md transition-colors"
+              >
+                Browse Templates
+              </button>
+              <button 
+                onClick={() => clearCanvas()}
+                className="text-xs font-bold text-[#f28b82] hover:text-white hover:bg-[#f28b82]/20 px-3 py-1.5 rounded-md transition-colors"
+              >
+                Start Blank
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* 1. LEFT DOCK COLUMN CONTAINER */}
         {leftDock.length > 0 && (
           <div className="flex flex-col h-full shrink-0 border-r border-[#3f4046] relative z-20">
@@ -560,15 +611,6 @@ export default function EditorPage() {
         )}
       </div>
 
-      {/* Floating Code Preview Modal / Compiler Center */}
-      <CodePreviewModal
-        isOpen={isCodeModalOpen}
-        onClose={() => setIsCodeModalOpen(false)}
-        nodes={nodes}
-        edges={edges}
-        onOpenCompare={() => setIsComparisonModalOpen(true)}
-      />
-
       {/* Floating Export Modal */}
       <ExportModal
         isOpen={isExportModalOpen}
@@ -590,7 +632,7 @@ export default function EditorPage() {
       <CommandPalette
         isOpen={isCommandPaletteOpen}
         onClose={() => setIsCommandPaletteOpen(false)}
-        onGenerateCode={() => setIsCodeModalOpen(true)}
+        onGenerateCode={() => togglePanel('codePreview')}
         onCompareVersions={() => setIsDiffModalOpen(true)}
       />
 

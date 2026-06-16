@@ -1,6 +1,6 @@
-# MLBuilder Visual Neural Network Designer & Compiler
+# ArchNet Visual Neural Network Designer & Compiler
 
-MLBuilder is an enterprise-grade, high-fidelity visual workspace for designing, auditing, compiling, and testing deep learning architectures. It empowers machine learning engineers to design complex model graphs, configure training hyperparameters, validate tensor shape matching, run animated forward passes, and instantly compile production-ready modules to PyTorch, TensorFlow, JAX, or ONNX.
+ArchNet is an enterprise-grade, high-fidelity visual workspace for designing, auditing, compiling, and testing deep learning architectures. It empowers machine learning engineers to design complex model graphs, configure training hyperparameters, validate tensor shape matching, run animated forward passes, and instantly compile production-ready modules to PyTorch, TensorFlow, JAX, or ONNX.
 
 ---
 
@@ -224,7 +224,7 @@ The Diagnostic Center scans the active model canvas and saved custom blocks usin
 
 ## 🧠 V2 Advanced Layer Extensions & Research Playground (Modules 6.1 - 6.7)
 
-We have extended MLBuilder with advanced layer types, sequence complexity explainability, and multi-framework compiler comparative layout structures:
+We have extended ArchNet with advanced layer types, sequence complexity explainability, and multi-framework compiler comparative layout structures:
 
 ### 1. V2 Layer Library (Module 6.1)
 * **Collapsible Accordion Categories**: Organizes standard layers, sequence-based layers, transformer block components, and graph neural network layers in a clean collapsible accordion within [LayerLibrary.tsx](file:///d:/Coding/ArchNet_frontend/src/components/Panels/LayerLibrary.tsx).
@@ -527,7 +527,7 @@ Controlled by the Workspace button in the header. Each panel can be individually
 File: 
 AICopilotPanel.tsx
 
-A chat-style interface for interacting with the MLBuilder Copilot assistant.
+A chat-style interface for interacting with the ArchNet Copilot assistant.
 
 Context Ribbon (top): Shows the active project name, active dataset, and selected node count — giving the AI context awareness.
 
