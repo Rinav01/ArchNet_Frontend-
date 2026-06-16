@@ -49,7 +49,7 @@ export default function InferencePlaygroundPage() {
       );
     } else {
       setRequestHeaders(
-        `POST /v1/models/sandbox/predict HTTP/1.1\nHost: localhost:8000\nContent-Type: application/json`
+        `POST /v1/models/sandbox/predict HTTP/1.1\nHost: 127.0.0.1:8000\nContent-Type: application/json`
       );
     }
   }, [deployment, currentProject]);

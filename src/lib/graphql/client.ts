@@ -1,10 +1,10 @@
 /**
  * MLBuilder Frontend GraphQL API Connector
- * Provides live communication with the FastAPI Strawberry GraphQL Backend (http://localhost:8000/graphql)
+ * Provides live communication with the FastAPI Strawberry GraphQL Backend (http://127.0.0.1:8000/graphql)
  * and incorporates automated local sandbox fallbacks when the server is offline.
  */
 
-const GRAPHQL_URL = process.env.NEXT_PUBLIC_GRAPHQL_URL || 'http://localhost:8000/graphql';
+const GRAPHQL_URL = process.env.NEXT_PUBLIC_GRAPHQL_URL || 'http://127.0.0.1:8000/graphql';
 
 export async function isBackendOnline(): Promise<boolean> {
   try {
@@ -106,7 +106,26 @@ export const SIGNUP = `
         id
         username
         email
+        preferences
       }
+    }
+  }
+`;
+
+export const GET_USER_PREFERENCES = `
+  query GetUserPreferences {
+    me {
+      id
+      preferences
+    }
+  }
+`;
+
+export const UPDATE_USER_PREFERENCES = `
+  mutation UpdateUserPreferences($preferences: JSON!) {
+    updateUserPreferences(preferences: $preferences) {
+      id
+      preferences
     }
   }
 `;
@@ -498,6 +517,12 @@ export const GET_TRAINING_RUNS = `
       loss
       createdAt
     }
+  }
+`;
+
+export const DELETE_DATASET = `
+  mutation DeleteDataset($id: ID!) {
+    deleteDataset(id: $id)
   }
 `;
 

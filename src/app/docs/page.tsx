@@ -108,6 +108,48 @@ export default function DocsPage() {
       )
     },
     {
+      id: 'model-management',
+      category: 'features',
+      title: 'Model Registry & AI Generation',
+      icon: Cpu,
+      content: (
+        <div className="space-y-4">
+          <p className="text-sm text-[#9aa0a6] leading-relaxed">
+            MLBuilder provides a robust model lifecycle workflow, combining automated **AI Architecture Generation** with enterprise-grade **Model Registry Auditing** and SOTA **Research Playground** templates.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+            <div className="p-4 bg-[#2b2d31]/40 border border-[#3f4046]/45 rounded-2xl space-y-2">
+              <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                <Sparkles size={14} className="text-[#c5a3ff]" />
+                AI Generator
+              </h4>
+              <p className="text-[11px] text-[#9aa0a6] leading-relaxed">
+                Generate tailored topologies using prompt guidelines. Automatically tunes layers for target hardware like **RTX 4090**, **Jetson Nano**, and **Google TPUs** before compiling directly onto the canvas.
+              </p>
+            </div>
+            <div className="p-4 bg-[#2b2d31]/40 border border-[#3f4046]/45 rounded-2xl space-y-2">
+              <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                <Database size={14} className="text-[#80cbc4]" />
+                Model Registry
+              </h4>
+              <p className="text-[11px] text-[#9aa0a6] leading-relaxed">
+                Version control system for tracking model runs. Audits parameters, loss, and accuracy metrics. Facilitates single-click rollbacks to deploy historic model checkpoints.
+              </p>
+            </div>
+            <div className="p-4 bg-[#2b2d31]/40 border border-[#3f4046]/45 rounded-2xl space-y-2">
+              <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                <GitBranch size={14} className="text-[#8ab4f8]" />
+                Research Playground
+              </h4>
+              <p className="text-[11px] text-[#9aa0a6] leading-relaxed">
+                Test and insert pre-validated state-of-the-art transformer blocks (**BERT**, **GPT**, **ViT**) and graph models (**GraphSAGE**) to accelerate complex neural design workloads.
+              </p>
+            </div>
+          </div>
+        </div>
+      )
+    },
+    {
       id: 'canvas-controls',
       category: 'features',
       title: 'Canvas Navigation & Editing',

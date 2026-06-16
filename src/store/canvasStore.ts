@@ -93,7 +93,7 @@ interface CanvasState {
   clearHistory: () => void;
 
   // Collaboration Actions
-  connectCollaboration: (projectId: string) => void;
+  connectCollaboration: (projectId: string, isSilent?: boolean) => void;
   disconnectCollaboration: () => void;
   sendCursorPosition: (x: number, y: number) => void;
   sendSelection: (nodeId: string | null) => void;
@@ -1841,7 +1841,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
 
 
 
-    connectCollaboration: (projectId) => {
+    connectCollaboration: (projectId, isSilent = false) => {
       if (get().ws) return;
 
       const isOnline = useProjectStore.getState().isOnline;
@@ -1854,8 +1854,10 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
       }
 
       set({ syncStatus: 'connecting' });
-      toast.info('Syncing Room', 'Attempting real-time workspace handshake...');
-      const wsUrl = `ws://localhost:8000/ws/projects/${projectId}?token=${token}`;
+      if (!isSilent) {
+        toast.info('Syncing Room', 'Attempting real-time workspace handshake...');
+      }
+      const wsUrl = `ws://127.0.0.1:8000/ws/projects/${projectId}?token=${token}`;
 
       let socket: WebSocket;
       try {
@@ -1870,7 +1872,9 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
       socket.onopen = () => {
         set({ syncStatus: 'connected', ws: socket });
         get().addLog('success', 'Real-time collaboration: Connected to workspace room.');
-        toast.success('Room Connected', 'Cloud Sync established. Collaborators active.');
+        if (!isSilent) {
+          toast.success('Room Connected', 'Cloud Sync established. Collaborators active.');
+        }
 
         if (heartbeatInterval) clearInterval(heartbeatInterval);
         heartbeatInterval = setInterval(() => {
@@ -2117,7 +2121,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
         set({ syncStatus: 'disconnected', ws: null, clientId: null, collaborators: {} });
         if (heartbeatInterval) clearInterval(heartbeatInterval);
 
-        if (wasConnected) {
+        if (wasConnected && !isSilent) {
           toast.warning('Local Sandbox', 'Lost cloud database sync. Local edits active.');
         }
 
@@ -2128,7 +2132,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
         if (activeProjId && event.code !== 1000 && online && activeToken) {
           if (reconnectTimeout) clearTimeout(reconnectTimeout);
           reconnectTimeout = setTimeout(() => {
-            get().connectCollaboration(projectId);
+            get().connectCollaboration(projectId, true);
           }, 5000);
         }
       };

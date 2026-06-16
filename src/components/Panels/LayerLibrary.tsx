@@ -127,7 +127,7 @@ export default function LayerLibrary() {
   }
 
   return (
-    <div className="w-80 border-r border-[#3f4046] bg-[#1e1f22] flex flex-col h-full select-none z-15 relative transition-all duration-300">
+    <div id="tour-layer-library" className="w-80 border-r border-[#3f4046] bg-[#1e1f22] flex flex-col h-full select-none z-15 relative transition-all duration-300">
       {/* Collapse Toggle Handle */}
       <button
         onClick={() => setIsOpen(false)}

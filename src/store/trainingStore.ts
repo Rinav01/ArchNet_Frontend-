@@ -49,7 +49,7 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
     get().disconnectSocket();
 
     const token = typeof window !== 'undefined' ? localStorage.getItem('mlbuilder_token') : null;
-    const wsUrl = `ws://localhost:8000/ws/training/${projectId}?token=${token || ''}`;
+    const wsUrl = `ws://127.0.0.1:8000/ws/training/${projectId}?token=${token || ''}`;
 
     let socket: WebSocket;
     

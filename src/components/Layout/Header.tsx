@@ -2,12 +2,13 @@
 
 import React from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { Search, Bell, Settings, ArrowLeft, Play, Cpu, Code, Undo, Redo, Zap, Clock, Save, Check, RotateCw, AlertTriangle, Trash2, LogOut, Layers, Sliders, Terminal, Activity, LayoutGrid, ChevronDown, GitCompare, Box, CloudLightning, GitBranch, BarChart2 } from 'lucide-react';
+import { Search, Bell, Settings, ArrowLeft, Play, Cpu, Code, Undo, Redo, Zap, Clock, Save, Check, RotateCw, AlertTriangle, Trash2, LogOut, Layers, Sliders, Terminal, Activity, LayoutGrid, ChevronDown, GitCompare, Box, CloudLightning, GitBranch, BarChart2, Sparkles, XCircle, Info, CheckCircle2 } from 'lucide-react';
 import { useProjectStore } from '@/store/projectStore';
-import { toast } from '@/store/notificationStore';
+import { toast, useNotificationStore } from '@/store/notificationStore';
 import BlockGuideModal from '@/components/Modals/BlockGuideModal';
 import { useCanvasStore } from '@/store/canvasStore';
 import { useLayoutStore } from '@/store/layoutStore';
+import { graphqlRequest, GET_USER_PREFERENCES, UPDATE_USER_PREFERENCES } from '@/lib/graphql/client';
 
 interface HeaderProps {
   onGenerateCode?: () => void;
@@ -46,6 +47,7 @@ export default function Header({
   const resetLayout = useLayoutStore((state) => state.resetLayout);
   const activePreset = useLayoutStore((state) => state.activePreset);
   const applyPreset = useLayoutStore((state) => state.applyPreset);
+  const toggleAllPanels = useLayoutStore((state) => state.toggleAllPanels);
 
   // Model Versioning & Auto-saving State Selections
   const draftSavedStatus = useCanvasStore((state) => state.draftSavedStatus);
@@ -53,22 +55,46 @@ export default function Header({
   const saveCheckpoint = useCanvasStore((state) => state.saveCheckpoint);
   const restoreCheckpoint = useCanvasStore((state) => state.restoreCheckpoint);
   const deleteCheckpoint = useCanvasStore((state) => state.deleteCheckpoint);
+  
+  // Notification Store
+  const notificationHistory = useNotificationStore((state) => state.history);
+  const markAllAsRead = useNotificationStore((state) => state.markAllAsRead);
+  const clearHistory = useNotificationStore((state) => state.clearHistory);
+  const unreadCount = notificationHistory.filter(n => !n.read).length;
 
   const [isHistoryOpen, setIsHistoryOpen] = React.useState(false);
   const [isBlockGuideOpen, setIsBlockGuideOpen] = React.useState(false);
   const [username, setUsername] = React.useState('SandboxArchitect');
   const [isProfileOpen, setIsProfileOpen] = React.useState(false);
-  const [isPanelsDropdownOpen, setIsPanelsDropdownOpen] = React.useState(false);
-  const [isPresetsDropdownOpen, setIsPresetsDropdownOpen] = React.useState(false);
+  const [isLayoutDropdownOpen, setIsLayoutDropdownOpen] = React.useState(false);
+  const [isViewDropdownOpen, setIsViewDropdownOpen] = React.useState(false);
   const [isWorkspaceMenuOpen, setIsWorkspaceMenuOpen] = React.useState(false);
+  const [isNotificationsOpen, setIsNotificationsOpen] = React.useState(false);
+  
+  // Walkthrough State
+  const [hasSeenTour, setHasSeenTour] = React.useState(true);
 
   React.useEffect(() => {
+    let mounted = true;
     if (typeof window !== 'undefined') {
       const stored = localStorage.getItem('mlbuilder_username');
       if (stored) {
         setUsername(stored);
       }
+      
+      const token = localStorage.getItem('mlbuilder_token');
+      if (token) {
+        graphqlRequest(GET_USER_PREFERENCES).then(data => {
+          if (mounted && data?.me) {
+            const prefs = data.me.preferences || {};
+            if (!prefs.hasSeenCanvasTour) {
+              setHasSeenTour(false);
+            }
+          }
+        }).catch(err => console.warn('Failed to fetch user preferences:', err));
+      }
     }
+    return () => { mounted = false; };
   }, []);
 
   // Close all dropdowns when clicking outside
@@ -99,29 +125,62 @@ export default function Header({
   const isExperimentsPage = pathname.endsWith('/experiments');
   const currentProject = projects.find(p => p.id === activeProjectId);
 
+  const [isEditingName, setIsEditingName] = React.useState(false);
+  const [editedName, setEditedName] = React.useState('');
+
+  React.useEffect(() => {
+    if (currentProject?.name) {
+      setEditedName(currentProject.name);
+    }
+  }, [currentProject?.name]);
+
+  const handleSaveName = () => {
+    setIsEditingName(false);
+    const trimmed = editedName.trim();
+    if (trimmed && currentProject) {
+      updateProjectStats(currentProject.id, { name: trimmed });
+      toast.success('Project Renamed', `Project renamed successfully to "${trimmed}".`);
+    } else if (currentProject) {
+      setEditedName(currentProject.name);
+    }
+  };
+
+  const handleKeyDownName = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      handleSaveName();
+    } else if (e.key === 'Escape') {
+      setIsEditingName(false);
+      if (currentProject) {
+        setEditedName(currentProject.name);
+      }
+    }
+  };
+
   const handleBack = () => {
     if ((isTrainingPage || isDeployPage || isInferencePage || isExperimentsPage) && activeProjectId) {
       router.push(`/editor/${activeProjectId}`);
     } else {
-      router.push('/');
+      router.push('/dashboard');
     }
   };
 
   // Close all open dropdowns
   const closeAllDropdowns = () => {
     setIsHistoryOpen(false);
-    setIsPanelsDropdownOpen(false);
-    setIsPresetsDropdownOpen(false);
+    setIsLayoutDropdownOpen(false);
+    setIsViewDropdownOpen(false);
     setIsProfileOpen(false);
     setIsWorkspaceMenuOpen(false);
+    setIsNotificationsOpen(false);
   };
 
   // Helper to toggle a single dropdown while closing all others (prevents state update races)
-  const toggleDropdown = (dropdown: 'history' | 'panels' | 'presets' | 'profile') => {
+  const toggleDropdown = (dropdown: 'history' | 'layout' | 'view' | 'profile' | 'notifications') => {
     setIsHistoryOpen(dropdown === 'history' ? !isHistoryOpen : false);
-    setIsPanelsDropdownOpen(dropdown === 'panels' ? !isPanelsDropdownOpen : false);
-    setIsPresetsDropdownOpen(dropdown === 'presets' ? !isPresetsDropdownOpen : false);
+    setIsLayoutDropdownOpen(dropdown === 'layout' ? !isLayoutDropdownOpen : false);
+    setIsViewDropdownOpen(dropdown === 'view' ? !isViewDropdownOpen : false);
     setIsProfileOpen(dropdown === 'profile' ? !isProfileOpen : false);
+    setIsNotificationsOpen(dropdown === 'notifications' ? !isNotificationsOpen : false);
   };
 
   // ─── Sync Status Badge (compact) ───
@@ -176,6 +235,95 @@ export default function Header({
     return null;
   };
 
+  // ─── Notification Dropdown UI ───
+  const NotificationDropdown = () => (
+    <div className="relative shrink-0 flex items-center">
+      <button 
+        onClick={() => toggleDropdown('notifications')}
+        className="p-1.5 hover:bg-[#2b2d31] text-[#9aa0a6] hover:text-white rounded-lg transition-all relative shrink-0 cursor-pointer"
+        title="Notifications"
+      >
+        <Bell size={16} />
+        {unreadCount > 0 && (
+          <span className="absolute top-0.5 right-0.5 w-3.5 h-3.5 bg-red-500 rounded-full flex items-center justify-center text-[8px] font-bold text-white border-2 border-[#1e1f22]">
+            {unreadCount > 9 ? '9+' : unreadCount}
+          </span>
+        )}
+      </button>
+
+      {isNotificationsOpen && (
+        <>
+          <div className="fixed inset-0 z-40 bg-transparent" onClick={() => setIsNotificationsOpen(false)} />
+          <div className="absolute right-0 top-full mt-2 w-80 max-h-[400px] bg-[#1e1f26]/95 border border-[#3f4046]/50 shadow-2xl rounded-2xl flex flex-col z-50 text-left backdrop-blur-xl animate-in fade-in slide-in-from-top-1 duration-150 overflow-hidden">
+            <div className="px-4 py-3 flex items-center justify-between border-b border-[#3f4046]/50 bg-[#2b2d31]/50 shrink-0">
+              <span className="text-xs font-black text-white uppercase tracking-wider">Notifications</span>
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={markAllAsRead} 
+                  disabled={unreadCount === 0}
+                  className="text-[10px] font-bold text-[#8ab4f8] hover:text-[#a8c7fa] disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer bg-transparent border-none"
+                >
+                  Mark all read
+                </button>
+                <button 
+                  onClick={clearHistory} 
+                  disabled={notificationHistory.length === 0}
+                  className="text-[10px] font-bold text-[#f28b82] hover:text-[#f6a59f] disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer bg-transparent border-none"
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+            
+            <div className="overflow-y-auto flex-1 p-2 space-y-1" style={{ maxHeight: '350px' }}>
+              {notificationHistory.length === 0 ? (
+                <div className="py-8 text-center text-[#9aa0a6] flex flex-col items-center justify-center gap-2">
+                  <Bell size={24} className="opacity-30" />
+                  <span className="text-xs font-medium">No notifications</span>
+                </div>
+              ) : (
+                notificationHistory.map((notification) => (
+                  <div 
+                    key={notification.id} 
+                    className={`p-3 rounded-xl border transition-all ${
+                      notification.read 
+                        ? 'bg-transparent border-transparent hover:bg-[#2b2d31]/50' 
+                        : 'bg-[#8ab4f8]/5 border-[#8ab4f8]/20 hover:bg-[#8ab4f8]/10'
+                    }`}
+                  >
+                    <div className="flex items-start gap-2.5">
+                      <div className="shrink-0 mt-0.5">
+                        {notification.type === 'success' && <CheckCircle2 size={14} className="text-[#81c784]" />}
+                        {notification.type === 'error' && <XCircle size={14} className="text-[#f28b82]" />}
+                        {notification.type === 'warning' && <AlertTriangle size={14} className="text-[#ffe082]" />}
+                        {notification.type === 'info' && <Info size={14} className="text-[#8ab4f8]" />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className={`text-[11px] font-bold truncate ${notification.read ? 'text-[#e3e3e3]' : 'text-white'}`}>
+                            {notification.message}
+                          </span>
+                          <span className="text-[9px] text-[#9aa0a6] shrink-0 font-medium">
+                            {new Date(notification.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                        {notification.description && (
+                          <div className="text-[10px] text-[#9aa0a6] mt-0.5 line-clamp-2 leading-relaxed">
+                            {notification.description}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+
   // ─────────────────────────────────────────
   // NON-EDITOR HEADER (Dashboard view)
   // ─────────────────────────────────────────
@@ -199,10 +347,7 @@ export default function Header({
         </div>
 
         <div className="flex items-center gap-2.5 shrink-0">
-          <button className="p-2 hover:bg-[#2b2d31] text-[#9aa0a6] hover:text-white rounded-lg transition-all relative">
-            <Bell size={18} />
-            <span className="absolute top-1 right-1 w-2 h-2 bg-[#8ab4f8] rounded-full"></span>
-          </button>
+          <NotificationDropdown />
           <button className="p-2 hover:bg-[#2b2d31] text-[#9aa0a6] hover:text-white rounded-lg transition-all">
             <Settings size={18} />
           </button>
@@ -250,7 +395,7 @@ export default function Header({
         {/* ------------------------------------------- */}
         {/* ZONE 1: Left — Back + Project Identity     */}
         {/* ------------------------------------------- */}
-        <div className="flex items-center gap-1.5 min-w-0 overflow-hidden">
+        <div id="tour-zone-1" className="flex items-center gap-1.5 min-w-0 overflow-hidden">
           {/* Back Button */}
           <button 
             onClick={handleBack}
@@ -261,33 +406,36 @@ export default function Header({
           </button>
 
           {/* Project Name */}
-          <span className="text-xs font-bold text-[#8ab4f8] tracking-wide bg-[#8ab4f8]/10 px-2.5 py-0.5 rounded-full border border-[#8ab4f8]/20 truncate max-w-[120px] shrink-0">
-            {currentProject?.name || 'ResNet-Mini'}
-          </span>
+          {isEditingName ? (
+            <input
+              type="text"
+              value={editedName}
+              onChange={(e) => setEditedName(e.target.value)}
+              onBlur={handleSaveName}
+              onKeyDown={handleKeyDownName}
+              onFocus={(e) => e.target.select()}
+              autoFocus
+              className="text-xs font-bold text-white bg-[#2b2d31] border border-[#8ab4f8] px-2.5 py-0.5 rounded-full outline-none w-[120px] shrink-0 font-sans"
+            />
+          ) : (
+            <span 
+              onDoubleClick={() => setIsEditingName(true)}
+              className="text-xs font-bold text-[#8ab4f8] tracking-wide bg-[#8ab4f8]/10 px-2.5 py-0.5 rounded-full border border-[#8ab4f8]/20 truncate max-w-[120px] shrink-0 cursor-pointer select-none hover:bg-[#8ab4f8]/20 transition-colors"
+              title="Double-click to rename project"
+            >
+              {currentProject?.name || 'ResNet-Mini'}
+            </span>
+          )}
 
-          {/* Framework Switcher Dropdown */}
+          {/* Framework Badge */}
           {currentProject?.framework && (
-            <div className="relative shrink-0 hidden sm:inline-flex items-center bg-[#2b2d31]/80 text-[#8ab4f8] border border-[#3f4046] rounded-xl px-2.5 py-0.5">
-              <span className="text-[9px] font-black uppercase tracking-wider pr-1.5 border-r border-[#3f4046] text-[#9aa0a6] select-none">Framework</span>
-              <select
-                value={currentProject.framework}
-                onChange={(e) => {
-                  const newFw = e.target.value as any;
-                  updateProjectStats(currentProject.id, { framework: newFw });
-                  
-                  // Show instant compile success toast!
-                  toast.success(
-                    'Instant Recompile', 
-                    `Visual graph compiled successfully to ${newFw} (0.02s).`
-                  );
-                }}
-                className="bg-transparent border-none text-[10px] font-extrabold text-white cursor-pointer focus:outline-none pl-1.5 pr-0.5"
-              >
-                <option value="PyTorch" className="bg-[#1e1f22] text-[#ff6633]">🔥 PyTorch</option>
-                <option value="TensorFlow" className="bg-[#1e1f22] text-[#ff9000]">🍊 TensorFlow</option>
-                <option value="JAX" className="bg-[#1e1f22] text-[#8ab4f8]">⚡ JAX</option>
-                <option value="ONNX" className="bg-[#1e1f22] text-[#c5a3ff]">💎 ONNX</option>
-              </select>
+            <div className="relative shrink-0 hidden sm:inline-flex items-center bg-[#2b2d31]/80 text-[#8ab4f8] border border-[#3f4046] rounded-xl px-2.5 py-0.5 select-none" title={`Compiled to ${currentProject.framework}`}>
+              <span className="text-[9px] font-black uppercase tracking-wider pr-1.5 border-r border-[#3f4046] text-[#9aa0a6]">Framework</span>
+              <span className="text-[10px] font-extrabold text-white pl-1.5">
+                {currentProject.framework === 'PyTorch' ? '🔥 PyTorch' :
+                 currentProject.framework === 'TensorFlow' ? '🍊 TensorFlow' :
+                 currentProject.framework === 'JAX' ? '⚡ JAX' : '💎 ONNX'}
+              </span>
             </div>
           )}
 
@@ -309,15 +457,15 @@ export default function Header({
 
           {/* Compact Status Indicators (Sync + Draft) */}
           <div className="hidden md:flex items-center gap-1 shrink-0">
-            <SyncBadge />
-            <DraftBadge />
+            <div id="tour-sync-badge"><SyncBadge /></div>
+            <div id="tour-draft-badge"><DraftBadge /></div>
           </div>
         </div>
 
         {/* ------------------------------------------- */}
         {/* ZONE 2: Center — Workspace Toolstrip       */}
         {/* ------------------------------------------- */}
-        <div className="flex items-center justify-center gap-1 min-w-0">
+        <div id="tour-zone-2" className="flex items-center justify-center gap-1 min-w-0">
           {!isTrainingPage && !isDeployPage && !isInferencePage && !isExperimentsPage && (
             <>
               {/* Undo / Redo Group */}
@@ -352,7 +500,7 @@ export default function Header({
           <div className="w-px h-5 bg-[#3f4046]/60 shrink-0 hidden sm:block"></div>
 
           {/* Version History Button */}
-          <div className="relative shrink-0">
+          <div id="tour-history-btn" className="relative shrink-0">
             <button
               onClick={() => toggleDropdown('history')}
               className={`p-1.5 rounded-lg border transition-all cursor-pointer ${
@@ -472,209 +620,148 @@ export default function Header({
           {/* Separator */}
           <div className="w-px h-5 bg-[#3f4046]/60 shrink-0 hidden sm:block"></div>
 
-          {/* Panels Dropdown */}
-          <div className="relative shrink-0">
+          {/* Panels Split Button (Option 1) */}
+          <div id="tour-workspace-btn" className="relative shrink-0">
+            <div className="flex items-center bg-[#2b2d31]/40 hover:bg-[#2b2d31]/60 border border-[#3f4046] rounded-xl overflow-hidden">
             <button
-              onClick={() => toggleDropdown('panels')}
-              className={`flex items-center gap-1 px-2 py-1 border transition-all cursor-pointer rounded-lg text-[11px] font-bold ${
-                isPanelsDropdownOpen 
-                  ? 'bg-[#8ab4f8]/10 border-[#8ab4f8]/30 text-[#8ab4f8]' 
-                  : 'bg-transparent border-transparent text-[#9aa0a6] hover:text-white hover:bg-[#2b2d31]'
+              onClick={() => {
+                toggleAllPanels();
+                setIsLayoutDropdownOpen(false);
+              }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 transition-all cursor-pointer text-xs font-bold bg-transparent border-none focus:outline-none ${
+                Object.values(panels).some(p => p.isOpen)
+                  ? 'text-[#8ab4f8] hover:text-[#a8c7fa]'
+                  : 'text-[#9aa0a6] hover:text-white'
               }`}
-              title="Toggle Workspace Panels"
+              title={Object.values(panels).some(p => p.isOpen) ? "Hide All Panels" : "Restore Sidebar Panels"}
             >
-              <LayoutGrid size={12} />
-              <span className="hidden lg:inline">Panels</span>
-              <ChevronDown size={10} className={`transition-transform duration-200 ${isPanelsDropdownOpen ? 'rotate-180' : ''}`} />
+              <LayoutGrid size={13} className={Object.values(panels).some(p => p.isOpen) ? 'text-[#8ab4f8]' : 'text-[#9aa0a6]'} />
+              <span className="hidden sm:inline">Panels</span>
             </button>
+            <div className="w-px h-4 bg-[#3f4046]"></div>
+            <button
+              onClick={() => toggleDropdown('layout')}
+              className={`px-2 py-1.5 transition-all cursor-pointer bg-transparent border-none focus:outline-none flex items-center justify-center ${
+                isLayoutDropdownOpen ? 'text-[#8ab4f8]' : 'text-[#9aa0a6] hover:text-white'
+              }`}
+              title="Workspace Presets & Window Toggles"
+            >
+              <ChevronDown size={11} className={`transition-transform duration-200 ${isLayoutDropdownOpen ? 'rotate-180' : ''}`} />
+            </button>
+          </div>
 
-            {isPanelsDropdownOpen && (
+            {isLayoutDropdownOpen && (
               <>
-                <div className="fixed inset-0 z-40 bg-transparent cursor-default" onClick={() => setIsPanelsDropdownOpen(false)} />
-                <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-64 bg-[#1e1f22]/95 backdrop-blur-md border border-[#3f4046] shadow-2xl rounded-2xl p-2 z-50 text-[#e3e3e3] select-none animate-in fade-in slide-in-from-top-2 duration-200">
-                  <div className="px-2.5 py-1.5 border-b border-[#3f4046]/50 mb-1 flex items-center justify-between text-[10px] font-black text-[#9aa0a6] uppercase tracking-wider">
-                    <span>Toggle Windows</span>
+                <div className="fixed inset-0 z-40 bg-transparent cursor-default" onClick={() => setIsLayoutDropdownOpen(false)} />
+                <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-64 bg-[#1e1f22]/95 backdrop-blur-md border border-[#3f4046] shadow-2xl rounded-2xl p-2.5 z-50 text-[#e3e3e3] select-none animate-in fade-in slide-in-from-top-2 duration-200 space-y-3">
+                  
+                  {/* Presets section */}
+                  <div>
+                    <div className="px-2 pb-1.5 border-b border-[#3f4046]/50 mb-1 flex items-center text-[10px] font-black text-[#9aa0a6] uppercase tracking-wider">
+                      <span>Layout Mode</span>
+                    </div>
+                    <div className="space-y-0.5 max-h-40 overflow-y-auto pr-1">
+                      {[
+                        'Architecture Mode',
+                        'Canvas Focus',
+                        'Training Mode',
+                        'Metrics Focus',
+                        'Benchmark Mode',
+                        'Profiler Focus'
+                      ].map((preset) => (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => {
+                            applyPreset(preset);
+                            // Auto-trigger appropriate heatmap visualizations
+                            if (preset === 'Benchmark Mode') {
+                              useCanvasStore.getState().setHeatmapMode('flops');
+                              if (!useCanvasStore.getState().showStatsOverlay) {
+                                useCanvasStore.getState().toggleStatsOverlay();
+                              }
+                            } else if (preset === 'Profiler Focus') {
+                              useCanvasStore.getState().setHeatmapMode('latency');
+                              if (!useCanvasStore.getState().showStatsOverlay) {
+                                useCanvasStore.getState().toggleStatsOverlay();
+                              }
+                            } else if (preset === 'Training Mode' || preset === 'Metrics Focus') {
+                              useCanvasStore.getState().setHeatmapMode('memory');
+                              if (!useCanvasStore.getState().showStatsOverlay) {
+                                useCanvasStore.getState().toggleStatsOverlay();
+                              }
+                            } else {
+                              useCanvasStore.getState().setHeatmapMode('none');
+                            }
+                            setIsLayoutDropdownOpen(false);
+                          }}
+                          className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-bold text-left transition-all border-none bg-transparent cursor-pointer ${
+                            activePreset === preset 
+                              ? 'text-white bg-[#8ab4f8]/10 font-extrabold' 
+                              : 'text-[#9aa0a6] hover:text-white hover:bg-[#2b2d31]/50'
+                          }`}
+                        >
+                          <span>{preset}</span>
+                          {activePreset === preset && (
+                            <Check size={12} className="text-[#8ab4f8]" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
-                  <div className="space-y-0.5">
-                    {/* Layer Library */}
-                    <button
-                      onClick={() => togglePanel('library')}
-                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold text-left transition-all border-none bg-transparent cursor-pointer ${
-                        panels.library?.isOpen 
-                          ? 'text-white bg-[#8ab4f8]/10' 
-                          : 'text-[#9aa0a6] hover:text-white hover:bg-[#2b2d31]/50'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <Layers size={14} className={panels.library?.isOpen ? 'text-[#8ab4f8]' : 'text-[#9aa0a6]'} />
-                        <span>Layer Library</span>
-                      </div>
-                      {panels.library?.isOpen && (
-                        <Check size={14} className="text-[#8ab4f8]" />
-                      )}
-                    </button>
-
-                    {/* Hyperparameter Inspector */}
-                    <button
-                      onClick={() => togglePanel('inspector')}
-                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold text-left transition-all border-none bg-transparent cursor-pointer ${
-                        panels.inspector?.isOpen 
-                          ? 'text-white bg-[#8ab4f8]/10' 
-                          : 'text-[#9aa0a6] hover:text-white hover:bg-[#2b2d31]/50'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <Sliders size={14} className={panels.inspector?.isOpen ? 'text-[#8ab4f8]' : 'text-[#9aa0a6]'} />
-                        <span>Inspector Config</span>
-                      </div>
-                      {panels.inspector?.isOpen && (
-                        <Check size={14} className="text-[#8ab4f8]" />
-                      )}
-                    </button>
-
-                    {/* IDE Terminal Console */}
-                    <button
-                      onClick={() => togglePanel('console')}
-                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold text-left transition-all border-none bg-transparent cursor-pointer ${
-                        panels.console?.isOpen 
-                          ? 'text-white bg-[#8ab4f8]/10' 
-                          : 'text-[#9aa0a6] hover:text-white hover:bg-[#2b2d31]/50'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <Terminal size={14} className={panels.console?.isOpen ? 'text-[#8ab4f8]' : 'text-[#9aa0a6]'} />
-                        <span>IDE Terminal Console</span>
-                      </div>
-                      {panels.console?.isOpen && (
-                        <Check size={14} className="text-[#8ab4f8]" />
-                      )}
-                    </button>
-
-                    {/* Diagnostics & AutoML */}
-                    <button
-                      onClick={() => togglePanel('diagnostics')}
-                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold text-left transition-all border-none bg-transparent cursor-pointer ${
-                        panels.diagnostics?.isOpen 
-                          ? 'text-white bg-[#8ab4f8]/10' 
-                          : 'text-[#9aa0a6] hover:text-white hover:bg-[#2b2d31]/50'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <Activity size={14} className={panels.diagnostics?.isOpen ? 'text-[#8ab4f8]' : 'text-[#9aa0a6]'} />
-                        <span>Diagnostics & AutoML</span>
-                      </div>
-                      {panels.diagnostics?.isOpen && (
-                        <Check size={14} className="text-[#8ab4f8]" />
-                      )}
-                    </button>
-
-                    {/* Explainability & Analytics */}
-                    <button
-                      onClick={() => togglePanel('explainability')}
-                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold text-left transition-all border-none bg-transparent cursor-pointer ${
-                        panels.explainability?.isOpen 
-                          ? 'text-white bg-[#8ab4f8]/10' 
-                          : 'text-[#9aa0a6] hover:text-white hover:bg-[#2b2d31]/50'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <BarChart2 size={14} className={panels.explainability?.isOpen ? 'text-[#8ab4f8]' : 'text-[#9aa0a6]'} />
-                        <span>Explainability Panel</span>
-                      </div>
-                      {panels.explainability?.isOpen && (
-                        <Check size={14} className="text-[#8ab4f8]" />
-                      )}
-                    </button>
+                  {/* Toggle Windows / Panels section */}
+                  <div>
+                    <div className="px-2 pb-1.5 border-b border-[#3f4046]/50 mb-1 flex items-center text-[10px] font-black text-[#9aa0a6] uppercase tracking-wider">
+                      <span>Toggle Windows</span>
+                    </div>
+                    <div className="space-y-0.5">
+                      {[
+                        { key: 'library', label: 'Layer Library', icon: Layers },
+                        { key: 'inspector', label: 'Inspector Config', icon: Sliders },
+                        { key: 'console', label: 'IDE Terminal Console', icon: Terminal },
+                        { key: 'diagnostics', label: 'Diagnostics & AutoML', icon: Activity },
+                        { key: 'explainability', label: 'Explainability Panel', icon: BarChart2 },
+                        { key: 'copilot', label: 'AI AutoML Copilot', icon: Sparkles }
+                      ].map((item) => {
+                        const isOpen = (panels as any)[item.key]?.isOpen;
+                        const Icon = item.icon;
+                        return (
+                          <button
+                            key={item.key}
+                            type="button"
+                            onClick={() => togglePanel(item.key as any)}
+                            className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-bold text-left transition-all border-none bg-transparent cursor-pointer ${
+                              isOpen 
+                                ? 'text-white bg-[#8ab4f8]/10' 
+                                : 'text-[#9aa0a6] hover:text-white hover:bg-[#2b2d31]/50'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2">
+                              <Icon size={13} className={isOpen ? 'text-[#8ab4f8]' : 'text-[#9aa0a6]'} />
+                              <span>{item.label}</span>
+                            </div>
+                            {isOpen && (
+                              <Check size={12} className="text-[#8ab4f8]" />
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
 
-                  <div className="border-t border-[#3f4046]/45 mt-1.5 pt-1.5 px-1 pb-0.5">
+                  {/* Footer reset button */}
+                  <div className="border-t border-[#3f4046]/45 pt-1.5">
                     <button
                       onClick={() => {
                         resetLayout();
-                        setIsPanelsDropdownOpen(false);
+                        setIsLayoutDropdownOpen(false);
                       }}
-                      className="w-full flex items-center gap-2.5 px-2.5 py-1.5 hover:bg-[#2b2d31] text-xs font-bold text-gray-400 hover:text-white rounded-xl transition-all border-none bg-transparent cursor-pointer text-left"
+                      className="w-full flex items-center gap-2 px-2.5 py-1.5 hover:bg-[#2b2d31] text-xs font-bold text-gray-400 hover:text-white rounded-xl transition-all border-none bg-transparent cursor-pointer text-left"
                     >
                       <RotateCw size={13} className="shrink-0" />
-                      <span>Reset Workspace Layout</span>
+                      <span>Reset Layout Preset</span>
                     </button>
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-
-          {/* Presets Dropdown */}
-          <div className="relative shrink-0">
-            <button
-              onClick={() => toggleDropdown('presets')}
-              className={`flex items-center gap-1 px-2 py-1 border transition-all cursor-pointer rounded-lg text-[11px] font-bold ${
-                isPresetsDropdownOpen 
-                  ? 'bg-[#8ab4f8]/10 border-[#8ab4f8]/30 text-[#8ab4f8]' 
-                  : 'bg-transparent border-transparent text-[#9aa0a6] hover:text-white hover:bg-[#2b2d31]'
-              }`}
-              title="Workspace Layout Presets"
-            >
-              <LayoutGrid size={12} className="text-[#8ab4f8]" />
-              <span className="hidden lg:inline truncate max-w-[100px]">{activePreset}</span>
-              <ChevronDown size={10} className={`transition-transform duration-200 ${isPresetsDropdownOpen ? 'rotate-180' : ''}`} />
-            </button>
-
-            {isPresetsDropdownOpen && (
-              <>
-                <div className="fixed inset-0 z-40 bg-transparent cursor-default" onClick={() => setIsPresetsDropdownOpen(false)} />
-                <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-56 bg-[#1e1f22]/95 backdrop-blur-md border border-[#3f4046] shadow-2xl rounded-2xl p-2 z-50 text-[#e3e3e3] select-none animate-in fade-in slide-in-from-top-2 duration-200">
-                  <div className="px-2.5 py-1.5 border-b border-[#3f4046]/50 mb-1 flex items-center justify-between text-[10px] font-black text-[#9aa0a6] uppercase tracking-wider">
-                    <span>Layout Modes</span>
-                  </div>
-
-                  <div className="space-y-0.5">
-                    {[
-                      'Architecture Mode',
-                      'Canvas Focus',
-                      'Training Mode',
-                      'Metrics Focus',
-                      'Benchmark Mode',
-                      'Profiler Focus'
-                    ].map((preset) => (
-                      <button
-                        key={preset}
-                        onClick={() => {
-                          applyPreset(preset);
-                          // Auto-trigger appropriate heatmap visualizations and stats overlay for profiling/benchmarking/training modes
-                          if (preset === 'Benchmark Mode') {
-                            useCanvasStore.getState().setHeatmapMode('flops');
-                            if (!useCanvasStore.getState().showStatsOverlay) {
-                              useCanvasStore.getState().toggleStatsOverlay();
-                            }
-                          } else if (preset === 'Profiler Focus') {
-                            useCanvasStore.getState().setHeatmapMode('latency');
-                            if (!useCanvasStore.getState().showStatsOverlay) {
-                              useCanvasStore.getState().toggleStatsOverlay();
-                            }
-                          } else if (preset === 'Training Mode' || preset === 'Metrics Focus') {
-                            useCanvasStore.getState().setHeatmapMode('memory');
-                            if (!useCanvasStore.getState().showStatsOverlay) {
-                              useCanvasStore.getState().toggleStatsOverlay();
-                            }
-                          } else {
-                            useCanvasStore.getState().setHeatmapMode('none');
-                          }
-                          setIsPresetsDropdownOpen(false);
-                        }}
-                        className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold text-left transition-all border-none bg-transparent cursor-pointer ${
-                          activePreset === preset 
-                            ? 'text-white bg-[#8ab4f8]/10' 
-                            : 'text-[#9aa0a6] hover:text-white hover:bg-[#2b2d31]/50'
-                        }`}
-                      >
-                        <span>{preset}</span>
-                        {activePreset === preset && (
-                          <Check size={14} className="text-[#8ab4f8]" />
-                        )}
-                      </button>
-                    ))}
                   </div>
                 </div>
               </>
@@ -742,78 +829,109 @@ export default function Header({
         {/* ------------------------------------------- */}
         {/* ZONE 3: Right — Role + Collab + User       */}
         {/* ------------------------------------------- */}
-        <div className="flex items-center gap-1.5 shrink-0">
-          {/* View Toggle (Canvas vs. Training vs. Experiments vs. Deploy vs. Inference) */}
+        <div id="tour-zone-3" className="flex items-center gap-1.5 shrink-0">
+          {/* Start Tour Button */}
+          <button
+            onClick={() => {
+              setHasSeenTour(true);
+              const token = localStorage.getItem('mlbuilder_token');
+              if (token) {
+                graphqlRequest(UPDATE_USER_PREFERENCES, { preferences: { hasSeenCanvasTour: true } })
+                  .catch(e => console.warn('Failed to sync tour state to backend', e));
+              }
+              // Dynamically import and start to avoid SSR issues
+              import('@/components/Walkthrough/WalkthroughTour').then(mod => {
+                mod.startWalkthroughTour();
+              });
+            }}
+            className={`flex items-center gap-1 px-2 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer mr-1 border ${
+              !hasSeenTour 
+                ? 'animate-pulse-vibrant bg-[#8ab4f8]/10 border-[#8ab4f8]/30 text-[#8ab4f8]' 
+                : 'bg-[#8ab4f8]/10 hover:bg-[#8ab4f8]/20 border-[#8ab4f8]/30 text-[#8ab4f8]'
+            }`}
+            title="Start Editor Walkthrough"
+          >
+            <Sparkles size={13} />
+            <span className="hidden sm:inline">Tour</span>
+          </button>
+          {/* View Selector Dropdown */}
           {activeProjectId && isEditor && (
-            <div className="bg-[#2b2d31]/80 border border-[#3f4046] rounded-full p-0.5 flex items-center mr-1">
+            <div className="relative shrink-0">
               <button
-                onClick={() => router.push(`/editor/${activeProjectId}`)}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold transition-all cursor-pointer border-none ${
-                  !isTrainingPage && !isDeployPage && !isInferencePage && !isExperimentsPage
-                    ? 'bg-[#8ab4f8] text-[#1e1f22] shadow-sm'
-                    : 'text-[#9aa0a6] hover:text-white bg-transparent'
-                }`}
+                onClick={() => toggleDropdown('view')}
+                className="flex items-center gap-1.5 bg-[#2b2d31] hover:bg-[#35373c] border border-[#3f4046] px-3 py-1.5 rounded-xl text-xs font-bold text-white transition-all cursor-pointer"
+                title="Switch Workspace View Mode"
               >
-                <Sliders size={11} />
-                <span className="hidden sm:inline">Canvas</span>
+                {isTrainingPage && <><Cpu size={13} className="text-[#ffe082]" /> <span className="hidden sm:inline">Training Mode</span></>}
+                {isDeployPage && <><CloudLightning size={13} className="text-[#80cbc4]" /> <span className="hidden sm:inline">Deployment</span></>}
+                {isInferencePage && <><Play size={13} className="text-[#f28b82]" /> <span className="hidden sm:inline">Live Inference</span></>}
+                {isExperimentsPage && <><GitBranch size={13} className="text-[#c5a3ff]" /> <span className="hidden sm:inline">Experiments</span></>}
+                {!isTrainingPage && !isDeployPage && !isInferencePage && !isExperimentsPage && <><Sliders size={13} className="text-[#8ab4f8]" /> <span className="hidden sm:inline">Canvas Editor</span></>}
+                <ChevronDown size={10} className={`text-[#9aa0a6] transition-transform ${isViewDropdownOpen ? 'rotate-180' : ''}`} />
               </button>
-              <button
-                onClick={() => router.push(`/editor/${activeProjectId}/training`)}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold transition-all cursor-pointer border-none ${
-                  isTrainingPage
-                    ? 'bg-[#ffe082] text-[#1e1f22] shadow-sm'
-                    : 'text-[#9aa0a6] hover:text-white bg-transparent'
-                }`}
-              >
-                <Cpu size={11} />
-                <span className="hidden sm:inline">Training</span>
-              </button>
-              <button
-                onClick={() => router.push(`/editor/${activeProjectId}/experiments`)}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold transition-all cursor-pointer border-none ${
-                  isExperimentsPage
-                    ? 'bg-[#c5a3ff] text-[#1e1f22] shadow-sm'
-                    : 'text-[#9aa0a6] hover:text-white bg-transparent'
-                }`}
-              >
-                <GitBranch size={11} />
-                <span className="hidden sm:inline">Experiments</span>
-              </button>
-              <button
-                onClick={() => router.push(`/editor/${activeProjectId}/deploy`)}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold transition-all cursor-pointer border-none ${
-                  isDeployPage
-                    ? 'bg-[#80cbc4] text-[#1e1f22] shadow-sm'
-                    : 'text-[#9aa0a6] hover:text-white bg-transparent'
-                }`}
-              >
-                <CloudLightning size={11} />
-                <span className="hidden sm:inline">Deploy</span>
-              </button>
-              <button
-                onClick={() => router.push(`/editor/${activeProjectId}/inference`)}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold transition-all cursor-pointer border-none ${
-                  isInferencePage
-                    ? 'bg-[#f28b82] text-[#1e1f22] shadow-sm'
-                    : 'text-[#9aa0a6] hover:text-white bg-transparent'
-                }`}
-              >
-                <Play size={11} />
-                <span className="hidden sm:inline">Inference</span>
-              </button>
+              
+              {isViewDropdownOpen && (
+                <>
+                  <div className="fixed inset-0 z-40 bg-transparent" onClick={() => setIsViewDropdownOpen(false)} />
+                  <div className="absolute right-0 mt-2 w-48 bg-[#1e1f26]/95 border border-[#3f4046]/50 shadow-2xl rounded-2xl p-2 z-50 text-left backdrop-blur-xl animate-in fade-in slide-in-from-top-1 duration-150 space-y-0.5 select-none">
+                    <div className="px-2 py-1 flex items-center text-[9px] font-black text-[#9aa0a6] uppercase tracking-wider border-b border-[#3f4046]/50 mb-1">
+                      <span>View Mode</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => { router.push(`/editor/${activeProjectId}`); setIsViewDropdownOpen(false); }}
+                      className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-xs font-bold hover:bg-[#2b2d31]/50 rounded-xl transition-all bg-transparent border-none text-left cursor-pointer ${
+                        !isTrainingPage && !isDeployPage && !isInferencePage && !isExperimentsPage ? 'text-[#8ab4f8] bg-[#8ab4f8]/5' : 'text-[#9aa0a6] hover:text-white'
+                      }`}
+                    >
+                      <Sliders size={12} className="text-[#8ab4f8]" />
+                      <span>Canvas Editor</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { router.push(`/editor/${activeProjectId}/training`); setIsViewDropdownOpen(false); }}
+                      className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-xs font-bold hover:bg-[#2b2d31]/50 rounded-xl transition-all bg-transparent border-none text-left cursor-pointer ${
+                        isTrainingPage ? 'text-[#ffe082] bg-[#ffe082]/5' : 'text-[#9aa0a6] hover:text-white'
+                      }`}
+                    >
+                      <Cpu size={12} className="text-[#ffe082]" />
+                      <span>Training Run</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { router.push(`/editor/${activeProjectId}/experiments`); setIsViewDropdownOpen(false); }}
+                      className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-xs font-bold hover:bg-[#2b2d31]/50 rounded-xl transition-all bg-transparent border-none text-left cursor-pointer ${
+                        isExperimentsPage ? 'text-[#c5a3ff] bg-[#c5a3ff]/5' : 'text-[#9aa0a6] hover:text-white'
+                      }`}
+                    >
+                      <GitBranch size={12} className="text-[#c5a3ff]" />
+                      <span>Experiments</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { router.push(`/editor/${activeProjectId}/deploy`); setIsViewDropdownOpen(false); }}
+                      className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-xs font-bold hover:bg-[#2b2d31]/50 rounded-xl transition-all bg-transparent border-none text-left cursor-pointer ${
+                        isDeployPage ? 'text-[#80cbc4] bg-[#80cbc4]/5' : 'text-[#9aa0a6] hover:text-white'
+                      }`}
+                    >
+                      <CloudLightning size={12} className="text-[#80cbc4]" />
+                      <span>Deployment</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { router.push(`/editor/${activeProjectId}/inference`); setIsViewDropdownOpen(false); }}
+                      className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-xs font-bold hover:bg-[#2b2d31]/50 rounded-xl transition-all bg-transparent border-none text-left cursor-pointer ${
+                        isInferencePage ? 'text-[#f28b82] bg-[#f28b82]/5' : 'text-[#9aa0a6] hover:text-white'
+                      }`}
+                    >
+                      <Play size={12} className="text-[#f28b82]" />
+                      <span>Live Inference</span>
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           )}
-          {/* Enterprise Role Selector */}
-          <select
-            value={userRole}
-            onChange={(e) => setUserRole(e.target.value as any)}
-            className="bg-[#2b2d31] border border-[#3f4046] rounded-lg px-1.5 py-0.5 text-[10px] font-extrabold text-[#e3e3e3] cursor-pointer focus:outline-none focus:border-[#8ab4f8] transition-all shrink-0 hidden lg:block"
-            title="Simulate Enterprise Role Access"
-          >
-            <option value="Admin">🛡️ Admin</option>
-            <option value="Editor">✍️ Editor</option>
-            <option value="Viewer">🔒 Viewer</option>
-          </select>
 
           {/* Real-time Presence Avatars */}
           {syncStatus === 'connected' && Object.keys(collaborators).length > 0 && (
@@ -854,10 +972,7 @@ export default function Header({
           <div className="w-px h-5 bg-[#3f4046] shrink-0"></div>
 
           {/* Notifications */}
-          <button className="p-1.5 hover:bg-[#2b2d31] text-[#9aa0a6] hover:text-white rounded-lg transition-all relative shrink-0">
-            <Bell size={15} />
-            <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 bg-[#8ab4f8] rounded-full"></span>
-          </button>
+          <NotificationDropdown />
 
           {/* Settings */}
           <button 
@@ -880,22 +995,36 @@ export default function Header({
             {isProfileOpen && (
               <>
                 <div className="fixed inset-0 z-40 bg-transparent" onClick={() => setIsProfileOpen(false)} />
-                <div className="absolute right-0 mt-2 w-56 bg-[#1e1f26] border border-[#3f4046]/50 shadow-2xl rounded-2xl p-2 z-50 text-left backdrop-blur-xl animate-in fade-in slide-in-from-top-1 duration-150">
-                  <div className="px-3 py-2 border-b border-[#3f4046]/45 mb-1.5">
+                <div className="absolute right-0 mt-2 w-56 bg-[#1e1f26] border border-[#3f4046]/50 shadow-2xl rounded-2xl p-2.5 z-50 text-left backdrop-blur-xl animate-in fade-in slide-in-from-top-1 duration-150 space-y-2">
+                  <div className="px-1 py-1 space-y-1">
                     <div className="text-[10px] font-black text-[#9aa0a6] uppercase tracking-wider">Active User</div>
-                    <div className="text-xs font-extrabold text-white truncate mt-0.5">{username}</div>
-                    <div className="text-[9px] text-[#8ab4f8] font-bold mt-1 bg-[#8ab4f8]/5 border border-[#8ab4f8]/15 rounded-md px-1.5 py-0.5 inline-block">
-                      {userRole} Mode
-                    </div>
+                    <div className="text-xs font-extrabold text-white truncate">{username}</div>
+                  </div>
+                  
+                  {/* Embedded Role Selector */}
+                  <div className="border-t border-[#3f4046]/45 pt-2 px-1 space-y-1.5">
+                    <div className="text-[9px] font-bold text-[#9aa0a6] uppercase tracking-wider">Simulation Role</div>
+                    <select
+                      value={userRole}
+                      onChange={(e) => setUserRole(e.target.value as any)}
+                      className="w-full bg-[#2b2d31] border border-[#3f4046]/60 rounded-xl px-2.5 py-1 text-xs font-bold text-[#e3e3e3] cursor-pointer focus:outline-none focus:border-[#8ab4f8] transition-all"
+                      title="Simulate Enterprise Role Access"
+                    >
+                      <option value="Admin">🛡️ Admin Role</option>
+                      <option value="Editor">✍️ Editor Role</option>
+                      <option value="Viewer">🔒 Viewer Role</option>
+                    </select>
                   </div>
 
-                  <button
-                    onClick={handleLogout}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-red-500/10 text-red-400 hover:text-red-300 rounded-xl text-xs font-bold transition-all border-none bg-transparent cursor-pointer text-left"
-                  >
-                    <LogOut size={14} className="shrink-0" />
-                    <span>Log Out of Workspace</span>
-                  </button>
+                  <div className="border-t border-[#3f4046]/45 pt-1.5">
+                    <button
+                      onClick={handleLogout}
+                      className="w-full flex items-center gap-2 px-2 py-1.5 hover:bg-red-500/10 text-red-400 hover:text-red-300 rounded-xl text-xs font-bold transition-all border-none bg-transparent cursor-pointer text-left"
+                    >
+                      <LogOut size={13} className="shrink-0" />
+                      <span>Log Out of Workspace</span>
+                    </button>
+                  </div>
                 </div>
               </>
             )}

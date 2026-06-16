@@ -1,0 +1,114 @@
+/* driver-theme.css */
+
+.driver-popover.archnet-theme {
+  background-color: #1e1f22 !important;
+  color: #e3e3e3 !important;
+  border: 1px solid #3f4046 !important;
+  border-radius: 16px !important;
+  font-family: inherit !important;
+  box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.5) !important;
+  padding: 20px !important;
+  min-width: 320px;
+  animation: popoverFadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+@keyframes popoverFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(15px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.driver-popover.archnet-theme .driver-popover-title {
+  color: #ffffff !important;
+  font-size: 16px !important;
+  font-weight: 800 !important;
+  margin-bottom: 8px !important;
+  font-family: inherit !important;
+}
+
+.driver-popover.archnet-theme .driver-popover-description {
+  color: #9aa0a6 !important;
+  font-size: 13px !important;
+  line-height: 1.6 !important;
+  font-weight: 500 !important;
+  font-family: inherit !important;
+}
+
+.driver-popover.archnet-theme .driver-popover-footer {
+  margin-top: 20px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+}
+
+.driver-popover.archnet-theme .driver-popover-progress-text {
+  color: #5f6368 !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.5px !important;
+}
+
+.driver-popover.archnet-theme .driver-popover-navigation-btns {
+  display: flex !important;
+  gap: 8px !important;
+}
+
+.driver-popover.archnet-theme .driver-popover-prev-btn,
+.driver-popover.archnet-theme .driver-popover-next-btn {
+  background-color: #2b2d31 !important;
+  color: #e3e3e3 !important;
+  border: 1px solid #3f4046 !important;
+  border-radius: 8px !important;
+  padding: 6px 14px !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  transition: all 0.2s !important;
+  text-shadow: none !important;
+  cursor: pointer !important;
+}
+
+.driver-popover.archnet-theme .driver-popover-prev-btn:hover {
+  background-color: #35373c !important;
+  color: #ffffff !important;
+}
+
+.driver-popover.archnet-theme .driver-popover-next-btn {
+  background-color: #8ab4f8 !important;
+  color: #1e1f22 !important;
+  border-color: #8ab4f8 !important;
+}
+
+.driver-popover.archnet-theme .driver-popover-next-btn:hover {
+  background-color: #a8c7fa !important;
+  color: #1e1f22 !important;
+}
+
+.driver-popover.archnet-theme .driver-popover-close-btn {
+  color: #9aa0a6 !important;
+  transition: color 0.2s !important;
+  top: 12px !important;
+  right: 12px !important;
+}
+
+.driver-popover.archnet-theme .driver-popover-close-btn:hover {
+  color: #ffffff !important;
+}
+
+/* Arrow coloring based on side */
+.driver-popover.archnet-theme .driver-popover-arrow-side-top {
+  border-top-color: #1e1f22 !important;
+}
+.driver-popover.archnet-theme .driver-popover-arrow-side-bottom {
+  border-bottom-color: #1e1f22 !important;
+}
+.driver-popover.archnet-theme .driver-popover-arrow-side-left {
+  border-left-color: #1e1f22 !important;
+}
+.driver-popover.archnet-theme .driver-popover-arrow-side-right {
+  border-right-color: #1e1f22 !important;
+}

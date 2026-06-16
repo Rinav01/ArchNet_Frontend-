@@ -321,12 +321,6 @@ export default function ModelRegistryPage() {
         {/* Tab switcher design */}
         <div className="flex border-b border-[#3f4046]">
           <button
-            onClick={() => router.push('/models')}
-            className="px-6 py-3 text-sm font-bold text-[#9aa0a6] hover:text-white transition-all cursor-pointer border-b-2 border-transparent"
-          >
-            Templates Catalog
-          </button>
-          <button
             className="px-6 py-3 text-sm font-bold text-[#80cbc4] border-b-2 border-[#80cbc4] transition-all cursor-pointer"
           >
             Model Registry

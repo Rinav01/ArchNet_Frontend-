@@ -188,7 +188,7 @@ export default function ExportModal({ isOpen, onClose, nodes, edges, project }: 
         await graphqlRequest(EXPORT_ONNX, { projectId: project.id });
         
         // Fetch generated model from local FastAPI exports directory path
-        const res = await fetch(`http://localhost:8000/exports/${project.id}/model.onnx`);
+        const res = await fetch(`http://127.0.0.1:8000/exports/${project.id}/model.onnx`);
         if (!res.ok) throw new Error();
         const blob = await res.blob();
         triggerDownload(blob, 'model.onnx');
@@ -236,7 +236,7 @@ export default function ExportModal({ isOpen, onClose, nodes, edges, project }: 
     if (isOnline && project?.id) {
       try {
         await graphqlRequest(EXPORT_ONNX, { projectId: project.id });
-        const res = await fetch(`http://localhost:8000/exports/${project.id}/model.onnx`);
+        const res = await fetch(`http://127.0.0.1:8000/exports/${project.id}/model.onnx`);
         if (res.ok) {
           const ab = await res.arrayBuffer();
           onnxBytes = new Uint8Array(ab);

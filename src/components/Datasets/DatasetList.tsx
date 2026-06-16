@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Database, Search, Loader2, ChevronRight, CheckCircle2, AlertTriangle, FileText, ImageIcon, FileCode, HelpCircle } from 'lucide-react';
+import { Database, Search, Loader2, ChevronRight, CheckCircle2, AlertTriangle, FileText, ImageIcon, FileCode, HelpCircle, Trash2 } from 'lucide-react';
 
 interface DatasetItem {
   id: string;
@@ -19,6 +19,7 @@ interface DatasetListProps {
   datasets: DatasetItem[];
   selectedDatasetId?: string | null;
   onSelect: (dataset: DatasetItem) => void;
+  onDelete: (id: string) => void;
   onSync: () => void;
   isLoading: boolean;
 }
@@ -27,6 +28,7 @@ export default function DatasetList({
   datasets,
   selectedDatasetId,
   onSelect,
+  onDelete,
   onSync,
   isLoading,
 }: DatasetListProps) {
@@ -154,6 +156,20 @@ export default function DatasetList({
                       <span>Standby</span>
                     </span>
                   )}
+
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (confirm(`Delete dataset "${dataset.name}"?`)) {
+                        onDelete(dataset.id);
+                      }
+                    }}
+                    className="p-1.5 hover:bg-rose-500/10 text-[#9aa0a6] hover:text-red-400 rounded-lg transition-all border-none bg-transparent cursor-pointer flex items-center justify-center opacity-0 group-hover:opacity-100"
+                    title="Delete Dataset"
+                  >
+                    <Trash2 size={13} />
+                  </button>
 
                   <ChevronRight size={14} className="text-gray-500 group-hover:text-white transition-all transform group-hover:translate-x-0.5" />
                 </div>

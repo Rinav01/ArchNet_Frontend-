@@ -7,7 +7,6 @@ import Header from './Header';
 import ToastContainer from './ToastContainer';
 import { useProjectStore } from '@/store/projectStore';
 import { Loader2 } from 'lucide-react';
-import AICopilotPanel from '@/components/Panels/AICopilotPanel';
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -45,6 +44,17 @@ export default function MainLayout({
       router.push('/login');
     } else {
       setIsCheckingAuth(false);
+      
+      if (token) {
+        localStorage.setItem('lastVisitedPage', pathname);
+        localStorage.setItem('lastActivityAt', new Date().toISOString());
+        
+        const editorMatch = pathname.match(/^\/editor\/([^/]+)/);
+        if (editorMatch) {
+          const projectId = editorMatch[1];
+          localStorage.setItem('lastVisitedProjectId', projectId);
+        }
+      }
     }
   }, [isOnline, pathname, router]);
 
@@ -82,7 +92,6 @@ export default function MainLayout({
           {children}
         </main>
         <ToastContainer />
-        <AICopilotPanel />
       </div>
     </div>
   );

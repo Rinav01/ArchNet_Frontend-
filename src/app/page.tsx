@@ -1,577 +1,727 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import MainLayout from '@/components/Layout/MainLayout';
 import { useProjectStore } from '@/store/projectStore';
-import { useCanvasStore } from '@/store/canvasStore';
-import { 
-  Plus, 
-  ArrowRight, 
-  Layers, 
-  Clock, 
-  Cpu, 
-  TrendingUp, 
-  CodeXml, 
-  X,
-  Sparkles,
-  CloudLightning,
-  Wifi,
-  Trash2
-} from 'lucide-react';
-import { Project } from '@/types/canvas';
+import { Loader2 } from 'lucide-react';
+import './landing.css';
 
-export default function Dashboard() {
-  const router = useRouter();
-  const { projects, gpuLoad, gpuCluster, addProject, setActiveProjectId, loadProjects, isOnline, deleteProject, userRole } = useProjectStore();
-  const clearLogs = useCanvasStore((state) => state.clearLogs);
-  const addLog = useCanvasStore((state) => state.addLog);
+// ─── Animated Floating Node Component ──────────────────────────────────────────
+const FloatingNode = ({
+  x, y, label, color, delay,
+}: {
+  x: number; y: number; label: string; color: string; delay: number;
+}) => (
+  <div
+    className="landing-floating-node"
+    style={{
+      left: `${x}%`,
+      top: `${y}%`,
+      animationDelay: `${delay}s`,
+      '--node-color': color,
+    } as React.CSSProperties}
+  >
+    <span className="landing-node-label">{label}</span>
+  </div>
+);
 
-  useEffect(() => {
-    loadProjects();
-  }, [loadProjects]);
+// ─── Animated SVG Connection Line ───────────────────────────────────────────────
+const NodeConnection = ({
+  x1, y1, x2, y2, color, delay,
+}: {
+  x1: number; y1: number; x2: number; y2: number; color: string; delay: number;
+}) => (
+  <line
+    x1={`${x1}%`} y1={`${y1}%`}
+    x2={`${x2}%`} y2={`${y2}%`}
+    stroke={color}
+    strokeWidth="1"
+    strokeDasharray="6 4"
+    opacity="0.25"
+    style={{ animation: `landing-dash 2s linear ${delay}s infinite` }}
+  />
+);
 
-  // Modal State
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [newProjName, setNewProjName] = useState('');
-  const [newProjFramework, setNewProjFramework] = useState<'PyTorch' | 'TensorFlow' | 'JAX'>('PyTorch');
-  const [newProjStatus, setNewProjStatus] = useState<'Production Ready' | 'Training' | 'Draft'>('Draft');
+// ─── Feature Card ───────────────────────────────────────────────────────────────
+const FeatureCard = ({
+  icon, title, description, accent, delay,
+}: {
+  icon: React.ReactNode; title: string; description: string; accent: string; delay: number;
+}) => (
+  <div className="landing-feature-card" style={{ animationDelay: `${delay}s`, '--accent': accent } as React.CSSProperties}>
+    <div className="landing-feature-icon" style={{ color: accent, borderColor: `${accent}30`, background: `${accent}12` }}>
+      {icon}
+    </div>
+    <h3 className="landing-feature-title">{title}</h3>
+    <p className="landing-feature-desc">{description}</p>
+    <div className="landing-feature-line" style={{ background: `linear-gradient(90deg, ${accent}, transparent)` }} />
+  </div>
+);
 
-  // Live Telemetry Analytics & Hardware Simulation State
-  const [currentGpuCluster, setCurrentGpuCluster] = useState<'RTX 4090 Global Cluster' | 'NVIDIA A100 Cluster' | 'NVIDIA H100 Tensor Core'>('RTX 4090 Global Cluster');
-  const [activeChartTab, setActiveChartTab] = useState<'traffic' | 'complexity' | 'benchmarks'>('traffic');
-  const [ticker, setTicker] = useState(0);
+// ─── Stat Counter ───────────────────────────────────────────────────────────────
+const StatCounter = ({ value, label, accent }: { value: string; label: string; accent: string }) => (
+  <div className="landing-stat">
+    <span className="landing-stat-value" style={{ color: accent }}>{value}</span>
+    <span className="landing-stat-label">{label}</span>
+  </div>
+);
 
-  // Trigger re-render to ripple the live traffic bars dynamically
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setTicker((t) => t + 1);
-    }, 1500);
-    return () => clearInterval(timer);
-  }, []);
+// ─── Framework Badge ────────────────────────────────────────────────────────────
+const FrameworkBadge = ({ name, color, icon }: { name: string; color: string; icon: string }) => (
+  <div className="landing-fw-badge" style={{ borderColor: `${color}30`, background: `${color}10` }}>
+    <span style={{ fontSize: 20 }}>{icon}</span>
+    <span style={{ color, fontWeight: 700, fontSize: 13 }}>{name}</span>
+  </div>
+);
 
-  // Baseline load/VRAM mapping per cluster profile
-  const getClusterConfig = (clusterName: string) => {
-    switch (clusterName) {
-      case 'NVIDIA A100 Cluster':
-        return { totalVramMb: 81920, idleVramMb: 2048, label: '80GB HBM2' };
-      case 'NVIDIA H100 Tensor Core':
-        return { totalVramMb: 81920, idleVramMb: 3072, label: '80GB HBM3' };
-      default:
-        return { totalVramMb: 24576, idleVramMb: 1280, label: '24GB GDDR6X' };
-    }
-  };
-
-  const { totalVramMb, idleVramMb, label: vramLabel } = getClusterConfig(currentGpuCluster);
-
-  // Sum up estimated memory of all projects in workspace
-  const workspaceAllocatedMemory = projects.reduce((sum, p) => sum + (p.estimatedGpuMemoryMb || 0), 0);
-  const activeGpuMemoryUse = idleVramMb + workspaceAllocatedMemory;
-  const calculatedGpuLoadPercent = Math.min(99.5, Math.round((activeGpuMemoryUse / totalVramMb) * 100 * 10) / 10);
-
-  const handleOpenCanvas = (projectId: string) => {
-    setActiveProjectId(projectId);
-    clearLogs();
-    
-    if (projectId === 'resnet-mini') {
-      addLog('info', 'Loaded ResNet-Mini architecture from cloud repository.');
-      addLog('success', 'DAG Validation: Successful (1.2M Parameters)');
-    } else if (projectId === 'transformers-base') {
-      addLog('info', 'Loaded Transformers-Base active training session.');
-      addLog('warning', 'Notice: Hyperparameters are locked during active training run.');
-    } else {
-      addLog('info', 'Initialized fresh blank draft. Ready to build.');
-    }
-
-    router.push(`/editor/${projectId}`);
-  };
-
-  const handleCreateProject = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newProjName.trim()) return;
-
-    addProject({
-      name: newProjName,
-      framework: newProjFramework,
-      status: newProjStatus,
-    });
-
-    setNewProjName('');
-    setIsModalOpen(false);
-  };
+// ─── Mini Canvas Preview ─────────────────────────────────────────────────────────
+const MiniCanvas = () => {
+  const nodes = [
+    { id: 'input', x: 8, y: 44, label: 'Input\n[224,224,3]', color: '#9aa0a6' },
+    { id: 'conv1', x: 28, y: 20, label: 'Conv2D\n(64)', color: '#8ab4f8' },
+    { id: 'pool1', x: 28, y: 68, label: 'MaxPool\n2×2', color: '#80cbc4' },
+    { id: 'bn',    x: 50, y: 44, label: 'BatchNorm', color: '#c5a3ff' },
+    { id: 'conv2', x: 70, y: 20, label: 'Conv2D\n(128)', color: '#8ab4f8' },
+    { id: 'drop',  x: 70, y: 68, label: 'Dropout\n0.3', color: '#ffe082' },
+    { id: 'flat',  x: 88, y: 44, label: 'Dense\n(10)', color: '#f28b82' },
+  ];
+  const edges = [
+    { from: 'input', to: 'conv1', color: '#8ab4f8' },
+    { from: 'input', to: 'pool1', color: '#80cbc4' },
+    { from: 'conv1', to: 'bn', color: '#8ab4f8' },
+    { from: 'pool1', to: 'bn', color: '#80cbc4' },
+    { from: 'bn', to: 'conv2', color: '#c5a3ff' },
+    { from: 'bn', to: 'drop', color: '#c5a3ff' },
+    { from: 'conv2', to: 'flat', color: '#8ab4f8' },
+    { from: 'drop', to: 'flat', color: '#ffe082' },
+  ];
+  const getNode = (id: string) => nodes.find(n => n.id === id)!;
 
   return (
-    <MainLayout>
-      <div className="p-8 max-w-7xl mx-auto space-y-8 relative pb-16">
-        
-        {/* Top Title & Action Banner */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-4">
-              <h1 className="text-4xl font-extrabold tracking-tight text-white">
-                Model Workspace
-              </h1>
-              <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wide border transition-all ${
-                isOnline 
-                  ? 'bg-[#81c784]/10 text-[#81c784] border-[#81c784]/25 shadow-lg shadow-[#81c784]/5' 
-                  : 'bg-[#3f4046]/30 text-[#9aa0a6] border-[#3f4046]/45'
-              }`}>
-                {isOnline ? (
-                  <>
-                    <Wifi size={12} className="text-[#81c784]" />
-                    <span>Cloud Sync Active</span>
-                  </>
-                ) : (
-                  <>
-                    <CloudLightning size={12} />
-                    <span>Local Sandbox</span>
-                  </>
-                )}
-              </span>
-            </div>
-            <p className="text-[#9aa0a6] mt-2 text-sm font-semibold max-w-xl">
-              Manage your computational graphs and neural architectures with high-precision visualization.
-            </p>
-          </div>
-          
-          <button
-            onClick={() => setIsModalOpen(true)}
-            className="flex items-center justify-center gap-2 px-5 py-2.5 bg-[#8ab4f8] hover:bg-[#a8c7fa] text-[#1e1f22] rounded-full text-sm font-bold shadow-md shadow-black/10 transition-all duration-200"
+    <div className="mini-canvas">
+      <div className="mini-canvas-toolbar">
+        <span className="mini-canvas-dot" style={{ background: '#f28b82' }} />
+        <span className="mini-canvas-dot" style={{ background: '#ffe082' }} />
+        <span className="mini-canvas-dot" style={{ background: '#81c784' }} />
+        <span style={{ color: '#5f6368', fontSize: 11, marginLeft: 8, fontFamily: 'monospace' }}>
+          MLBuilder — ResNet-Mini.mlb
+        </span>
+      </div>
+      <div className="mini-canvas-body">
+        <svg className="mini-canvas-svg" viewBox="0 0 100 100" preserveAspectRatio="none">
+          <defs>
+            <radialGradient id="gridGlow" cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stopColor="#8ab4f8" stopOpacity="0.03" />
+              <stop offset="100%" stopColor="#8ab4f8" stopOpacity="0" />
+            </radialGradient>
+          </defs>
+          <rect width="100" height="100" fill="url(#gridGlow)" />
+          {/* grid dots */}
+          {Array.from({ length: 8 }).map((_, i) =>
+            Array.from({ length: 6 }).map((_, j) => (
+              <circle key={`${i}-${j}`} cx={i * 14.5 + 2} cy={j * 20 + 2} r="0.5" fill="rgba(255,255,255,0.06)" />
+            ))
+          )}
+          {/* edges */}
+          {edges.map((e, i) => {
+            const from = getNode(e.from);
+            const to = getNode(e.to);
+            const mx = (from.x + to.x) / 2;
+            return (
+              <path
+                key={i}
+                d={`M ${from.x} ${from.y} C ${mx} ${from.y}, ${mx} ${to.y}, ${to.x} ${to.y}`}
+                stroke={e.color}
+                strokeWidth="0.8"
+                fill="none"
+                opacity="0.45"
+                strokeDasharray="3 2"
+                style={{ animation: `landing-dash ${1.5 + i * 0.2}s linear infinite` }}
+              />
+            );
+          })}
+        </svg>
+        {/* nodes */}
+        {nodes.map((node) => (
+          <div
+            key={node.id}
+            className="mini-canvas-node"
+            style={{
+              left: `${node.x}%`,
+              top: `${node.y}%`,
+              borderColor: `${node.color}50`,
+              background: `${node.color}12`,
+              transform: 'translate(-50%, -50%)',
+            }}
           >
-            <Plus size={18} />
-            <span>Create Project</span>
-          </button>
+            {node.label.split('\n').map((l, i) => (
+              <span key={i} style={{ color: i === 0 ? node.color : '#9aa0a6', fontWeight: i === 0 ? 700 : 500 }}>
+                {l}
+              </span>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// ─── Code Preview Panel ──────────────────────────────────────────────────────────
+const CodePreview = () => {
+  const lines = [
+    { text: 'class GeneratedModel(nn.Module):', color: '#c5a3ff' },
+    { text: '    def __init__(self):', color: '#e3e3e3' },
+    { text: '        super().__init__()', color: '#9aa0a6' },
+    { text: '        self.conv1 = nn.Conv2d(3, 64, 3)', color: '#8ab4f8' },
+    { text: '        self.bn1   = nn.BatchNorm2d(64)', color: '#80cbc4' },
+    { text: '        self.pool  = nn.MaxPool2d(2, 2)', color: '#80cbc4' },
+    { text: '        self.conv2 = nn.Conv2d(64, 128, 3)', color: '#8ab4f8' },
+    { text: '        self.drop  = nn.Dropout(0.3)', color: '#ffe082' },
+    { text: '        self.fc    = nn.Linear(128, 10)', color: '#f28b82' },
+    { text: '', color: '' },
+    { text: '    def forward(self, x):', color: '#e3e3e3' },
+    { text: '        x = F.relu(self.bn1(self.conv1(x)))', color: '#9aa0a6' },
+    { text: '        x = self.pool(x)', color: '#9aa0a6' },
+    { text: '        x = F.relu(self.conv2(x))', color: '#9aa0a6' },
+    { text: '        x = self.drop(x)', color: '#9aa0a6' },
+    { text: '        return self.fc(x)', color: '#81c784' },
+  ];
+
+  return (
+    <div className="code-preview">
+      <div className="code-preview-header">
+        <span className="code-tag">PyTorch</span>
+        <span className="code-tag" style={{ color: '#80cbc4', borderColor: '#80cbc430', background: '#80cbc410' }}>TensorFlow</span>
+        <span className="code-tag" style={{ color: '#c5a3ff', borderColor: '#c5a3ff30', background: '#c5a3ff10' }}>JAX/Flax</span>
+        <span className="code-tag" style={{ color: '#ffe082', borderColor: '#ffe08230', background: '#ffe08210' }}>ONNX</span>
+      </div>
+      <div className="code-preview-body">
+        {lines.map((line, i) => (
+          <div key={i} className="code-line">
+            <span className="code-lineno">{i + 1}</span>
+            <span style={{ color: line.color || 'transparent', fontFamily: 'monospace', fontSize: 12, whiteSpace: 'pre' }}>
+              {line.text || ' '}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// ─── Telemetry Chart ─────────────────────────────────────────────────────────────
+const TelemetryChart = () => {
+  const [epoch, setEpoch] = useState(0);
+  const lossData = [0.92, 0.76, 0.61, 0.49, 0.41, 0.35, 0.29, 0.24, 0.20, 0.17, 0.14, 0.12, 0.10, 0.09, 0.08, 0.07, 0.065, 0.06, 0.055, 0.052];
+  const accData  = [0.41, 0.58, 0.67, 0.74, 0.79, 0.83, 0.86, 0.88, 0.90, 0.91, 0.92, 0.93, 0.935, 0.94, 0.943, 0.947, 0.95, 0.952, 0.954, 0.956];
+
+  useEffect(() => {
+    const id = setInterval(() => setEpoch(e => (e + 1) % 20), 700);
+    return () => clearInterval(id);
+  }, []);
+
+  const W = 260, H = 90;
+  const toX = (i: number) => (i / 19) * W;
+  const lossPath = lossData.slice(0, epoch + 1).map((v, i) => `${i === 0 ? 'M' : 'L'} ${toX(i)} ${H - v * H * 0.9}`).join(' ');
+  const accPath  = accData.slice(0, epoch + 1).map((v, i) => `${i === 0 ? 'M' : 'L'} ${toX(i)} ${H - v * H * 0.9}`).join(' ');
+
+  return (
+    <div className="telemetry-card">
+      <div className="telemetry-header">
+        <div>
+          <div className="telemetry-title">Training Monitor</div>
+          <div className="telemetry-subtitle">Epoch {epoch + 1} / 20 — Live WebSocket</div>
+        </div>
+        <div className="telemetry-live">
+          <span className="telemetry-dot" />
+          LIVE
+        </div>
+      </div>
+      <svg width={W} height={H} style={{ overflow: 'visible' }}>
+        {/* grid lines */}
+        {[0.25, 0.5, 0.75, 1].map(v => (
+          <line key={v} x1={0} y1={H - v * H * 0.9} x2={W} y2={H - v * H * 0.9} stroke="#3f4046" strokeWidth="0.5" />
+        ))}
+        {epoch > 0 && (
+          <>
+            <path d={lossPath} fill="none" stroke="#f28b82" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            <path d={accPath} fill="none" stroke="#81c784" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          </>
+        )}
+        {epoch > 0 && (
+          <>
+            <circle cx={toX(epoch)} cy={H - lossData[epoch] * H * 0.9} r={3} fill="#f28b82" />
+            <circle cx={toX(epoch)} cy={H - accData[epoch] * H * 0.9} r={3} fill="#81c784" />
+          </>
+        )}
+      </svg>
+      <div className="telemetry-legend">
+        <span style={{ color: '#f28b82' }}>● Loss: {lossData[epoch].toFixed(3)}</span>
+        <span style={{ color: '#81c784' }}>● Acc: {(accData[epoch] * 100).toFixed(1)}%</span>
+      </div>
+    </div>
+  );
+};
+
+// ─── Main Landing Page ──────────────────────────────────────────────────────────
+export default function LandingPage() {
+  const router = useRouter();
+  const { loadProjects } = useProjectStore();
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+
+  const heroRef = useRef<HTMLDivElement>(null);
+  const [scrollY, setScrollY] = useState(0);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('mlbuilder_token') : null;
+    if (token) {
+      setIsAuthenticated(true);
+      
+      const handleRedirect = async () => {
+        await loadProjects();
+        const latestProjects = useProjectStore.getState().projects;
+
+        if (latestProjects.length === 0) {
+          router.replace('/onboarding');
+          return;
+        }
+
+        const lastVisitedProjectId = localStorage.getItem('lastVisitedProjectId');
+        const lastVisitedPage = localStorage.getItem('lastVisitedPage');
+
+        // Check if lastVisitedProjectId exists and is still valid
+        const projectExists = latestProjects.some(p => p.id === lastVisitedProjectId);
+
+        if (lastVisitedProjectId && projectExists) {
+          router.replace(`/editor/${lastVisitedProjectId}`);
+        } else if (lastVisitedPage && lastVisitedPage !== '/' && lastVisitedPage !== '/login') {
+          router.replace(lastVisitedPage);
+        } else {
+          router.replace('/dashboard');
+        }
+      };
+
+      handleRedirect();
+    } else {
+      setIsAuthenticated(false);
+      
+      const onScroll = () => setScrollY(window.scrollY);
+      window.addEventListener('scroll', onScroll, { passive: true });
+      setTimeout(() => setVisible(true), 100);
+      return () => window.removeEventListener('scroll', onScroll);
+    }
+  }, [loadProjects, router]);
+
+  // Render a minimal premium loader if redirecting
+  if (isAuthenticated === null || isAuthenticated === true) {
+    return (
+      <div className="min-h-screen w-full flex items-center justify-center bg-[#0a0b10] text-[#e3e3e3] font-sans">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="h-8 w-8 text-[#8ab4f8] animate-spin" />
+          <span className="text-xs font-semibold text-[#9aa0a6] tracking-wider uppercase">Restoring Session Handshake...</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="landing-root">
+
+      {/* ── NAV ───────────────────────────────────────────────────────────────── */}
+      <nav className="landing-nav">
+        <div className="landing-nav-inner">
+          <div className="landing-logo">
+            <div className="landing-logo-icon">
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                <circle cx="10" cy="3" r="2.2" fill="#8ab4f8" />
+                <circle cx="3" cy="14" r="2.2" fill="#c5a3ff" />
+                <circle cx="17" cy="14" r="2.2" fill="#80cbc4" />
+                <line x1="10" y1="5" x2="3" y2="12" stroke="#8ab4f8" strokeWidth="1.2" opacity="0.6" />
+                <line x1="10" y1="5" x2="17" y2="12" stroke="#8ab4f8" strokeWidth="1.2" opacity="0.6" />
+                <line x1="3" y1="14" x2="17" y2="14" stroke="#3f4046" strokeWidth="1.2" opacity="0.5" />
+              </svg>
+            </div>
+            <span className="landing-logo-text">ML<span style={{ color: '#8ab4f8' }}>Builder</span></span>
+          </div>
+          <div className="landing-nav-links">
+            <a href="#features">Features</a>
+            <a href="#frameworks">Frameworks</a>
+            <a href="#demo">Demo</a>
+            <a href="#telemetry">Telemetry</a>
+          </div>
+          <div className="landing-nav-actions">
+            <Link href="/login" className="landing-btn-ghost">Sign In</Link>
+            <Link href="/dashboard" className="landing-btn-primary">Launch App →</Link>
+          </div>
+        </div>
+      </nav>
+
+      {/* ── HERO ──────────────────────────────────────────────────────────────── */}
+      <section className="landing-hero" ref={heroRef}>
+        {/* Background animated node graph */}
+        <div className="hero-bg-canvas" style={{ transform: `translateY(${scrollY * 0.15}px)` }}>
+          <svg className="hero-bg-svg" viewBox="0 0 100 100" preserveAspectRatio="none">
+            <NodeConnection x1={12} y1={20} x2={35} y2={40} color="#8ab4f8" delay={0} />
+            <NodeConnection x1={35} y1={40} x2={60} y2={25} color="#c5a3ff" delay={0.3} />
+            <NodeConnection x1={60} y1={25} x2={82} y2={50} color="#80cbc4" delay={0.6} />
+            <NodeConnection x1={20} y1={70} x2={50} y2={55} color="#ffe082" delay={0.9} />
+            <NodeConnection x1={50} y1={55} x2={75} y2={75} color="#f28b82" delay={1.2} />
+            <NodeConnection x1={35} y1={40} x2={50} y2={55} color="#8ab4f8" delay={0.4} />
+            <NodeConnection x1={60} y1={25} x2={50} y2={55} color="#c5a3ff" delay={0.7} />
+          </svg>
+          <FloatingNode x={10} y={18} label="Input" color="#9aa0a6" delay={0} />
+          <FloatingNode x={33} y={38} label="Conv2D" color="#8ab4f8" delay={0.2} />
+          <FloatingNode x={58} y={22} label="BatchNorm" color="#c5a3ff" delay={0.5} />
+          <FloatingNode x={80} y={48} label="Dense" color="#80cbc4" delay={0.8} />
+          <FloatingNode x={18} y={68} label="Dropout" color="#ffe082" delay={1.0} />
+          <FloatingNode x={48} y={53} label="MaxPool" color="#f28b82" delay={0.3} />
+          <FloatingNode x={73} y={73} label="Softmax" color="#81c784" delay={0.6} />
         </div>
 
-        {/* Project Grid / Offline Overlay */}
-        {!isOnline ? (
-          <div className="glass-panel rounded-2xl p-8 border border-[#f28b82]/15 bg-[#f28b82]/5 shadow-2xl relative overflow-hidden">
-            <div className="absolute -right-16 -top-16 w-32 h-32 bg-[#f28b82]/5 rounded-full blur-2xl"></div>
-            
-            <div className="flex flex-col md:flex-row items-start gap-6">
-              <div className="p-4 bg-[#f28b82]/10 border border-[#f28b82]/25 rounded-2xl text-[#f28b82] shadow-inner">
-                <CloudLightning size={32} />
-              </div>
-              <div className="space-y-3 flex-1">
-                <h3 className="text-xl font-bold text-white tracking-wide">Strawberry GraphQL API Sync Offline</h3>
-                <p className="text-sm text-[#9aa0a6] leading-relaxed max-w-2xl font-semibold">
-                  MLBuilder is running in strict live-sync mode. A running instance of the FastAPI backend database is required to load neural topologies, configure layers, and compile models.
-                </p>
-                <div className="pt-2 space-y-2">
-                  <span className="text-xs font-bold text-[#9aa0a6] uppercase tracking-wider block">Diagnostics:</span>
-                  <ul className="list-disc list-inside text-xs text-[#9aa0a6] space-y-1.5 ml-1 font-semibold leading-relaxed">
-                    <li>Launch the backend API server by running <code className="px-1.5 py-0.5 bg-black/40 rounded font-mono text-[10px] text-[#f28b82]">uvicorn app.main:app --reload</code> inside <code className="px-1.5 py-0.5 bg-black/40 rounded font-mono text-[10px] text-gray-300">D:\Coding\new_project</code>.</li>
-                    <li>Ensure the environment endpoint matches the configured port in your <code className="px-1.5 py-0.5 bg-black/40 rounded font-mono text-[10px] text-gray-300">.env</code> file.</li>
-                    <li>Check that the server's database binds are correctly established.</li>
-                  </ul>
-                </div>
+        {/* Gradient overlay */}
+        <div className="hero-overlay" />
+
+        {/* Hero Content */}
+        <div className={`hero-content ${visible ? 'hero-visible' : ''}`}>
+          <div className="hero-badge">
+            <span className="hero-badge-dot" />
+            Enterprise Neural Architecture Platform
+          </div>
+          <h1 className="hero-title">
+            Design Deep Learning<br />
+            <span className="hero-title-accent">Architectures Visually</span>
+          </h1>
+          <p className="hero-subtitle">
+            MLBuilder is the industry-grade visual workspace for designing, validating, and compiling
+            neural networks to <strong>PyTorch</strong>, <strong>TensorFlow</strong>, <strong>JAX</strong>, and <strong>ONNX</strong> —
+            with real-time tensor shape solving and live training telemetry.
+          </p>
+          <div className="hero-actions">
+            <Link href="/dashboard" id="hero-launch-btn" className="landing-btn-primary landing-btn-lg">
+              Open Workspace →
+            </Link>
+            <a href="#demo" className="landing-btn-ghost landing-btn-lg">
+              See Demo
+            </a>
+          </div>
+
+          {/* Stats row */}
+          <div className="hero-stats">
+            <StatCounter value="4+" label="Frameworks" accent="#8ab4f8" />
+            <div className="hero-stat-divider" />
+            <StatCounter value="∞" label="Param Layers" accent="#c5a3ff" />
+            <div className="hero-stat-divider" />
+            <StatCounter value="Real-time" label="Tensor Solver" accent="#80cbc4" />
+            <div className="hero-stat-divider" />
+            <StatCounter value="WebSocket" label="Live Training" accent="#81c784" />
+          </div>
+        </div>
+      </section>
+
+      {/* ── CANVAS DEMO ───────────────────────────────────────────────────────── */}
+      <section id="demo" className="landing-section">
+        <div className="landing-section-inner">
+          <div className="section-label">Interactive Canvas</div>
+          <h2 className="section-title">
+            Node-based Architecture<br />
+            <span style={{ color: '#8ab4f8' }}>Design & Compilation</span>
+          </h2>
+          <p className="section-subtitle">
+            Drag-and-drop layers, connect ports with bezier linkages, and watch tensor shapes propagate downstream
+            in real-time. Compile any graph to production-ready Python in one click.
+          </p>
+          <div className="demo-split">
+            <div className="demo-left">
+              <MiniCanvas />
+              <div className="demo-canvas-tags">
+                <span className="demo-tag" style={{ color: '#8ab4f8', borderColor: '#8ab4f815', background: '#8ab4f808' }}>Bezier Connections</span>
+                <span className="demo-tag" style={{ color: '#c5a3ff', borderColor: '#c5a3ff15', background: '#c5a3ff08' }}>Multi-select</span>
+                <span className="demo-tag" style={{ color: '#80cbc4', borderColor: '#80cbc415', background: '#80cbc408' }}>Drag & Drop</span>
+                <span className="demo-tag" style={{ color: '#ffe082', borderColor: '#ffe08215', background: '#ffe08208' }}>Zoom & Pan</span>
               </div>
             </div>
-          </div>
-        ) : projects.length === 0 ? (
-          <div className="glass-card rounded-2xl p-12 text-center border border-[#3f4046] bg-[#2b2d31] shadow-xl relative overflow-hidden flex flex-col items-center justify-center min-h-[250px]">
-            <div className="absolute inset-0 dot-grid opacity-10 pointer-events-none"></div>
-            <div className="p-4 bg-[#8ab4f8]/10 border border-[#8ab4f8]/20 rounded-2xl text-[#8ab4f8] mb-4 animate-pulse">
-              <Cpu size={24} />
-            </div>
-            <h4 className="text-sm font-bold text-white">No Projects Found</h4>
-            <p className="text-xs text-[#9aa0a6] mt-1.5 max-w-[280px] font-semibold mx-auto">
-              Your database is currently empty. Click the "Create Project" button above to initialize your first visual deep learning canvas.
-            </p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {projects.map((project) => {
-              const statusColor = 
-                project.status === 'Production Ready' ? 'bg-[#81c784]/10 text-[#81c784] border-[#81c784]/25' :
-                project.status === 'Training' ? 'bg-[#ffe082]/10 text-[#ffe082] border-[#ffe082]/25' :
-                'bg-[#80cbc4]/10 text-[#80cbc4] border-[#80cbc4]/25';
-
-              const frameworkColor =
-                project.framework === 'PyTorch' ? 'bg-[#8ab4f8]/10 text-[#8ab4f8]' :
-                project.framework === 'TensorFlow' ? 'bg-[#ffe082]/10 text-[#ffe082]' :
-                'bg-[#80cbc4]/10 text-[#80cbc4]';
-
-              return (
-                <div 
-                  key={project.id}
-                  className="glass-card rounded-2xl p-6 flex flex-col justify-between min-h-[350px] relative overflow-hidden"
-                >
-                  <div className="absolute -right-16 -top-16 w-32 h-32 bg-[#8ab4f8]/5 rounded-full blur-2xl"></div>
-                  
-                  {/* Card Header Info */}
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <span className={`text-[10px] uppercase font-extrabold tracking-wider px-2.5 py-1 rounded-full border ${statusColor}`}>
-                        {project.status}
-                      </span>
-                      <span className={`text-[11px] font-extrabold px-3 py-1 rounded-lg ${frameworkColor}`}>
-                        {project.framework}
-                      </span>
-                    </div>
-
-                    <div>
-                      <h3 className="text-2xl font-bold text-white tracking-wide">{project.name}</h3>
-                      <p className="text-xs text-[#9aa0a6] mt-1 flex items-center gap-1">
-                        <Clock size={12} />
-                        Updated {project.updatedAt}
-                      </p>
-                    </div>
-
-                    {/* Micro Visual Neural Architecture representation */}
-                    <div className="h-28 bg-[#1e1f22] rounded-xl border border-[#3f4046] flex items-center justify-center p-4 relative overflow-hidden">
-                      <div className="absolute inset-0 dot-grid pointer-events-none opacity-20"></div>
-                      
-                      {project.id === 'resnet-mini' && (
-                        <div className="flex items-center gap-4 text-[10px] text-[#9aa0a6] font-mono relative z-10 w-full justify-center">
-                          <div className="flex flex-col items-center gap-1.5">
-                            <span className="w-2 h-2 rounded-full bg-[#9aa0a6]"></span>
-                            <span>Input</span>
-                          </div>
-                          <div className="w-8 h-[2px] bg-[#3f4046] relative">
-                            <div className="absolute w-1.5 h-1.5 rounded-full bg-[#8ab4f8] -top-[3px] left-1/2 -translate-x-1/2"></div>
-                          </div>
-                          <div className="px-3 py-1.5 bg-[#8ab4f8]/10 border border-[#8ab4f8]/20 text-[#8ab4f8] rounded-lg font-bold">
-                            Conv2D (64)
-                          </div>
-                          <div className="w-8 h-[2px] bg-[#3f4046] relative"></div>
-                          <div className="flex flex-col items-center gap-1.5">
-                            <span className="w-2 h-2 rounded-full bg-[#ffe082]"></span>
-                            <span>Output</span>
-                          </div>
-                        </div>
-                      )}
-
-                      {project.id === 'transformers-base' && (
-                        <div className="flex items-center gap-3 relative z-10">
-                          <div className="px-4 py-2 bg-[#ffe082]/5 border border-[#ffe082]/20 text-[#ffe082] rounded-lg font-bold text-xs flex flex-col items-center gap-1 shadow-lg shadow-[#ffe082]/5">
-                            <div className="flex gap-1">
-                              <span className="w-4 h-1 bg-[#ffe082]/40 rounded"></span>
-                              <span className="w-4 h-1 bg-[#ffe082]/40 rounded"></span>
-                              <span className="w-4 h-1 bg-[#ffe082]/40 rounded"></span>
-                            </div>
-                            <span className="font-mono text-[10px]">Attention_x12</span>
-                          </div>
-                        </div>
-                      )}
-
-                      {project.id !== 'resnet-mini' && project.id !== 'transformers-base' && (
-                        <div className="flex flex-col items-center gap-2 text-[#9aa0a6] text-xs font-semibold relative z-10">
-                          <CodeXml size={22} className="text-[#3f4046]" />
-                          <span>{project.notes || 'Graph structure pending...'}</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Card Parameters & Action Footer */}
-                  <div className="mt-6 pt-4 border-t border-[#3f4046] flex items-center justify-between">
-                    <div className="grid grid-cols-2 gap-4">
-                      {project.parameters && (
-                        <div>
-                          <span className="text-[10px] text-[#9aa0a6] uppercase tracking-wider block font-bold">Parameters</span>
-                          <span className="text-sm font-bold text-gray-300 font-mono">{project.parameters}</span>
-                        </div>
-                      )}
-                      {project.latency && (
-                        <div>
-                          <span className="text-[10px] text-[#9aa0a6] uppercase tracking-wider block font-bold">Latency</span>
-                          <span className="text-sm font-bold text-gray-300 font-mono">{project.latency}</span>
-                        </div>
-                      )}
-                      {project.learningRate && (
-                        <div>
-                          <span className="text-[10px] text-[#9aa0a6] uppercase tracking-wider block font-bold">Learning Rate</span>
-                          <span className="text-sm font-bold text-gray-300 font-mono">{project.learningRate}</span>
-                        </div>
-                      )}
-                      {project.loss && (
-                        <div>
-                          <span className="text-[10px] text-[#9aa0a6] uppercase tracking-wider block font-bold">Loss</span>
-                          <span className="text-sm font-bold text-gray-300 font-mono">{project.loss}</span>
-                        </div>
-                      )}
-                      {!project.parameters && !project.learningRate && (
-                        <div>
-                          <span className="text-[10px] text-[#9aa0a6] uppercase tracking-wider block font-bold">Layers</span>
-                          <span className="text-sm font-bold text-gray-300 font-mono">{project.layersCount} Units</span>
-                        </div>
-                      )}
-                      {!project.latency && !project.loss && (
-                        <div>
-                          <span className="text-[10px] text-[#9aa0a6] uppercase tracking-wider block font-bold">Status</span>
-                          <span className="text-sm font-bold text-gray-300 font-mono">{project.status === 'Draft' ? 'Incomplete' : 'Complete'}</span>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      {userRole !== 'Viewer' && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (window.confirm(`Are you sure you want to delete the project "${project.name}"?`)) {
-                              deleteProject(project.id);
-                            }
-                          }}
-                          className="p-2.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 hover:border-red-500/40 text-red-400 hover:text-red-300 rounded-full transition-all cursor-pointer"
-                          title="Delete Project"
-                        >
-                          <Trash2 size={12} />
-                        </button>
-                      )}
-
-                      <button
-                        onClick={() => handleOpenCanvas(project.id)}
-                        className="flex items-center gap-1.5 px-4 py-2 bg-[#1e1f22] hover:bg-[#8ab4f8]/10 text-xs font-bold text-[#8ab4f8] rounded-full border border-[#3f4046] hover:border-[#8ab4f8]/30 transition-all"
-                      >
-                        <span>Open Canvas</span>
-                        <ArrowRight size={12} />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Lower Section: Analytics & Infrastructure Status */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          
-          {/* Inference Distribution Chart */}
-          <div className="lg:col-span-2 glass-card rounded-2xl p-6 relative overflow-hidden flex flex-col justify-between">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-[#3f4046] pb-4 mb-4 gap-3">
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                <TrendingUp size={18} className="text-[#8ab4f8]" />
-                <span>Analytics Monitor</span>
-              </h3>
-              
-              {/* Tab Toggles */}
-              <div className="flex items-center bg-[#1e1f22] p-1 rounded-full border border-[#3f4046] select-none text-[10px] font-bold">
+            <div className="demo-right">
+              <div className="demo-info-title">Topological Shape Solver</div>
+              <p className="demo-info-desc">
+                Every connection automatically validates tensor rank compatibility and propagates output shapes
+                downstream from your input parameters — no manual calculation needed.
+              </p>
+              <div className="demo-shape-cards">
                 {[
-                  { id: 'traffic', label: 'Live Traffic' },
-                  { id: 'complexity', label: 'Complexity Map' },
-                  { id: 'benchmarks', label: 'Benchmarks' }
-                ].map((tab) => (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    onClick={() => setActiveChartTab(tab.id as any)}
-                    className={`px-3 py-1 rounded-full transition-all cursor-pointer ${
-                      activeChartTab === tab.id
-                        ? 'bg-[#8ab4f8] text-[#1e1f22]'
-                        : 'text-[#9aa0a6] hover:text-white'
-                    }`}
-                  >
-                    {tab.label}
-                  </button>
+                  { layer: 'Input', shape: '[224, 224, 3]', color: '#9aa0a6' },
+                  { layer: 'Conv2D (64, k=3)', shape: '[224, 224, 64]', color: '#8ab4f8' },
+                  { layer: 'MaxPool2D (2)', shape: '[112, 112, 64]', color: '#80cbc4' },
+                  { layer: 'Flatten', shape: '[802,816]', color: '#c5a3ff' },
+                  { layer: 'Dense (10)', shape: '[10]', color: '#f28b82' },
+                ].map((s, i) => (
+                  <div key={i} className="shape-card" style={{ borderColor: `${s.color}25` }}>
+                    <span style={{ color: s.color, fontWeight: 700, fontSize: 12 }}>{s.layer}</span>
+                    <span className="shape-arrow">→</span>
+                    <code style={{ color: '#e3e3e3', fontFamily: 'monospace', fontSize: 11, background: '#1e1f22', padding: '2px 8px', borderRadius: 6 }}>
+                      {s.shape}
+                    </code>
+                  </div>
                 ))}
               </div>
             </div>
-
-            {/* Custom Dynamic SVG Bar Chart */}
-            {projects.length === 0 ? (
-              <div className="h-48 flex flex-col items-center justify-center text-center select-none gap-2">
-                <TrendingUp size={24} className="text-[#3f4046]" />
-                <span className="text-xs text-[#9aa0a6] font-semibold">No project metrics loaded.</span>
-                <span className="text-[10px] text-[#5f6368] font-medium max-w-[280px]">Create a neural network project above to compile and view active hardware distribution analytics.</span>
-              </div>
-            ) : (
-              <div className="h-48 flex items-end justify-start gap-4 pt-6 px-2 overflow-x-auto min-w-full scrollbar-none">
-                {projects.map((project, idx) => {
-                  let valueLabel = '';
-                  let percentHeight = 20;
-
-                  if (activeChartTab === 'complexity') {
-                    const paramsM = (project.totalParameterCount || 0) / 1_000_000;
-                    valueLabel = `${paramsM.toFixed(2)}M Params`;
-                    const maxParams = Math.max(...projects.map(p => p.totalParameterCount || 0), 1_000_000);
-                    percentHeight = Math.round(((project.totalParameterCount || 0) / maxParams) * 75 + 20);
-                  } else if (activeChartTab === 'benchmarks') {
-                    valueLabel = `${(project.estimatedGpuMemoryMb || 0).toFixed(1)} MB VRAM`;
-                    const maxMem = Math.max(...projects.map(p => p.estimatedGpuMemoryMb || 0), 10);
-                    percentHeight = Math.round(((project.estimatedGpuMemoryMb || 0) / maxMem) * 75 + 20);
-                  } else {
-                    // 'traffic' tab: Live throughput simulated from model complexity (smaller models = faster throughput!)
-                    const complexityScale = Math.max(1, (project.totalParameterCount || 0) / 100_000);
-                    const baseThroughput = Math.max(50, 1200 / complexityScale);
-                    const liveRipple = 1 + (Math.sin(ticker / 2 + idx) * 0.05); // slight live organic ripple using ticker
-                    const activeThroughput = Math.round(baseThroughput * liveRipple);
-                    valueLabel = `${activeThroughput} req/s`;
-                    percentHeight = Math.round(Math.min(95, Math.max(15, (activeThroughput / 1200) * 80 + 15)));
-                  }
-
-                  const barColor = 
-                    project.framework === 'PyTorch' ? 'bg-[#8ab4f8]/20 border-[#8ab4f8]/35 shadow-[0_0_15px_rgba(138,180,248,0.03)] hover:bg-[#8ab4f8]/30 hover:border-[#8ab4f8]/50' :
-                    project.framework === 'TensorFlow' ? 'bg-[#ffe082]/15 border-[#ffe082]/30 hover:bg-[#ffe082]/25 hover:border-[#ffe082]/45' :
-                    'bg-[#80cbc4]/15 border-[#80cbc4]/30 hover:bg-[#80cbc4]/25 hover:border-[#80cbc4]/45';
-
-                  return (
-                    <div key={project.id} className="flex-1 min-w-[90px] max-w-[120px] flex flex-col items-center gap-2 h-full justify-end group/bar relative">
-                      {/* Hover Value Tooltip Card */}
-                      <div className="absolute top-0 opacity-0 group-hover/bar:opacity-100 transition-opacity bg-[#1e1f22] border border-[#3f4046] rounded-xl p-3 text-[9px] font-mono text-[#e3e3e3] whitespace-nowrap shadow-2xl z-20 pointer-events-none -translate-y-8 flex flex-col gap-0.5">
-                        <div className="font-extrabold text-white text-[10.5px] truncate max-w-[100px]">{project.name}</div>
-                        <div className="text-[#8ab4f8] font-bold text-[10px]">{valueLabel}</div>
-                      </div>
-
-                      <div 
-                        className={`w-full ${barColor} rounded-t-xl border-t border-x transition-all duration-700 ease-out hover:scale-x-105 cursor-pointer relative flex items-end justify-center pb-2.5`}
-                        style={{ height: `${percentHeight}%` }}
-                      >
-                        {/* Sub-label inside bar */}
-                        <span className="text-[8px] font-extrabold text-white/30 tracking-wider truncate max-w-[90%] uppercase">{project.framework}</span>
-                      </div>
-                      <span className="text-[10px] text-[#9aa0a6] font-extrabold truncate max-w-full" title={project.name}>{project.name}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* GPU Hardware Load Metric */}
-          <div className="glass-card rounded-2xl p-6 flex flex-col justify-between relative overflow-hidden">
-            <div className="absolute -right-12 -bottom-12 w-28 h-28 bg-[#8ab4f8]/5 rounded-full blur-2xl"></div>
-            
-            <div className="space-y-3">
-              <span className="text-[10px] font-extrabold text-[#9aa0a6] uppercase tracking-widest block">Workspace GPU Allocation</span>
-              <h2 className="text-6xl font-black text-white tracking-tighter flex items-baseline gap-1.5">
-                <span className="transition-all duration-300 select-all font-mono tabular-nums">{calculatedGpuLoadPercent}%</span>
-                <span className="text-xs text-[#8ab4f8] font-extrabold uppercase animate-pulse">Online</span>
-              </h2>
-            </div>
-
-            <div className="space-y-4">
-              <div className="w-full h-2 bg-[#3f4046] rounded-full overflow-hidden">
-                <div 
-                  className="h-full bg-gradient-to-r from-[#8ab4f8] to-[#c5a3ff] rounded-full shadow-lg shadow-[#8ab4f8]/30 transition-all duration-700 ease-out"
-                  style={{ width: `${calculatedGpuLoadPercent}%` }}
-                ></div>
-              </div>
-
-              {/* Click to Cycle/Select Hardware Profiles */}
-              <div 
-                onClick={() => {
-                  setCurrentGpuCluster(prev => 
-                    prev === 'RTX 4090 Global Cluster' ? 'NVIDIA A100 Cluster' :
-                    prev === 'NVIDIA A100 Cluster' ? 'NVIDIA H100 Tensor Core' :
-                    'RTX 4090 Global Cluster'
-                  );
-                }}
-                className="flex items-center justify-between text-xs text-[#9aa0a6] font-semibold bg-[#1e1f22]/60 hover:bg-[#1e1f22]/90 border border-[#3f4046]/40 px-3.5 py-2 rounded-xl cursor-pointer transition-all hover:border-[#8ab4f8]/30 shadow-inner group"
-                title="Click to cycle active hardware cluster profiles"
-              >
-                <span className="group-hover:text-white transition-colors">{currentGpuCluster}</span>
-                <span className="font-mono text-[10px] text-[#8ab4f8]/80 bg-[#8ab4f8]/10 px-2 py-0.5 rounded border border-[#8ab4f8]/20">
-                  {workspaceAllocatedMemory > 0 
-                    ? `${workspaceAllocatedMemory.toFixed(1)}MB / ${(totalVramMb / 1024).toFixed(0)}GB` 
-                    : vramLabel}
-                </span>
-              </div>
-            </div>
-          </div>
-
-        </div>
-
-      </div>
-
-      {/* Creation Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-md z-50 flex items-center justify-center p-4">
-          <div className="w-full max-w-lg bg-[#2b2d31] rounded-2xl border border-[#3f4046] p-8 shadow-2xl relative overflow-hidden">
-            <button 
-              onClick={() => setIsModalOpen(false)}
-              className="absolute top-6 right-6 p-2 hover:bg-[#1e1f22] rounded-lg text-[#9aa0a6] hover:text-white transition-all"
-            >
-              <X size={18} />
-            </button>
-
-            <div className="flex items-center gap-3 mb-6">
-              <div className="p-2.5 bg-[#8ab4f8]/10 border border-[#8ab4f8]/25 rounded-xl text-[#8ab4f8] shadow-inner">
-                <Sparkles size={20} />
-              </div>
-              <div>
-                <h3 className="text-xl font-bold text-white">Create New Model</h3>
-                <p className="text-xs text-[#9aa0a6] mt-0.5 font-semibold">Scaffold a premium deep learning project structure.</p>
-              </div>
-            </div>
-
-            <form onSubmit={handleCreateProject} className="space-y-6">
-              {/* Project Name Input */}
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-[#9aa0a6] uppercase tracking-wider block">Project Name</label>
-                <input 
-                  type="text"
-                  required
-                  placeholder="e.g. MobileNet-V4"
-                  value={newProjName}
-                  onChange={(e) => setNewProjName(e.target.value)}
-                  className="w-full px-4 py-3 bg-[#1e1f22] border border-[#3f4046] rounded-xl text-sm text-white placeholder-[#5f6368] focus:outline-none focus:border-[#8ab4f8] focus:ring-1 focus:ring-[#8ab4f8]/20 transition-all font-semibold"
-                />
-              </div>
-
-              {/* Framework Choice */}
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-[#9aa0a6] uppercase tracking-wider block">Target Framework</label>
-                <div className="grid grid-cols-3 gap-3">
-                  {(['PyTorch', 'TensorFlow', 'JAX'] as const).map((fw) => (
-                    <button
-                      key={fw}
-                      type="button"
-                      onClick={() => setNewProjFramework(fw)}
-                      className={`py-2.5 rounded-full border text-xs font-bold tracking-wide transition-all ${
-                        newProjFramework === fw
-                          ? 'bg-[#8ab4f8]/10 border-[#8ab4f8]/50 text-[#8ab4f8]'
-                          : 'bg-[#1e1f22] border-[#3f4046] text-[#9aa0a6] hover:bg-[#2b2d31] hover:text-white'
-                      }`}
-                    >
-                      {fw}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Status Selector */}
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-[#9aa0a6] uppercase tracking-wider block">Starting Stage</label>
-                <div className="grid grid-cols-3 gap-3">
-                  {(['Production Ready', 'Training', 'Draft'] as const).map((st) => (
-                    <button
-                      key={st}
-                      type="button"
-                      onClick={() => setNewProjStatus(st)}
-                      className={`py-2.5 rounded-full border text-xs font-bold tracking-wide transition-all ${
-                        newProjStatus === st
-                          ? 'bg-[#8ab4f8]/10 border-[#8ab4f8]/50 text-[#8ab4f8]'
-                          : 'bg-[#1e1f22] border-[#3f4046] text-[#9aa0a6] hover:bg-[#2b2d31] hover:text-white'
-                      }`}
-                    >
-                      {st}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="pt-4 flex items-center justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-5 py-2 bg-[#1e1f22] hover:bg-[#2b2d31] border border-[#3f4046] text-xs font-bold text-[#9aa0a6] hover:text-white rounded-full transition-all"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-6 py-2 bg-[#8ab4f8] hover:bg-[#a8c7fa] text-[#1e1f22] font-bold rounded-full text-xs shadow-md shadow-black/10 transition-all duration-200"
-                >
-                  Create Project
-                </button>
-              </div>
-            </form>
           </div>
         </div>
-      )}
-    </MainLayout>
+      </section>
+
+      {/* ── FEATURES ──────────────────────────────────────────────────────────── */}
+      <section id="features" className="landing-section landing-section-alt">
+        <div className="landing-section-inner">
+          <div className="section-label">Core Capabilities</div>
+          <h2 className="section-title">
+            Everything you need to build<br />
+            <span style={{ color: '#c5a3ff' }}>production ML systems</span>
+          </h2>
+          <div className="features-grid">
+            <FeatureCard
+              icon={<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><line x1="7" y1="7" x2="14" y2="14"/><line x1="17" y1="7" x2="14" y2="14"/></svg>}
+              title="Visual Node Editor"
+              description="High-performance Konva.js canvas with drag, drop, multi-select, bezier linkages, and group operations for complex multi-branch architectures."
+              accent="#8ab4f8"
+              delay={0}
+            />
+            <FeatureCard
+              icon={<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z"/></svg>}
+              title="AutoML Copilot"
+              description="AST-level diagnostic scanner that detects cycle loops, disconnected nodes, rank conflicts, and anti-patterns — with auto-fix capabilities."
+              accent="#ffe082"
+              delay={0.1}
+            />
+            <FeatureCard
+              icon={<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>}
+              title="Multi-Framework Compiler"
+              description="One-click compilation to clean production-grade Python classes for PyTorch, TensorFlow, Flax/JAX, and ONNX binary export."
+              accent="#80cbc4"
+              delay={0.2}
+            />
+            <FeatureCard
+              icon={<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>}
+              title="Live Training Telemetry"
+              description="WebSocket-connected real-time training monitor plotting loss and accuracy curves per epoch with full experiment history tracking."
+              accent="#81c784"
+              delay={0.3}
+            />
+            <FeatureCard
+              icon={<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>}
+              title="Shape Propagation Engine"
+              description="Topological sort solver that automatically computes and validates tensor shapes downstream from any input configuration in real-time."
+              accent="#c5a3ff"
+              delay={0.4}
+            />
+            <FeatureCard
+              icon={<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>}
+              title="Dataset Manager"
+              description="Drag-and-drop CSV/ZIP ingestion with tabular preview, Celery async processing, and database status tracking for training pipelines."
+              accent="#f28b82"
+              delay={0.5}
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* ── CODE COMPILER SECTION ─────────────────────────────────────────────── */}
+      <section className="landing-section">
+        <div className="landing-section-inner">
+          <div className="section-label">Code Generation</div>
+          <h2 className="section-title">
+            Canvas to Code —<br />
+            <span style={{ color: '#80cbc4' }}>Instantly Compiled</span>
+          </h2>
+          <p className="section-subtitle">
+            Every architectural decision you make on the visual canvas is instantly reflected as
+            clean, type-checked Python. Export to any major ML framework without writing a single line of boilerplate.
+          </p>
+          <div className="compiler-split">
+            <div className="compiler-left">
+              <CodePreview />
+            </div>
+            <div className="compiler-right">
+              <div className="compiler-info-title">Production-Grade Output</div>
+              <p className="compiler-info-desc">
+                Generated code follows framework conventions — subclassing <code>nn.Module</code>, 
+                correctly calling <code>super().__init__()</code>, and organizing layers exactly
+                as experienced ML engineers would write them.
+              </p>
+              <div className="compiler-checks">
+                {[
+                  { label: 'PyTorch nn.Module standard', color: '#8ab4f8' },
+                  { label: 'TensorFlow Keras Model API', color: '#ffe082' },
+                  { label: 'JAX/Flax Linen module', color: '#80cbc4' },
+                  { label: 'ONNX binary export format', color: '#c5a3ff' },
+                  { label: 'Type annotations included', color: '#81c784' },
+                  { label: 'Zero boilerplate required', color: '#f28b82' },
+                ].map((c, i) => (
+                  <div key={i} className="compiler-check">
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                      <circle cx="7" cy="7" r="6.5" fill={`${c.color}18`} stroke={`${c.color}50`} />
+                      <path d="M4 7l2 2 4-4" stroke={c.color} strokeWidth="1.5" strokeLinecap="round" />
+                    </svg>
+                    <span style={{ color: '#9aa0a6', fontSize: 13 }}>{c.label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── FRAMEWORKS ────────────────────────────────────────────────────────── */}
+      <section id="frameworks" className="landing-section landing-section-alt">
+        <div className="landing-section-inner" style={{ textAlign: 'center' }}>
+          <div className="section-label">Supported Frameworks</div>
+          <h2 className="section-title">
+            Compile Once,<br />
+            <span style={{ color: '#ffe082' }}>Deploy Anywhere</span>
+          </h2>
+          <p className="section-subtitle" style={{ maxWidth: 540, margin: '0 auto 48px' }}>
+            MLBuilder's compiler targets all major production ML frameworks,
+            giving you the freedom to switch runtimes without redesigning your architecture.
+          </p>
+          <div className="frameworks-row">
+            <FrameworkBadge name="PyTorch" color="#8ab4f8" icon="🔥" />
+            <FrameworkBadge name="TensorFlow" color="#ffe082" icon="🌊" />
+            <FrameworkBadge name="JAX / Flax" color="#80cbc4" icon="⚡" />
+            <FrameworkBadge name="ONNX" color="#c5a3ff" icon="🔗" />
+          </div>
+        </div>
+      </section>
+
+      {/* ── TELEMETRY ─────────────────────────────────────────────────────────── */}
+      <section id="telemetry" className="landing-section">
+        <div className="landing-section-inner">
+          <div className="section-label">Training Monitor</div>
+          <h2 className="section-title">
+            Real-Time Telemetry<br />
+            <span style={{ color: '#81c784' }}>via WebSockets</span>
+          </h2>
+          <p className="section-subtitle">
+            Connect to a live training run and watch loss curves and accuracy metrics update in real-time.
+            Track every epoch, compare experiments, and diagnose training anomalies instantly.
+          </p>
+          <div className="telemetry-split">
+            <div>
+              <TelemetryChart />
+            </div>
+            <div className="telemetry-info">
+              <div className="telemetry-info-item">
+                <div className="telemetry-info-dot" style={{ background: '#81c784' }} />
+                <div>
+                  <div className="telemetry-info-label">Validation Accuracy</div>
+                  <div className="telemetry-info-value">Real-time per-epoch update</div>
+                </div>
+              </div>
+              <div className="telemetry-info-item">
+                <div className="telemetry-info-dot" style={{ background: '#f28b82' }} />
+                <div>
+                  <div className="telemetry-info-label">Training Loss</div>
+                  <div className="telemetry-info-value">Cross-entropy curve tracking</div>
+                </div>
+              </div>
+              <div className="telemetry-info-item">
+                <div className="telemetry-info-dot" style={{ background: '#8ab4f8' }} />
+                <div>
+                  <div className="telemetry-info-label">WebSocket Protocol</div>
+                  <div className="telemetry-info-value">FastAPI + Celery integration</div>
+                </div>
+              </div>
+              <div className="telemetry-info-item">
+                <div className="telemetry-info-dot" style={{ background: '#c5a3ff' }} />
+                <div>
+                  <div className="telemetry-info-label">Experiment History</div>
+                  <div className="telemetry-info-value">Full run comparison &amp; archiving</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── DIAGNOSTIC CENTER ─────────────────────────────────────────────────── */}
+      <section className="landing-section landing-section-alt">
+        <div className="landing-section-inner">
+          <div className="section-label">Diagnostic Center</div>
+          <h2 className="section-title">
+            AutoML Copilot that<br />
+            <span style={{ color: '#ffe082' }}>catches every bug</span>
+          </h2>
+          <div className="diagnostics-grid">
+            {[
+              { type: 'Error', label: 'Loop Cycle Detected', desc: 'DFS-based cycle detection with auto edge removal', color: '#f28b82', icon: '🔄' },
+              { type: 'Warning', label: 'Disconnected Layer', desc: 'Reachability trace with smart auto-reconnection', color: '#ffe082', icon: '⚠️' },
+              { type: 'Error', label: 'Rank Conflict', desc: 'Auto-inserts Flatten node between incompatible layers', color: '#f28b82', icon: '📐' },
+              { type: 'Suggestion', label: 'Missing Activation', desc: 'Detects Conv2D without activation, auto-applies ReLU', color: '#8ab4f8', icon: '⚡' },
+              { type: 'Info', label: 'Non-Standard Input', desc: 'Suggests standard 224×224×3 image input dimensions', color: '#80cbc4', icon: 'ℹ️' },
+              { type: 'Suggestion', label: 'Parameter Explosion', desc: 'Flags >500K dense parameters and suggests reduction', color: '#c5a3ff', icon: '💡' },
+            ].map((d, i) => (
+              <div key={i} className="diagnostic-card" style={{ animationDelay: `${i * 0.08}s` }}>
+                <div className="diag-header">
+                  <span className="diag-type" style={{ color: d.color, borderColor: `${d.color}30`, background: `${d.color}12` }}>
+                    {d.type}
+                  </span>
+                  <span style={{ fontSize: 18 }}>{d.icon}</span>
+                </div>
+                <div className="diag-label">{d.label}</div>
+                <div className="diag-desc">{d.desc}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── CTA ───────────────────────────────────────────────────────────────── */}
+      <section className="landing-cta">
+        <div className="cta-glow-left" />
+        <div className="cta-glow-right" />
+        <div className="cta-content">
+          <div className="section-label" style={{ marginBottom: 20 }}>Get Started Today</div>
+          <h2 className="cta-title">
+            Build your first neural<br />architecture in minutes
+          </h2>
+          <p className="cta-subtitle">
+            No code required to start. Design visually, validate automatically, compile instantly.
+            The full power of deep learning, without the boilerplate.
+          </p>
+          <div className="hero-actions" style={{ marginTop: 40 }}>
+            <Link href="/dashboard" id="cta-launch-btn" className="landing-btn-primary landing-btn-xl">
+              Open MLBuilder →
+            </Link>
+            <Link href="/docs" className="landing-btn-ghost landing-btn-lg">
+              Read the Docs
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* ── FOOTER ────────────────────────────────────────────────────────────── */}
+      <footer className="landing-footer">
+        <div className="landing-footer-inner">
+          <div className="landing-logo">
+            <div className="landing-logo-icon">
+              <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
+                <circle cx="10" cy="3" r="2.2" fill="#8ab4f8" />
+                <circle cx="3" cy="14" r="2.2" fill="#c5a3ff" />
+                <circle cx="17" cy="14" r="2.2" fill="#80cbc4" />
+                <line x1="10" y1="5" x2="3" y2="12" stroke="#8ab4f8" strokeWidth="1.2" opacity="0.6" />
+                <line x1="10" y1="5" x2="17" y2="12" stroke="#8ab4f8" strokeWidth="1.2" opacity="0.6" />
+              </svg>
+            </div>
+            <span style={{ color: '#5f6368', fontSize: 13 }}>MLBuilder © 2026 — Enterprise Neural Architecture Platform</span>
+          </div>
+          <div className="footer-links">
+            <Link href="/dashboard">App</Link>
+            <Link href="/docs">Docs</Link>
+            <Link href="/datasets">Datasets</Link>
+            <Link href="/settings">Settings</Link>
+          </div>
+        </div>
+      </footer>
+
+    </div>
   );
 }

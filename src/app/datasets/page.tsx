@@ -11,7 +11,8 @@ import {
   graphqlRequest, 
   GET_DATASETS, 
   CREATE_DATASET, 
-  TRIGGER_DATASET_PROCESSING 
+  TRIGGER_DATASET_PROCESSING,
+  DELETE_DATASET
 } from '@/lib/graphql/client';
 import { 
   Database, 
@@ -308,6 +309,30 @@ export default function DatasetsPage() {
     setIsDrawerOpen(true);
   };
 
+  const handleDelete = async (id: string) => {
+    if (isOnline) {
+      try {
+        const deleteRes = await graphqlRequest(DELETE_DATASET, { id });
+        if (deleteRes && deleteRes.deleteDataset) {
+          toast.success('Dataset Deleted', 'The dataset has been deleted from the server.');
+        } else {
+          toast.error('Deletion Failed', 'Backend returned failure for deleting this dataset.');
+        }
+      } catch (err: any) {
+        console.warn('Backend dataset deletion failed:', err);
+        toast.error('Deletion Error', err.message || 'Failed to delete dataset from backend.');
+      }
+    } else {
+      toast.info('Local Delete', 'Dataset removed from sandbox view.');
+    }
+
+    setDatasets((prev) => prev.filter((ds) => ds.id !== id));
+    if (selectedDataset?.id === id) {
+      setSelectedDataset(null);
+      setIsDrawerOpen(false);
+    }
+  };
+
   return (
     <MainLayout>
       <div className="p-8 max-w-5xl mx-auto space-y-8 relative pb-24 select-none">
@@ -381,6 +406,7 @@ export default function DatasetsPage() {
           datasets={datasets}
           selectedDatasetId={selectedDataset?.id}
           onSelect={handleCardClick}
+          onDelete={handleDelete}
           onSync={loadDatasets}
           isLoading={isLoading}
         />

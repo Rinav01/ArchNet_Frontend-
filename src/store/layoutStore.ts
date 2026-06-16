@@ -18,6 +18,7 @@ interface LayoutState {
   dockPreview: 'left' | 'right' | 'bottom' | null;
   maxZIndex: number;
   activePreset: string;
+  lastActivePreset: string;
   activeConsoleTab: string;
   
   // Actions
@@ -30,6 +31,8 @@ interface LayoutState {
   setDockPreview: (position: 'left' | 'right' | 'bottom' | null) => void;
   resetLayout: () => void;
   applyPreset: (presetName: string) => void;
+  toggleAllPanels: () => void;
+  initializeCanvasLayout: () => void;
   setActiveConsoleTab: (tab: string) => void;
 }
 
@@ -94,6 +97,18 @@ const DEFAULT_PANELS: Record<string, PanelState> = {
     height: 550,
     zIndex: 14,
   },
+  copilot: {
+    id: 'copilot',
+    title: 'AI AutoML Copilot',
+    isOpen: false,
+    isFloating: false,
+    dockPosition: 'right',
+    x: 850,
+    y: 120,
+    width: 350,
+    height: 550,
+    zIndex: 15,
+  },
 };
 
 export const useLayoutStore = create<LayoutState>((set, get) => ({
@@ -101,6 +116,7 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
   dockPreview: null,
   maxZIndex: 20,
   activePreset: 'Architecture Mode',
+  lastActivePreset: 'Architecture Mode',
   activeConsoleTab: 'activity',
 
   togglePanel: (id) => {
@@ -162,7 +178,7 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
       if (!panel) return {};
 
       // Retrieve default dimensions for docking
-      const defaultWidth = id === 'console' ? 800 : id === 'inspector' ? 350 : id === 'explainability' ? 340 : 320;
+      const defaultWidth = id === 'console' ? 800 : (id === 'inspector' || id === 'copilot') ? 350 : id === 'explainability' ? 340 : 320;
       const defaultHeight = id === 'console' ? 256 : 550;
 
       return {
@@ -298,10 +314,39 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
           break;
       }
       
+      const isCanvasFocus = presetName === 'Canvas Focus';
+      
       return {
         panels: updatedPanels,
         activePreset: presetName,
-        activeConsoleTab: consoleTab
+        activeConsoleTab: consoleTab,
+        ...(isCanvasFocus ? {} : { lastActivePreset: presetName })
+      };
+    });
+  },
+
+  toggleAllPanels: () => {
+    const state = get();
+    const anyOpen = Object.values(state.panels).some((p) => p.isOpen);
+    if (anyOpen) {
+      state.applyPreset('Canvas Focus');
+    } else {
+      state.applyPreset(state.lastActivePreset || 'Architecture Mode');
+    }
+  },
+
+  initializeCanvasLayout: () => {
+    set((state) => {
+      const updatedPanels = { ...state.panels };
+      Object.keys(updatedPanels).forEach((key) => {
+        updatedPanels[key] = {
+          ...updatedPanels[key],
+          isOpen: key === 'console',
+        };
+      });
+      return {
+        panels: updatedPanels,
+        activePreset: 'Training Mode',
       };
     });
   },

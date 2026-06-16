@@ -8,6 +8,7 @@ import ConfigPanel from '@/components/Panels/ConfigPanel';
 import ValidationPanel from '@/components/Panels/ValidationPanel';
 import ValidationSidebar from '@/components/Panels/ValidationSidebar';
 import ExplainabilityPanel from '@/components/Panels/ExplainabilityPanel';
+import AICopilotPanel from '@/components/Panels/AICopilotPanel';
 import CanvasWrapper from '@/components/Canvas/CanvasWrapper';
 import CodePreviewModal from '@/components/Modals/CodePreviewModal';
 import ExportModal from '@/components/Modals/ExportModal';
@@ -76,6 +77,7 @@ export default function EditorPage() {
 
   const panels = useLayoutStore((state) => state.panels);
   const dockPreview = useLayoutStore((state) => state.dockPreview);
+  const initializeCanvasLayout = useLayoutStore((state) => state.initializeCanvasLayout);
 
   // Modals state
   const [isCodeModalOpen, setIsCodeModalOpen] = useState(false);
@@ -152,6 +154,12 @@ export default function EditorPage() {
     };
   }, [projectId, templateName, setActiveProjectId, loadProjects, loadGraph, loadPrebuiltTemplate, connectCollaboration, disconnectCollaboration, loadCustomBlocks]);
 
+  
+  // Set layout: only the IDE Terminal Console is open by default when the editor mounts
+  useEffect(() => {
+    initializeCanvasLayout();
+  }, [initializeCanvasLayout]);
+
   const handleZoomIn = () => setZoom(z => z + 0.1);
   const handleZoomOut = () => setZoom(z => z - 0.1);
   const handleResetView = () => {
@@ -200,6 +208,12 @@ export default function EditorPage() {
         return (
           <ErrorBoundary name="Explainability Panel">
             <ExplainabilityPanel />
+          </ErrorBoundary>
+        );
+      case 'copilot':
+        return (
+          <ErrorBoundary name="AI AutoML Copilot">
+            <AICopilotPanel />
           </ErrorBoundary>
         );
       default:

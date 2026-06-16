@@ -25,10 +25,9 @@ export default function Sidebar() {
   const isEditor = pathname.startsWith('/editor');
 
   const menuItems = [
-    { name: 'Layers', icon: Layers, path: '/' },
+    { name: 'Layers', icon: Layers, path: '/dashboard' },
     { name: 'Datasets', icon: Database, path: '/datasets' },
     { name: 'Notebook', icon: BookOpen, path: '/notebook' },
-    { name: 'Models', icon: Cpu, path: '/models' },
     { name: 'Research', icon: Sparkles, path: '/models/research' },
     { name: 'Experiments', icon: TrendingUp, path: '/experiments' },
     { name: 'Registry', icon: ShieldCheck, path: '/models/registry' },
@@ -80,7 +79,7 @@ export default function Sidebar() {
       {/* Main Navigation Menu */}
       <nav className={`flex-1 w-full space-y-1 ${isEditor ? 'px-2' : 'px-4'}`}>
         {menuItems.map((item) => {
-          const isActive = pathname === item.path || (item.path === '/' && pathname.startsWith('/editor'));
+          const isActive = pathname === item.path || (item.path === '/dashboard' && pathname.startsWith('/editor'));
           const Icon = item.icon;
           
           return (

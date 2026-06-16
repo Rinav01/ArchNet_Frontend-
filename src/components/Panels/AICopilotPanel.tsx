@@ -5,10 +5,7 @@ import { useCanvasStore } from '@/store/canvasStore';
 import { useProjectStore } from '@/store/projectStore';
 import { useRouter } from 'next/navigation';
 import { toast } from '@/store/notificationStore';
-import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  MessageSquare, 
-  X, 
   Send, 
   Sparkles, 
   Cpu, 
@@ -18,8 +15,6 @@ import {
   TrendingDown,
   Wrench,
   CloudLightning,
-  ChevronDown,
-  ChevronUp,
   RotateCcw
 } from 'lucide-react';
 
@@ -34,8 +29,6 @@ interface Message {
 
 export default function AICopilotPanel() {
   const router = useRouter();
-  const [isOpen, setIsOpen] = useState(false);
-  const [isDocked, setIsDocked] = useState(false);
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -92,7 +85,7 @@ export default function AICopilotPanel() {
   // Auto-scroll to bottom of messages
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isOpen]);
+  }, [messages]);
 
   // ── Architecture Intent Engine ─────────────────────────────────────────────
   // Maps the user's free-text prompt to the correct template or build action.
@@ -400,283 +393,231 @@ export default function AICopilotPanel() {
   const selectedCount = selectedNodeIds.length || (selectedNodeId ? 1 : 0);
 
   return (
-    <>
-      {/* Floating Launcher Button */}
-      <div className="fixed bottom-6 right-6 z-40 flex flex-col items-end gap-2 font-sans select-none">
-        <AnimatePresence>
-          {!isOpen && (
-            <motion.button
-              onClick={() => setIsOpen(true)}
-              initial={{ scale: 0.8, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.8, opacity: 0, y: 20 }}
-              whileHover={{ scale: 1.05 }}
-              className="flex items-center gap-2 px-5 py-3.5 bg-gradient-to-tr from-[#8ab4f8] to-[#c5a3ff] hover:from-[#a8c7fa] hover:to-[#d7c4ff] text-[#1e1f22] rounded-full shadow-2xl shadow-black/40 font-extrabold text-sm transition-all duration-300 cursor-pointer group"
-            >
-              <Sparkles size={18} className="animate-pulse text-[#1e1f22] group-hover:rotate-12 transition-transform duration-300" />
-              <span>MLBuilder Copilot</span>
-              <span className="flex h-2.5 w-2.5 relative">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#1e1f22] opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-[#1e1f22]"></span>
-              </span>
-            </motion.button>
-          )}
-        </AnimatePresence>
+    <div className="w-full h-full bg-[#141517] flex flex-col select-none font-sans min-h-0 min-w-0">
+      {/* Context Awareness Ribbon */}
+      <div className="px-4 py-2 bg-[#1e1f22]/50 border-b border-[#3f4046]/50 flex items-center justify-between text-[10px] font-semibold shrink-0">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="flex items-center gap-1 text-gray-400 min-w-0">
+            <Cpu size={11} className="text-[#8ab4f8]" />
+            <span className="truncate text-white max-w-[70px]" title={activeProject?.name || 'No Project'}>
+              {activeProject?.name || 'No Project'}
+            </span>
+          </div>
+          <div className="flex items-center gap-1 text-gray-400 min-w-0">
+            <Database size={11} className="text-[#80cbc4]" />
+            <span className="truncate text-white max-w-[70px]" title={activeDatasetName}>
+              {activeDatasetName}
+            </span>
+          </div>
+          <div className="flex items-center gap-1 text-gray-400">
+            <Grid size={11} className="text-[#c5a3ff]" />
+            <span className="text-white">
+              {selectedCount}
+            </span>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={clearChatHistory}
+          title="Clear Chat History"
+          className="p-1 hover:bg-[#2b2d31] rounded text-[#9aa0a6] hover:text-white transition-all cursor-pointer border-none bg-transparent flex items-center gap-0.5"
+        >
+          <RotateCcw size={11} />
+          <span>Reset</span>
+        </button>
       </div>
 
-      {/* Main Panel Side Drawer */}
-      <AnimatePresence>
-        {isOpen && (
-          <motion.div
-            initial={{ opacity: 0, x: 380 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 380 }}
-            className={`fixed right-0 top-0 bottom-0 bg-[#141517] border-l border-[#3f4046] shadow-2xl z-40 flex flex-col transition-all duration-300 select-none font-sans ${
-              isDocked ? 'w-full md:w-[480px]' : 'w-full md:w-[380px]'
+      {/* Chat Messages */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar min-h-0">
+        {messages.map((msg) => (
+          <div key={msg.id} className={`flex flex-col ${msg.sender === 'user' ? 'items-end' : 'items-start'}`}>
+            <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-xs ${
+              msg.sender === 'user'
+                ? 'bg-[#8ab4f8] text-[#1e1f22] rounded-tr-none font-bold'
+                : 'bg-[#2b2d31] text-gray-300 border border-[#3f4046] rounded-tl-none font-medium'
+            }`}>
+              {renderMessageText(msg.text)}
+
+              {/* Render action cards if actionCode is present */}
+              {msg.sender === 'assistant' && msg.actionCode && (
+                <div className="mt-3.5 pt-3 border-t border-[#3f4046] space-y-2">
+                  {msg.actionCode === 'CREATE_GRAPH' && (
+                    <div className="bg-[#1e1f22]/80 border border-[#8ab4f8]/30 p-3 rounded-xl flex flex-col gap-2.5">
+                      <div className="flex items-center gap-2">
+                        <Sparkles className="text-[#8ab4f8]" size={14} />
+                        <span className="font-extrabold text-[11px] text-white">Create Architecture Graph</span>
+                      </div>
+                      <p className="text-[10px] text-gray-400 font-medium">Instantiate a fully connected {msg.actionPayload} neural network template.</p>
+                      <button
+                        type="button"
+                        onClick={() => handleActionExecute(msg.actionCode!, msg.actionPayload)}
+                        className="w-full flex items-center justify-center gap-1.5 py-1.5 bg-[#8ab4f8] hover:bg-[#a8c7fa] text-[#1e1f22] text-[10px] font-black rounded-lg transition-all cursor-pointer border-none"
+                      >
+                        <span>Create Graph</span>
+                        <ArrowRight size={10} />
+                      </button>
+                    </div>
+                  )}
+
+                  {msg.actionCode === 'BUILD_CUSTOM' && (
+                    <div className="bg-[#1e1f22]/80 border border-[#81c784]/30 p-3 rounded-xl flex flex-col gap-2.5">
+                      <div className="flex items-center gap-2">
+                        <Cpu className="text-[#81c784]" size={14} />
+                        <span className="font-extrabold text-[11px] text-white">Build Custom Architecture</span>
+                      </div>
+                      <p className="text-[10px] text-gray-400 font-medium">Generate a <strong className="text-[#81c784]">{msg.actionPayload}</strong> architecture built node-by-node from your Layer Library.</p>
+                      <button
+                        type="button"
+                        onClick={() => handleActionExecute(msg.actionCode!, msg.actionPayload)}
+                        className="w-full flex items-center justify-center gap-1.5 py-1.5 bg-[#81c784] hover:bg-[#a5d6a7] text-[#1e1f22] text-[10px] font-black rounded-lg transition-all cursor-pointer border-none"
+                      >
+                        <span>Build {msg.actionPayload}</span>
+                        <ArrowRight size={10} />
+                      </button>
+                    </div>
+                  )}
+
+                  {msg.actionCode === 'MODIFY_GRAPH' && (
+                    <div className="bg-[#1e1f22]/80 border border-[#c5a3ff]/30 p-3 rounded-xl flex flex-col gap-2.5">
+                      <div className="flex items-center gap-2">
+                        <Grid className="text-[#c5a3ff]" size={14} />
+                        <span className="font-extrabold text-[11px] text-white">Modify Architecture</span>
+                      </div>
+                      <p className="text-[10px] text-gray-400 font-medium">Insert a {msg.actionPayload} layer at the end of the graph.</p>
+                      <button
+                        type="button"
+                        onClick={() => handleActionExecute(msg.actionCode!, msg.actionPayload)}
+                        className="w-full flex items-center justify-center gap-1.5 py-1.5 bg-[#c5a3ff] hover:bg-[#d7c4ff] text-[#1e1f22] text-[10px] font-black rounded-lg transition-all cursor-pointer border-none"
+                      >
+                        <span>Modify Graph</span>
+                        <ArrowRight size={10} />
+                      </button>
+                    </div>
+                  )}
+
+                  {msg.actionCode === 'APPLY_FIX' && (
+                    <div className="bg-[#1e1f22]/80 border border-[#ffe082]/30 p-3 rounded-xl flex flex-col gap-2.5">
+                      <div className="flex items-center gap-2">
+                        <Wrench className="text-[#ffe082]" size={14} />
+                        <span className="font-extrabold text-[11px] text-white">Apply Shape Alignment Fix</span>
+                      </div>
+                      <p className="text-[10px] text-gray-400 font-medium">Auto-align stride ratios, dimension bounds, and layout paths.</p>
+                      <button
+                        type="button"
+                        onClick={() => handleActionExecute(msg.actionCode!)}
+                        className="w-full flex items-center justify-center gap-1.5 py-1.5 bg-[#ffe082] hover:bg-[#ffecb3] text-[#1e1f22] text-[10px] font-black rounded-lg transition-all cursor-pointer border-none"
+                      >
+                        <span>Apply Fix</span>
+                        <ArrowRight size={10} />
+                      </button>
+                    </div>
+                  )}
+
+                  {msg.actionCode === 'DEPLOY_MODEL' && (
+                    <div className="bg-[#1e1f22]/80 border border-[#80cbc4]/30 p-3 rounded-xl flex flex-col gap-2.5">
+                      <div className="flex items-center gap-2">
+                        <CloudLightning className="text-[#80cbc4]" size={14} />
+                        <span className="font-extrabold text-[11px] text-white">Production Registry Deploy</span>
+                      </div>
+                      <p className="text-[10px] text-gray-400 font-medium">Open the deployment workspace inside Model Registry dashboard.</p>
+                      <button
+                        type="button"
+                        onClick={() => handleActionExecute(msg.actionCode!)}
+                        className="w-full flex items-center justify-center gap-1.5 py-1.5 bg-[#80cbc4] hover:bg-[#a7ffeb] text-[#1e1f22] text-[10px] font-black rounded-lg transition-all cursor-pointer border-none"
+                      >
+                        <span>Deploy Model</span>
+                        <ArrowRight size={10} />
+                      </button>
+                    </div>
+                  )}
+
+                  {msg.actionCode === 'OPTIMIZE_COST' && (
+                    <div className="bg-[#1e1f22]/80 border border-[#f28b82]/30 p-3 rounded-xl flex flex-col gap-2.5">
+                      <div className="flex items-center gap-2">
+                        <TrendingDown className="text-[#f28b82]" size={14} />
+                        <span className="font-extrabold text-[11px] text-white">Reduce Cluster Cost</span>
+                      </div>
+                      <p className="text-[10px] text-gray-400 font-medium">Throttle GPU nodes to 50% limit and set priority to Low.</p>
+                      <button
+                        type="button"
+                        onClick={() => handleActionExecute(msg.actionCode!)}
+                        className="w-full flex items-center justify-center gap-1.5 py-1.5 bg-[#f28b82] hover:bg-[#f5b4af] text-[#1e1f22] text-[10px] font-black rounded-lg transition-all cursor-pointer border-none"
+                      >
+                        <span>Optimize Cost</span>
+                        <ArrowRight size={10} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            <span className="text-[9px] text-gray-600 mt-1 px-1 font-semibold">{msg.timestamp}</span>
+          </div>
+        ))}
+        <div ref={messagesEndRef} />
+      </div>
+
+      {/* Quick Suggestions Stems */}
+      <div className="px-4 py-2 flex gap-1.5 overflow-x-auto shrink-0 border-t border-[#3f4046]/30 bg-[#1e1f22]/20 no-scrollbar">
+        <button
+          type="button"
+          onClick={() => handleSend('Build a ViT for CIFAR10')}
+          className="px-2.5 py-1 bg-[#2b2d31]/80 hover:bg-[#313338] border border-[#3f4046] text-gray-400 hover:text-white text-[9px] font-bold rounded-lg transition-all whitespace-nowrap cursor-pointer shrink-0"
+        >
+          Build ViT
+        </button>
+        <button
+          type="button"
+          onClick={() => handleSend('Apply compilation fix')}
+          className="px-2.5 py-1 bg-[#2b2d31]/80 hover:bg-[#313338] border border-[#3f4046] text-gray-400 hover:text-white text-[9px] font-bold rounded-lg transition-all whitespace-nowrap cursor-pointer shrink-0"
+        >
+          Apply Fix
+        </button>
+        <button
+          type="button"
+          onClick={() => handleSend('Optimize cluster cost')}
+          className="px-2.5 py-1 bg-[#2b2d31]/80 hover:bg-[#313338] border border-[#3f4046] text-gray-400 hover:text-white text-[9px] font-bold rounded-lg transition-all whitespace-nowrap cursor-pointer shrink-0"
+        >
+          Optimize Cost
+        </button>
+        <button
+          type="button"
+          onClick={() => handleSend('Deploy model to production')}
+          className="px-2.5 py-1 bg-[#2b2d31]/80 hover:bg-[#313338] border border-[#3f4046] text-gray-400 hover:text-white text-[9px] font-bold rounded-lg transition-all whitespace-nowrap cursor-pointer shrink-0"
+        >
+          Deploy Model
+        </button>
+      </div>
+
+      {/* Input Bar */}
+      <div className="p-4 bg-[#1e1f22] border-t border-[#3f4046] shrink-0">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleSend();
+          }}
+          className="flex items-center gap-2"
+        >
+          <input
+            type="text"
+            placeholder="Ask Copilot (e.g. 'Build a ViT for CIFAR10')..."
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            className="flex-1 px-3 py-2 bg-[#141517] border border-[#3f4046] rounded-xl text-xs text-white placeholder-gray-600 focus:outline-none focus:border-[#8ab4f8] focus:ring-1 focus:ring-[#8ab4f8]/20 transition-all font-semibold"
+          />
+          <button
+            type="submit"
+            disabled={!input.trim()}
+            className={`p-2 rounded-xl flex items-center justify-center transition-all ${
+              input.trim()
+                ? 'bg-[#8ab4f8] hover:bg-[#a8c7fa] text-[#1e1f22] cursor-pointer'
+                : 'bg-[#2b2d31] text-gray-600 border border-[#3f4046] cursor-not-allowed'
             }`}
           >
-            {/* Header */}
-            <div className="px-5 py-4 bg-[#1e1f22] border-b border-[#3f4046] flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-2 text-white">
-                <div className="p-1.5 bg-[#8ab4f8]/10 rounded-lg text-[#8ab4f8]">
-                  <Sparkles size={16} className="animate-pulse" />
-                </div>
-                <div>
-                  <h3 className="text-xs font-black tracking-widest uppercase">MLBuilder Copilot</h3>
-                  <span className="text-[10px] text-gray-500 font-semibold block mt-0.5">Real-time Graph Assistant</span>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-1.5">
-                <button
-                  onClick={() => setIsDocked(!isDocked)}
-                  title={isDocked ? "Shrink panel" : "Expand panel"}
-                  className="p-1.5 hover:bg-[#2b2d31] rounded-lg text-[#9aa0a6] hover:text-white transition-all cursor-pointer border-none bg-transparent"
-                >
-                  {isDocked ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
-                </button>
-                <button
-                  onClick={clearChatHistory}
-                  title="Clear history"
-                  className="p-1.5 hover:bg-[#2b2d31] rounded-lg text-[#9aa0a6] hover:text-white transition-all cursor-pointer border-none bg-transparent"
-                >
-                  <RotateCcw size={14} />
-                </button>
-                <button 
-                  onClick={() => setIsOpen(false)}
-                  className="p-1.5 hover:bg-[#2b2d31] rounded-lg text-[#9aa0a6] hover:text-white transition-all cursor-pointer border-none bg-transparent"
-                >
-                  <X size={16} />
-                </button>
-              </div>
-            </div>
-
-            {/* Context Awareness Ribbon */}
-            <div className="px-5 py-2.5 bg-[#1e1f22]/50 border-b border-[#3f4046]/50 grid grid-cols-3 gap-2 text-[10px] font-semibold shrink-0">
-              <div className="flex items-center gap-1.5 text-gray-400">
-                <Cpu size={12} className="text-[#8ab4f8]" />
-                <span className="truncate text-white" title={activeProject?.name || 'No Project'}>
-                  {activeProject?.name || 'No Project'}
-                </span>
-              </div>
-              <div className="flex items-center gap-1.5 text-gray-400">
-                <Database size={12} className="text-[#80cbc4]" />
-                <span className="truncate text-white" title={activeDatasetName}>
-                  {activeDatasetName}
-                </span>
-              </div>
-              <div className="flex items-center gap-1.5 text-gray-400">
-                <Grid size={12} className="text-[#c5a3ff]" />
-                <span className="text-white">
-                  {selectedCount} Selected
-                </span>
-              </div>
-            </div>
-
-            {/* Chat Messages */}
-            <div className="flex-1 overflow-y-auto p-5 space-y-4">
-              {messages.map((msg) => (
-                <div key={msg.id} className={`flex flex-col ${msg.sender === 'user' ? 'items-end' : 'items-start'}`}>
-                  <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-xs ${
-                    msg.sender === 'user'
-                      ? 'bg-[#8ab4f8] text-[#1e1f22] rounded-tr-none font-bold'
-                      : 'bg-[#2b2d31] text-gray-300 border border-[#3f4046] rounded-tl-none font-medium'
-                  }`}>
-                    {renderMessageText(msg.text)}
-
-                    {/* Render action cards if actionCode is present */}
-                    {msg.sender === 'assistant' && msg.actionCode && (
-                      <div className="mt-3.5 pt-3 border-t border-[#3f4046] space-y-2">
-                        {msg.actionCode === 'CREATE_GRAPH' && (
-                          <div className="bg-[#1e1f22]/80 border border-[#8ab4f8]/30 p-3 rounded-xl flex flex-col gap-2.5">
-                            <div className="flex items-center gap-2">
-                              <Sparkles className="text-[#8ab4f8]" size={14} />
-                              <span className="font-extrabold text-[11px] text-white">Create Architecture Graph</span>
-                            </div>
-                            <p className="text-[10px] text-gray-400 font-medium">Instantiate a fully connected {msg.actionPayload} neural network template.</p>
-                            <button
-                              onClick={() => handleActionExecute(msg.actionCode!, msg.actionPayload)}
-                              className="w-full flex items-center justify-center gap-1.5 py-1.5 bg-[#8ab4f8] hover:bg-[#a8c7fa] text-[#1e1f22] text-[10px] font-black rounded-lg transition-all cursor-pointer"
-                            >
-                              <span>Create Graph</span>
-                              <ArrowRight size={10} />
-                            </button>
-                          </div>
-                        )}
-
-                        {msg.actionCode === 'BUILD_CUSTOM' && (
-                          <div className="bg-[#1e1f22]/80 border border-[#81c784]/30 p-3 rounded-xl flex flex-col gap-2.5">
-                            <div className="flex items-center gap-2">
-                              <Cpu className="text-[#81c784]" size={14} />
-                              <span className="font-extrabold text-[11px] text-white">Build Custom Architecture</span>
-                            </div>
-                            <p className="text-[10px] text-gray-400 font-medium">Generate a <strong className="text-[#81c784]">{msg.actionPayload}</strong> architecture built node-by-node from your Layer Library.</p>
-                            <button
-                              onClick={() => handleActionExecute(msg.actionCode!, msg.actionPayload)}
-                              className="w-full flex items-center justify-center gap-1.5 py-1.5 bg-[#81c784] hover:bg-[#a5d6a7] text-[#1e1f22] text-[10px] font-black rounded-lg transition-all cursor-pointer"
-                            >
-                              <span>Build {msg.actionPayload}</span>
-                              <ArrowRight size={10} />
-                            </button>
-                          </div>
-                        )}
-
-                        {msg.actionCode === 'MODIFY_GRAPH' && (
-                          <div className="bg-[#1e1f22]/80 border border-[#c5a3ff]/30 p-3 rounded-xl flex flex-col gap-2.5">
-                            <div className="flex items-center gap-2">
-                              <Grid className="text-[#c5a3ff]" size={14} />
-                              <span className="font-extrabold text-[11px] text-white">Modify Architecture</span>
-                            </div>
-                            <p className="text-[10px] text-gray-400 font-medium">Insert a {msg.actionPayload} layer at the end of the graph.</p>
-                            <button
-                              onClick={() => handleActionExecute(msg.actionCode!, msg.actionPayload)}
-                              className="w-full flex items-center justify-center gap-1.5 py-1.5 bg-[#c5a3ff] hover:bg-[#d7c4ff] text-[#1e1f22] text-[10px] font-black rounded-lg transition-all cursor-pointer"
-                            >
-                              <span>Modify Graph</span>
-                              <ArrowRight size={10} />
-                            </button>
-                          </div>
-                        )}
-
-                        {msg.actionCode === 'APPLY_FIX' && (
-                          <div className="bg-[#1e1f22]/80 border border-[#ffe082]/30 p-3 rounded-xl flex flex-col gap-2.5">
-                            <div className="flex items-center gap-2">
-                              <Wrench className="text-[#ffe082]" size={14} />
-                              <span className="font-extrabold text-[11px] text-white">Apply Shape Alignment Fix</span>
-                            </div>
-                            <p className="text-[10px] text-gray-400 font-medium">Auto-align stride ratios, dimension bounds, and layout paths.</p>
-                            <button
-                              onClick={() => handleActionExecute(msg.actionCode!)}
-                              className="w-full flex items-center justify-center gap-1.5 py-1.5 bg-[#ffe082] hover:bg-[#ffecb3] text-[#1e1f22] text-[10px] font-black rounded-lg transition-all cursor-pointer"
-                            >
-                              <span>Apply Fix</span>
-                              <ArrowRight size={10} />
-                            </button>
-                          </div>
-                        )}
-
-                        {msg.actionCode === 'DEPLOY_MODEL' && (
-                          <div className="bg-[#1e1f22]/80 border border-[#80cbc4]/30 p-3 rounded-xl flex flex-col gap-2.5">
-                            <div className="flex items-center gap-2">
-                              <CloudLightning className="text-[#80cbc4]" size={14} />
-                              <span className="font-extrabold text-[11px] text-white">Production Registry Deploy</span>
-                            </div>
-                            <p className="text-[10px] text-gray-400 font-medium">Open the deployment workspace inside Model Registry dashboard.</p>
-                            <button
-                              onClick={() => handleActionExecute(msg.actionCode!)}
-                              className="w-full flex items-center justify-center gap-1.5 py-1.5 bg-[#80cbc4] hover:bg-[#a7ffeb] text-[#1e1f22] text-[10px] font-black rounded-lg transition-all cursor-pointer"
-                            >
-                              <span>Deploy Model</span>
-                              <ArrowRight size={10} />
-                            </button>
-                          </div>
-                        )}
-
-                        {msg.actionCode === 'OPTIMIZE_COST' && (
-                          <div className="bg-[#1e1f22]/80 border border-[#f28b82]/30 p-3 rounded-xl flex flex-col gap-2.5">
-                            <div className="flex items-center gap-2">
-                              <TrendingDown className="text-[#f28b82]" size={14} />
-                              <span className="font-extrabold text-[11px] text-white">Reduce Cluster Cost</span>
-                            </div>
-                            <p className="text-[10px] text-gray-400 font-medium">Throttle GPU nodes to 50% limit and set priority to Low.</p>
-                            <button
-                              onClick={() => handleActionExecute(msg.actionCode!)}
-                              className="w-full flex items-center justify-center gap-1.5 py-1.5 bg-[#f28b82] hover:bg-[#f5b4af] text-[#1e1f22] text-[10px] font-black rounded-lg transition-all cursor-pointer"
-                            >
-                              <span>Optimize Cost</span>
-                              <ArrowRight size={10} />
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                  <span className="text-[9px] text-gray-600 mt-1 px-1 font-semibold">{msg.timestamp}</span>
-                </div>
-              ))}
-              <div ref={messagesEndRef} />
-            </div>
-
-            {/* Quick Suggestions Stems */}
-            <div className="px-5 py-2 flex gap-1.5 overflow-x-auto shrink-0 border-t border-[#3f4046]/30 bg-[#1e1f22]/20 no-scrollbar">
-              <button
-                onClick={() => handleSend('Build a ViT for CIFAR10')}
-                className="px-2.5 py-1 bg-[#2b2d31]/80 hover:bg-[#313338] border border-[#3f4046] text-gray-400 hover:text-white text-[9px] font-bold rounded-lg transition-all whitespace-nowrap cursor-pointer shrink-0"
-              >
-                Build ViT
-              </button>
-              <button
-                onClick={() => handleSend('Apply compilation fix')}
-                className="px-2.5 py-1 bg-[#2b2d31]/80 hover:bg-[#313338] border border-[#3f4046] text-gray-400 hover:text-white text-[9px] font-bold rounded-lg transition-all whitespace-nowrap cursor-pointer shrink-0"
-              >
-                Apply Fix
-              </button>
-              <button
-                onClick={() => handleSend('Optimize cluster cost')}
-                className="px-2.5 py-1 bg-[#2b2d31]/80 hover:bg-[#313338] border border-[#3f4046] text-gray-400 hover:text-white text-[9px] font-bold rounded-lg transition-all whitespace-nowrap cursor-pointer shrink-0"
-              >
-                Optimize Cost
-              </button>
-              <button
-                onClick={() => handleSend('Deploy model to production')}
-                className="px-2.5 py-1 bg-[#2b2d31]/80 hover:bg-[#313338] border border-[#3f4046] text-gray-400 hover:text-white text-[9px] font-bold rounded-lg transition-all whitespace-nowrap cursor-pointer shrink-0"
-              >
-                Deploy Model
-              </button>
-            </div>
-
-            {/* Input Bar */}
-            <div className="p-4 bg-[#1e1f22] border-t border-[#3f4046] shrink-0">
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  handleSend();
-                }}
-                className="flex items-center gap-2"
-              >
-                <input
-                  type="text"
-                  placeholder="Ask Copilot (e.g. 'Build a ViT for CIFAR10')..."
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  className="flex-1 px-3 py-2 bg-[#141517] border border-[#3f4046] rounded-xl text-xs text-white placeholder-gray-600 focus:outline-none focus:border-[#8ab4f8] focus:ring-1 focus:ring-[#8ab4f8]/20 transition-all font-semibold"
-                />
-                <button
-                  type="submit"
-                  disabled={!input.trim()}
-                  className={`p-2 rounded-xl flex items-center justify-center transition-all ${
-                    input.trim()
-                      ? 'bg-[#8ab4f8] hover:bg-[#a8c7fa] text-[#1e1f22] cursor-pointer'
-                      : 'bg-[#2b2d31] text-gray-600 border border-[#3f4046] cursor-not-allowed'
-                  }`}
-                >
-                  <Send size={14} />
-                </button>
-              </form>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </>
+            <Send size={14} />
+          </button>
+        </form>
+      </div>
+    </div>
   );
 }

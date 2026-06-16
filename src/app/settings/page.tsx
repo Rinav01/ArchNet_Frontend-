@@ -5,7 +5,7 @@ import MainLayout from '@/components/Layout/MainLayout';
 import { Settings, Save, Shield, HardDrive, Key, User } from 'lucide-react';
 
 export default function SettingsPage() {
-  const [graphqlUrl, setGraphqlUrl] = useState('http://localhost:8000/graphql');
+  const [graphqlUrl, setGraphqlUrl] = useState('http://127.0.0.1:8000/graphql');
   const [s3Bucket, setS3Bucket] = useState('mlbuilder-cloud-assets');
   const [framework, setFramework] = useState('PyTorch');
 
@@ -84,7 +84,7 @@ export default function SettingsPage() {
                 <label className="text-xs font-bold text-gray-400 uppercase block">WebSocket Subscription URL</label>
                 <input 
                   type="text" 
-                  defaultValue="ws://localhost:8000/graphql"
+                  defaultValue="ws://127.0.0.1:8000/graphql"
                   className="w-full px-4 py-3 bg-white/5 border border-white/5 rounded-xl text-sm font-mono text-gray-300 focus:outline-none focus:border-purple-500/35"
                 />
               </div>

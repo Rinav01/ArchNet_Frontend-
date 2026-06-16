@@ -836,7 +836,7 @@ export default function NodeGraph() {
   };
 
   return (
-    <div ref={containerRef} className="w-full h-full relative bg-[#1e1f22] overflow-hidden select-none">
+    <div id="tour-canvas" ref={containerRef} className="w-full h-full relative bg-[#1e1f22] overflow-hidden select-none">
       {/* Background dot grid */}
       <div className="absolute inset-0 dot-grid opacity-50 z-0"></div>
 
@@ -1758,7 +1758,7 @@ export default function NodeGraph() {
       </Stage>
 
       {/* Viewport Minimap Corner Overlay (minimap) */}
-      <div className="absolute top-4 right-4 w-44 h-32 bg-[#1e1f22]/95 border border-[#3f4046] rounded-2xl shadow-2xl z-30 select-none overflow-hidden flex flex-col justify-between p-2.5">
+      <div id="tour-minimap" className="absolute top-4 right-4 w-44 h-32 bg-[#1e1f22]/95 border border-[#3f4046] rounded-2xl shadow-2xl z-30 select-none overflow-hidden flex flex-col justify-between p-2.5">
         <span className="text-[8.5px] font-extrabold text-gray-500 uppercase tracking-widest block border-b border-[#2b2d31]/80 pb-1 mb-1 font-sans">
           Workspace Minimap
         </span>
