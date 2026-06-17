@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { Search, Bell, Settings, ArrowLeft, Play, Cpu, Code, Undo, Redo, Zap, Clock, Save, Check, RotateCw, AlertTriangle, Trash2, LogOut, Layers, Sliders, Terminal, Activity, LayoutGrid, ChevronDown, GitCompare, Box, CloudLightning, GitBranch, BarChart2, Sparkles, XCircle, Info, CheckCircle2 } from 'lucide-react';
+import { Search, Bell, Settings, ArrowLeft, Play, Cpu, Code, Undo, Redo, Zap, Clock, Save, Check, RotateCw, AlertTriangle, Trash2, LogOut, Layers, Sliders, Terminal, Activity, LayoutGrid, ChevronDown, GitCompare, Box, CloudLightning, GitBranch, BarChart2, Sparkles, XCircle, Info, CheckCircle2, Lock } from 'lucide-react';
 import { useProjectStore } from '@/store/projectStore';
 import { toast, useNotificationStore } from '@/store/notificationStore';
 import BlockGuideModal from '@/components/Modals/BlockGuideModal';
@@ -48,6 +48,7 @@ export default function Header({
   const activePreset = useLayoutStore((state) => state.activePreset);
   const applyPreset = useLayoutStore((state) => state.applyPreset);
   const toggleAllPanels = useLayoutStore((state) => state.toggleAllPanels);
+  const openLoginPromo = useLayoutStore((state) => state.openLoginPromo);
 
   // Model Versioning & Auto-saving State Selections
   const draftSavedStatus = useCanvasStore((state) => state.draftSavedStatus);
@@ -204,9 +205,21 @@ export default function Header({
       );
     }
     return (
-      <div className="flex items-center gap-1 bg-[#f28b82]/10 border border-[#f28b82]/20 px-1.5 py-0.5 rounded-full text-[10px] font-bold text-[#f28b82] select-none" title="Local Sandbox">
-        <span className="w-1.5 h-1.5 rounded-full bg-[#f28b82] shrink-0"></span>
-        <span className="hidden 2xl:inline">Local</span>
+      <div 
+        onClick={() => {
+          if (activeProjectId === 'sandbox') {
+            openLoginPromo("Real-time collaboration is a premium feature. Please register or log in to sync and work with teammates live.");
+          }
+        }}
+        className={`flex items-center gap-1 bg-[#f28b82]/10 border border-[#f28b82]/20 px-1.5 py-0.5 rounded-full text-[10px] font-bold text-[#f28b82] select-none ${activeProjectId === 'sandbox' ? 'cursor-pointer hover:bg-[#f28b82]/20' : ''}`}
+        title={activeProjectId === 'sandbox' ? "Collaboration Locked. Click to unlock." : "Local Sandbox"}
+      >
+        {activeProjectId === 'sandbox' ? (
+          <Lock size={10} className="text-[#f28b82] shrink-0" />
+        ) : (
+          <span className="w-1.5 h-1.5 rounded-full bg-[#f28b82] shrink-0"></span>
+        )}
+        <span className="hidden 2xl:inline">{activeProjectId === 'sandbox' ? 'Collab Locked' : 'Local'}</span>
       </div>
     );
   };
@@ -526,6 +539,10 @@ export default function Header({
                       <button
                         onClick={() => {
                           closeAllDropdowns();
+                          if (activeProjectId === 'sandbox') {
+                            openLoginPromo("Version diff comparison is a premium feature. Please register or log in to compare visual model snapshots.");
+                            return;
+                          }
                           if (onCompareVersions) onCompareVersions();
                         }}
                         className="flex items-center gap-1 px-2 py-1 text-[10px] font-extrabold border border-[#3f4046] hover:bg-[#2b2d31] text-[#e3e3e3] rounded-lg transition-all cursor-pointer bg-transparent"
@@ -537,6 +554,10 @@ export default function Header({
                       <button
                         onClick={() => {
                           if (userRole === 'Viewer') return;
+                          if (activeProjectId === 'sandbox') {
+                            openLoginPromo("Model baseline checkpoints and versioning are premium features. Please register or log in to create milestone snapshots.");
+                            return;
+                          }
                           const name = window.prompt("Enter milestone checkpoint name:", `Milestone - ${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`);
                           if (name && name.trim()) {
                             saveCheckpoint(name);
@@ -817,7 +838,13 @@ export default function Header({
 
           {/* Export Center */}
           <button
-            onClick={onOpenExport}
+            onClick={() => {
+              if (activeProjectId === 'sandbox') {
+                openLoginPromo("Exporting compiled scripts (PyTorch, TensorFlow, Flax) or ONNX representations is a premium feature. Please register or log in to download assets.");
+                return;
+              }
+              if (onOpenExport) onOpenExport();
+            }}
             disabled={userRole === 'Viewer'}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold border border-[#3f4046] bg-[#2b2d31]/50 hover:bg-[#2b2d31] text-[#e3e3e3] hover:text-white transition-all shrink-0 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed`}
             title="Export model code or ONNX binaries"

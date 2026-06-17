@@ -4,8 +4,38 @@ import {
   Instantiation, ReturnStatement, Literal, Identifier, Tuple, List, 
   Dict, Comment, RawCode, CodeGenerator, getTopologicalOrder, cleanVarName 
 } from './astBuilder';
+import { validateGraph } from './validationEngine';
 
 export function compileToPyTorch(nodes: CanvasNode[], edges: CanvasEdge[]): string {
+  // Check for fatal validation errors first
+  const validationErrors = validateGraph(nodes, edges);
+  const fatalErrors = validationErrors.filter(e => e.severity === 'fatal');
+  if (fatalErrors.length > 0) {
+    const errorLines = fatalErrors.map(e => `- ${e.message}`).join('\n');
+    const firstMessage = fatalErrors[0].message;
+    return `"""
+ArchNet Compilation Report
+
+Compilation Status: FAILED
+
+Fatal Errors:
+${errorLines}
+
+Compiler Supported Layers:
+- Input
+- Conv2D
+- MaxPool2D
+- Flatten
+- Dense
+- BatchNorm2D
+- Dropout
+- ResidualAdd
+"""
+raise NotImplementedError(${JSON.stringify(firstMessage)})
+`;
+  }
+
+  const hasEmbedding = nodes.some(n => n.type === 'Embedding');
   const order = getTopologicalOrder(nodes, edges);
   
   if (order.length === 0) {
@@ -19,7 +49,7 @@ export function compileToPyTorch(nodes: CanvasNode[], edges: CanvasEdge[]): stri
   });
 
   const initBody: ASTNode[] = [
-    new MethodCall(new MethodCall(new Identifier('super'), 'GeneratedModel', []), '__init__')
+    new RawCode('super(GeneratedModel, self).__init__()')
   ];
   const forwardBody: ASTNode[] = [];
 
@@ -44,8 +74,13 @@ export function compileToPyTorch(nodes: CanvasNode[], edges: CanvasEdge[]): stri
 
     if (node.type === 'Input') {
       const dims = config.dim || [224, 224, 3];
-      initBody.push(new Comment(`Input Layer: shape [Batch, ${dims[2]}, ${dims[0]}, ${dims[1]}] (channels_first format)`));
-      forwardBody.push(new Comment(`Root input shape: [${dims.join(', ')}]`));
+      if (hasEmbedding) {
+        initBody.push(new Comment(`Input Layer: token ids of shape [Batch, SeqLen]`));
+        forwardBody.push(new Comment(`Input x expected as token ids\nshape [batch_size, sequence_length]\ndtype torch.long`));
+      } else {
+        initBody.push(new Comment(`Input Layer: shape [Batch, ${dims[2]}, ${dims[0]}, ${dims[1]}] (channels_first format)`));
+        forwardBody.push(new Comment(`Root input shape: [${dims.join(', ')}]`));
+      }
       forwardBody.push(new Assignment([new Identifier(varName)], new Identifier('x')));
     } 
     
@@ -172,6 +207,105 @@ export function compileToPyTorch(nodes: CanvasNode[], edges: CanvasEdge[]): stri
       forwardBody.push(new Assignment([new Identifier(varName)], new RawCode(`self.${varName}(${inp})`)));
     }
     
+    else if (node.type === 'ResidualAdd') {
+      forwardBody.push(new Comment(`Residual Addition`));
+      const addExpr = parentVars.length >= 2 ? parentVars.join(' + ') : (parentVars[0] || 'x');
+      forwardBody.push(new Assignment([new Identifier(varName)], new RawCode(addExpr)));
+    }
+    
+    else if (node.type === 'Embedding') {
+      const vocabSize = config.vocab_size || 10000;
+      const embeddingDim = config.embedding_dim || 256;
+      initBody.push(new Assignment(
+        [new Identifier(`self.${varName}`)],
+        new Instantiation('nn.Embedding', [], {
+          num_embeddings: new Literal(vocabSize),
+          embedding_dim: new Literal(embeddingDim)
+        })
+      ));
+      forwardBody.push(new Comment(`Token Embedding`));
+      let inp = inputVar.type === 'Identifier' ? (inputVar as Identifier).name : 'x';
+      forwardBody.push(new Assignment([new Identifier(varName)], new RawCode(`self.${varName}(${inp})`)));
+    }
+
+    else if (node.type === 'PositionalEncoding') {
+      const embedDim = config.embed_dim || 256;
+      const maxLen = config.max_len || 128;
+      initBody.push(new Assignment(
+        [new Identifier(`self.${varName}`)],
+        new Instantiation('PositionalEncoding', [], {
+          embed_dim: new Literal(embedDim),
+          max_len: new Literal(maxLen)
+        })
+      ));
+      forwardBody.push(new Comment(`Positional Encoding`));
+      let inp = inputVar.type === 'Identifier' ? (inputVar as Identifier).name : 'x';
+      forwardBody.push(new Assignment([new Identifier(varName)], new RawCode(`self.${varName}(${inp})`)));
+    }
+
+    else if (node.type === 'LayerNorm') {
+      const normalizedShape = node.inputShape && node.inputShape.length > 0
+        ? node.inputShape[node.inputShape.length - 1]
+        : 256;
+      initBody.push(new Assignment(
+        [new Identifier(`self.${varName}`)],
+        new Instantiation('nn.LayerNorm', [new Literal(normalizedShape)])
+      ));
+      forwardBody.push(new Comment(`Layer Normalization`));
+      let inp = inputVar.type === 'Identifier' ? (inputVar as Identifier).name : 'x';
+      forwardBody.push(new Assignment([new Identifier(varName)], new RawCode(`self.${varName}(${inp})`)));
+    }
+
+    else if (node.type === 'TransformerBlock') {
+      const numHeads = config.num_heads || 4;
+      const embedDim = config.embed_dim || 256;
+      initBody.push(new Assignment(
+        [new Identifier(`self.${varName}`)],
+        new Instantiation('nn.TransformerEncoderLayer', [], {
+          d_model: new Literal(embedDim),
+          nhead: new Literal(numHeads),
+          batch_first: new Literal(true)
+        })
+      ));
+      forwardBody.push(new Comment(`Transformer Encoder Block`));
+      let inp = inputVar.type === 'Identifier' ? (inputVar as Identifier).name : 'x';
+      forwardBody.push(new Assignment([new Identifier(varName)], new RawCode(`self.${varName}(${inp})`)));
+    }
+
+    else if (node.type === 'GCN') {
+      const outFeatures = config.out_features || 64;
+      const inFeatures = node.inputShape && node.inputShape.length > 0
+        ? node.inputShape[node.inputShape.length - 1]
+        : 1433;
+      initBody.push(new Assignment(
+        [new Identifier(`self.${varName}`)],
+        new Instantiation('GCN', [], {
+          in_features: new Literal(inFeatures),
+          out_features: new Literal(outFeatures)
+        })
+      ));
+      forwardBody.push(new Comment(`Graph Convolutional Network Layer`));
+      let inp = inputVar.type === 'Identifier' ? (inputVar as Identifier).name : 'x';
+      forwardBody.push(new Assignment([new Identifier(varName)], new RawCode(`self.${varName}(${inp})`)));
+    }
+
+    else if (node.type === 'GraphSAGE') {
+      const outFeatures = config.out_features || 64;
+      const inFeatures = node.inputShape && node.inputShape.length > 0
+        ? node.inputShape[node.inputShape.length - 1]
+        : 1433;
+      initBody.push(new Assignment(
+        [new Identifier(`self.${varName}`)],
+        new Instantiation('GraphSAGE', [], {
+          in_features: new Literal(inFeatures),
+          out_features: new Literal(outFeatures)
+        })
+      ));
+      forwardBody.push(new Comment(`GraphSAGE Layer`));
+      let inp = inputVar.type === 'Identifier' ? (inputVar as Identifier).name : 'x';
+      forwardBody.push(new Assignment([new Identifier(varName)], new RawCode(`self.${varName}(${inp})`)));
+    }
+    
     else {
       // Fallback for other nodes to not break existing graphs
       forwardBody.push(new Comment(`Fallback for ${node.type}`));
@@ -190,23 +324,30 @@ export function compileToPyTorch(nodes: CanvasNode[], edges: CanvasEdge[]): stri
   }
   forwardBody.push(new ReturnStatement(retExpr));
 
+  const forwardDocstring = hasEmbedding
+    ? 'Executes structural graph trace.\nInput x expected as token ids of shape [batch_size, sequence_length] with dtype torch.long.'
+    : 'Executes structural graph trace.\nInput x expected in channels_first tensor format.';
+
   const modelClass = new ClassDef(
     'GeneratedModel',
     ['nn.Module'],
     [
       new FunctionDef('__init__', ['self'], initBody),
-      new FunctionDef('forward', ['self', 'x'], forwardBody, 'Executes structural graph trace.\nInput x expected in channels_first tensor format.')
+      new FunctionDef('forward', ['self', 'x'], forwardBody, forwardDocstring)
     ],
     `Generated automatically by ArchNet visual designer.\nTopology contains ${nodes.length} nodes and ${edges.length} connections.`
   );
+
+  const mockInputCode = hasEmbedding
+    ? '    # Mock forward input pass of integer token IDs for embedding\n    mock_input = torch.randint(0, 10000, (1, 128))'
+    : '    # Mock forward input pass matching Root config dimensions\n    mock_input = torch.randn(1, 3, 224, 224)';
 
   const mainBlock = new RawCode(
 `if __name__ == '__main__':
     model = GeneratedModel()
     print(model)
     
-    # Mock forward input pass matching Root config dimensions
-    mock_input = torch.randn(1, 3, 224, 224)
+${mockInputCode}
     try:
         output = model(mock_input)
         print("Success! Forward pass completed.")
@@ -218,11 +359,61 @@ export function compileToPyTorch(nodes: CanvasNode[], edges: CanvasEdge[]): stri
         print("Forward trace warning:", e)`
   );
 
-  const program = new Program([
+  let customHelpers = '';
+  const hasPositionalEncoding = nodes.some(n => n.type === 'PositionalEncoding');
+  const hasGCN = nodes.some(n => n.type === 'GCN');
+  const hasGraphSAGE = nodes.some(n => n.type === 'GraphSAGE');
+
+  if (hasPositionalEncoding) {
+    customHelpers += `
+class PositionalEncoding(nn.Module):
+    def __init__(self, embed_dim, max_len=128):
+        super().__init__()
+        import math
+        pe = torch.zeros(max_len, embed_dim)
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, embed_dim, 2, dtype=torch.float) * (-math.log(10000.0) / embed_dim))
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        self.register_buffer('pe', pe.unsqueeze(0))
+
+    def forward(self, x):
+        return x + self.pe[:, :x.size(1)]
+`;
+  }
+
+  if (hasGCN) {
+    customHelpers += `
+class GCN(nn.Module):
+    def __init__(self, in_features, out_features):
+        super().__init__()
+        self.linear = nn.Linear(in_features, out_features)
+    def forward(self, x):
+        return self.linear(x)
+`;
+  }
+
+  if (hasGraphSAGE) {
+    customHelpers += `
+class GraphSAGE(nn.Module):
+    def __init__(self, in_features, out_features):
+        super().__init__()
+        self.linear = nn.Linear(in_features, out_features)
+    def forward(self, x):
+        return self.linear(x)
+`;
+  }
+
+  const programNodes: ASTNode[] = [
     new RawCode('import torch\nimport torch.nn as nn\n'),
-    modelClass,
-    mainBlock
-  ]);
+  ];
+  if (customHelpers) {
+    programNodes.push(new RawCode(customHelpers));
+  }
+  programNodes.push(modelClass);
+  programNodes.push(mainBlock);
+
+  const program = new Program(programNodes);
 
   const generator = new CodeGenerator();
   return generator.generate(program);

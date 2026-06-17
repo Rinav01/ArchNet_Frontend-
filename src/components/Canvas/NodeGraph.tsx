@@ -739,9 +739,9 @@ export default function NodeGraph() {
           // Check if animated
           const isAnimated = (activeAnimationEdgeIds || []).includes(edge.id) || activeAnimationEdgeId === edge.id;
           
-          const hasBroadcastError = validationErrors.some(err => 
+          const isEdgeInvalid = validationErrors.some(err => 
             err.nodeId === edge.target && 
-            (err.category === 'broadcast' || err.category === 'reshape')
+            (err.category === 'broadcast' || err.category === 'reshape' || err.category === 'rank')
           );
           
           // Modulate execution intensity
@@ -756,7 +756,7 @@ export default function NodeGraph() {
           const centerPoint = getBezierPoint(0.5, x0, y0, cp1x, cp1y, cp2x, cp2y, x1, y1_offset);
           
           const showText = sizeText && (isAttentionTarget && incoming.length === 1 ? offsetIdx === 1 : true);
-
+ 
           return (
             <Group key={`${edge.id}-${offset}`}>
               {/* Interaction Group */}
@@ -767,10 +767,10 @@ export default function NodeGraph() {
               }}>
                 <Path
                   data={pathData}
-                  stroke={hasBroadcastError ? '#f28b82' : isSkipConnection ? '#e57373' : isAnimated ? '#c5a3ff' : '#8ab4f8'}
-                  strokeWidth={hasBroadcastError ? 3 : isSkipConnection ? 2.5 : isAnimated ? 4 : 2}
-                  opacity={hasBroadcastError ? 0.95 : isSkipConnection ? 0.8 : isAnimated ? 0.95 : 0.6}
-                  dash={hasBroadcastError ? [6, 4] : isSkipConnection ? [6, 4] : undefined}
+                  stroke={isEdgeInvalid ? '#ef5350' : '#66bb6a'}
+                  strokeWidth={isEdgeInvalid ? 3 : isSkipConnection ? 2.5 : isAnimated ? 4 : 2}
+                  opacity={isEdgeInvalid ? 0.95 : isSkipConnection ? 0.8 : isAnimated ? 0.95 : 0.6}
+                  dash={isEdgeInvalid ? [6, 4] : isSkipConnection ? [6, 4] : undefined}
                 />
                 <Path
                   data={pathData}
@@ -779,7 +779,7 @@ export default function NodeGraph() {
                   className="cursor-pointer"
                 />
               </Group>
-
+ 
               {/* Dynamic Throughput Indicator label */}
               {showText && (
                 <Group x={centerPoint.x - 50} y={centerPoint.y - 6}>
@@ -789,12 +789,12 @@ export default function NodeGraph() {
                     fill="#1e1f22"
                     opacity={0.85}
                     cornerRadius={3}
-                    stroke={isSkipConnection ? '#e57373' : '#3f4046'}
+                    stroke={isSkipConnection ? (isEdgeInvalid ? '#ef5350' : '#66bb6a') : '#3f4046'}
                     strokeWidth={0.5}
                   />
                   <Text
                     text={isSkipConnection ? "Skip Connection" : sizeText}
-                    fill={isSkipConnection ? '#e57373' : '#9aa0a6'}
+                    fill={isSkipConnection ? (isEdgeInvalid ? '#ef5350' : '#66bb6a') : '#9aa0a6'}
                     fontSize={7}
                     fontFamily="monospace"
                     align="center"
@@ -803,7 +803,7 @@ export default function NodeGraph() {
                   />
                 </Group>
               )}
-
+ 
               {/* Animated Tensor Packets */}
               {isAnimated && (
                 <Group>
@@ -811,8 +811,8 @@ export default function NodeGraph() {
                     x={p1.x}
                     y={p1.y}
                     radius={packetRadius}
-                    fill={isSkipConnection ? '#e57373' : '#c5a3ff'}
-                    shadowColor={isSkipConnection ? '#e57373' : '#c5a3ff'}
+                    fill={isEdgeInvalid ? '#ef5350' : '#66bb6a'}
+                    shadowColor={isEdgeInvalid ? '#ef5350' : '#66bb6a'}
                     shadowBlur={6}
                     opacity={0.9}
                   />
@@ -820,8 +820,8 @@ export default function NodeGraph() {
                     x={p2.x}
                     y={p2.y}
                     radius={packetRadius}
-                    fill={isSkipConnection ? '#e57373' : '#c5a3ff'}
-                    shadowColor={isSkipConnection ? '#e57373' : '#c5a3ff'}
+                    fill={isEdgeInvalid ? '#ef5350' : '#66bb6a'}
+                    shadowColor={isEdgeInvalid ? '#ef5350' : '#66bb6a'}
                     shadowBlur={6}
                     opacity={0.9}
                   />

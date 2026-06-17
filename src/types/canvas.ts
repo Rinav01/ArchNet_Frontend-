@@ -103,7 +103,8 @@ export interface Project {
 
 export interface ValidationError {
   nodeId?: string; // Undefined if global graph-level error (e.g. cycles)
-  type: 'error' | 'warning';
+  type: 'error' | 'warning' | 'info';
+  severity?: 'info' | 'warning' | 'error' | 'fatal';
   category: 'rank' | 'broadcast' | 'reshape' | 'attention' | 'cycle' | 'disconnected' | 'compatibility' | 'compilation';
   message: string;
   stackTrace?: string; // python stack trace or detail

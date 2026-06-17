@@ -32,8 +32,12 @@ interface LayoutState {
   resetLayout: () => void;
   applyPreset: (presetName: string) => void;
   toggleAllPanels: () => void;
-  initializeCanvasLayout: () => void;
+  initializeCanvasLayout: (projectId?: string) => void;
   setActiveConsoleTab: (tab: string) => void;
+  isLoginPromoOpen: boolean;
+  loginPromoReason: string;
+  openLoginPromo: (reason: string) => void;
+  closeLoginPromo: () => void;
 }
 
 const DEFAULT_PANELS: Record<string, PanelState> = {
@@ -130,6 +134,10 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
   activePreset: 'Architecture Mode',
   lastActivePreset: 'Architecture Mode',
   activeConsoleTab: 'activity',
+  isLoginPromoOpen: false,
+  loginPromoReason: '',
+  openLoginPromo: (reason) => set({ isLoginPromoOpen: true, loginPromoReason: reason }),
+  closeLoginPromo: () => set({ isLoginPromoOpen: false, loginPromoReason: '' }),
 
   togglePanel: (id) => {
     set((state) => {
@@ -349,19 +357,32 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
     }
   },
 
-  initializeCanvasLayout: () => {
+  initializeCanvasLayout: (projectId?: string) => {
     set((state) => {
       const updatedPanels = { ...state.panels };
-      Object.keys(updatedPanels).forEach((key) => {
-        updatedPanels[key] = {
-          ...updatedPanels[key],
-          isOpen: key === 'console',
+      if (projectId === 'sandbox') {
+        Object.keys(updatedPanels).forEach((key) => {
+          updatedPanels[key] = {
+            ...updatedPanels[key],
+            isOpen: key === 'library' || key === 'console' || key === 'codePreview',
+          };
+        });
+        return {
+          panels: updatedPanels,
+          activePreset: 'Architecture Mode',
         };
-      });
-      return {
-        panels: updatedPanels,
-        activePreset: 'Training Mode',
-      };
+      } else {
+        Object.keys(updatedPanels).forEach((key) => {
+          updatedPanels[key] = {
+            ...updatedPanels[key],
+            isOpen: key === 'console',
+          };
+        });
+        return {
+          panels: updatedPanels,
+          activePreset: 'Training Mode',
+        };
+      }
     });
   },
 

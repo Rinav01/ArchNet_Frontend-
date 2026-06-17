@@ -246,6 +246,7 @@ export default function DockablePanel({ id, children }: DockablePanelProps) {
 
   return (
     <div
+      id={id}
       ref={containerRef}
       style={style}
       onClick={() => panel.isFloating && bringToFront(id)}

@@ -1,0 +1,16 @@
+export const compilerRegistry: Record<string, boolean> = {
+  Input: true,
+  Conv2D: true,
+  MaxPool2D: true,
+  Flatten: true,
+  Dense: true,
+  BatchNorm2D: true,
+  Dropout: true,
+  ResidualAdd: true,
+  Embedding: true,
+  PositionalEncoding: true,
+  LayerNorm: true,
+  TransformerBlock: true,
+  GCN: true,
+  GraphSAGE: true,
+};

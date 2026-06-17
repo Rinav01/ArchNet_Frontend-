@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { useCanvasStore } from '@/store/canvasStore';
 import { useProjectStore } from '@/store/projectStore';
+import { useLayoutStore } from '@/store/layoutStore';
 import { NodeType } from '@/types/canvas';
 import { Layers, Move, Sparkles, Lock, ChevronLeft, ChevronRight, Trash2, Box, ChevronDown, ChevronUp } from 'lucide-react';
 
@@ -27,6 +28,8 @@ export default function LayerLibrary() {
 
   const addNode = useCanvasStore((state) => state.addNode);
   const userRole = useProjectStore((state) => state.userRole);
+  const activeProjectId = useProjectStore((state) => state.activeProjectId);
+  const openLoginPromo = useLayoutStore((state) => state.openLoginPromo);
 
   const customBlocks = useCanvasStore((state) => state.customBlocks);
   const spawnCustomBlock = useCanvasStore((state) => state.spawnCustomBlock);
@@ -88,16 +91,16 @@ export default function LayerLibrary() {
     { name: 'Sentiment Classifier', desc: 'Word Embeddings & LSTM classifier for sentiments.', type: 'NLP', color: 'border-blue-500/30 text-blue-400 bg-blue-500/10' },
     { name: 'Text Classifier', desc: 'BiLSTM + GRU network for multi-class classification.', type: 'NLP', color: 'border-cyan-500/30 text-cyan-400 bg-cyan-500/10' },
     { name: 'Seq2Seq', desc: 'Paired LSTM Encoder-Decoder for sequence generation.', type: 'NLP', color: 'border-green-500/30 text-green-400 bg-green-500/10' },
-    { name: 'Mini-BERT', desc: 'Bidirectional sequence encoder with positional signatures.', type: 'Transformer', color: 'border-indigo-500/30 text-indigo-400 bg-indigo-500/10' },
-    { name: 'Mini-GPT', desc: 'Autoregressive decoder stack for next-token predictions.', type: 'Transformer', color: 'border-amber-500/30 text-amber-400 bg-amber-500/10' },
-    { name: 'Transformer Encoder', desc: 'Multi-head Transformer Encoder stack.', type: 'Transformer', color: 'border-purple-500/30 text-purple-400 bg-purple-500/10' },
-    { name: 'ResNet18', desc: '18-layer Residual Network with skip connections.', type: 'Classification', color: 'border-orange-500/30 text-orange-400 bg-orange-500/10' },
-    { name: 'U-Net', desc: 'Symmetric encoder-decoder segmenter with skip connections.', type: 'Segmentation', color: 'border-teal-500/30 text-teal-400 bg-teal-500/10' },
-    { name: 'ViT', desc: 'Vision Transformer with patch projection & self-attention.', type: 'Transformer', color: 'border-sky-500/30 text-sky-400 bg-sky-500/10' },
+    { name: 'Mini-BERT', desc: 'Bidirectional sequence encoder with positional signatures.', type: 'Transformer', color: 'border-indigo-500/30 text-indigo-400 bg-indigo-500/10', premium: true },
+    { name: 'Mini-GPT', desc: 'Autoregressive decoder stack for next-token predictions.', type: 'Transformer', color: 'border-amber-500/30 text-amber-400 bg-amber-500/10', premium: true },
+    { name: 'Transformer Encoder', desc: 'Multi-head Transformer Encoder stack.', type: 'Transformer', color: 'border-purple-500/30 text-purple-400 bg-purple-500/10', premium: true },
+    { name: 'ResNet18', desc: '18-layer Residual Network with skip connections.', type: 'Classification', color: 'border-orange-500/30 text-orange-400 bg-orange-500/10', premium: true },
+    { name: 'U-Net', desc: 'Symmetric encoder-decoder segmenter with skip connections.', type: 'Segmentation', color: 'border-teal-500/30 text-teal-400 bg-teal-500/10', premium: true },
+    { name: 'ViT', desc: 'Vision Transformer with patch projection & self-attention.', type: 'Transformer', color: 'border-sky-500/30 text-sky-400 bg-sky-500/10', premium: true },
     { name: 'GCN', desc: 'Graph Convolutional Network for node representations.', type: 'Graph', color: 'border-emerald-500/30 text-emerald-400 bg-emerald-500/10' },
     { name: 'GraphSAGE', desc: 'GraphSAGE featuring neighborhood aggregation layers.', type: 'Graph', color: 'border-lime-500/30 text-lime-400 bg-lime-500/10' },
-    { name: 'ResNet50', desc: 'Residual conv bottleneck sequence with skip additions.', type: 'Classification', color: 'border-orange-500/30 text-orange-400 bg-orange-500/10' },
-    { name: 'MobileNet', desc: 'Depthwise separable convolutions & linear bottlenecks.', type: 'Mobile-friendly', color: 'border-purple-500/30 text-purple-400 bg-purple-500/10' }
+    { name: 'ResNet50', desc: 'Residual conv bottleneck sequence with skip additions.', type: 'Classification', color: 'border-orange-500/30 text-orange-400 bg-orange-500/10', premium: true },
+    { name: 'MobileNet', desc: 'Depthwise separable convolutions & linear bottlenecks.', type: 'Mobile-friendly', color: 'border-purple-500/30 text-purple-400 bg-purple-500/10', premium: true }
   ];
 
   const handleBlockClick = (type: NodeType) => {
@@ -109,6 +112,11 @@ export default function LayerLibrary() {
 
   const handleTemplateClick = (name: string) => {
     if (userRole === 'Viewer') return;
+    const tmpl = prebuiltTemplates.find(t => t.name === name);
+    if (tmpl?.premium && activeProjectId === 'sandbox') {
+      openLoginPromo(`The ${name} template is an advanced production-grade architecture. Please register or log in to unlock advanced pre-built models.`);
+      return;
+    }
     if (window.confirm(`Load prebuilt "${name}" architecture? This will replace your current active canvas.`)) {
       loadPrebuiltTemplate(name);
     }
@@ -293,8 +301,11 @@ export default function LayerLibrary() {
                   className="group px-4 py-3 bg-[#2b2d31] border border-[#3f4046] hover:border-[#8ab4f8]/30 rounded-2xl cursor-pointer transition-all duration-200 flex flex-col gap-1.5 shadow-md hover:shadow-lg hover:-translate-y-[1px]"
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-bold text-[#e3e3e3] tracking-wide group-hover:text-[#8ab4f8] transition-colors">
-                      {tmpl.name}
+                    <span className="text-sm font-bold text-[#e3e3e3] tracking-wide group-hover:text-[#8ab4f8] transition-colors flex items-center gap-1.5">
+                      <span>{tmpl.name}</span>
+                      {tmpl.premium && activeProjectId === 'sandbox' && (
+                        <Lock size={12} className="text-[#ffe082] shrink-0" />
+                      )}
                     </span>
                     <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full border ${tmpl.color}`}>
                       {tmpl.type}

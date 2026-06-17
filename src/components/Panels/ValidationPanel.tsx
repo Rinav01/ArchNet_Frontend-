@@ -28,7 +28,8 @@ import {
   Settings,
   Clock,
   Network,
-  RotateCw
+  RotateCw,
+  Lock
 } from 'lucide-react';
 
 export default function ValidationPanel() {
@@ -69,6 +70,8 @@ export default function ValidationPanel() {
 
   const isOnline = useProjectStore((state) => state.isOnline);
   const userRole = useProjectStore((state) => state.userRole);
+  const activeProjectId = useProjectStore((state) => state.activeProjectId);
+  const openLoginPromo = useLayoutStore((state) => state.openLoginPromo);
   const activeTab = useLayoutStore((state) => state.activeConsoleTab) as any;
   const setActiveTab = useLayoutStore((state) => state.setActiveConsoleTab);
   const consoleBottomRef = useRef<HTMLDivElement>(null);
@@ -724,7 +727,13 @@ export default function ValidationPanel() {
                           <span>Local Worker</span>
                         </button>
                         <button
-                          onClick={() => setTrainingProvider('vertex')}
+                          onClick={() => {
+                            if (activeProjectId === 'sandbox') {
+                              openLoginPromo("Vertex AI (GPU) cloud training is a premium feature. Please register or log in to launch deep learning pipelines on remote remote hardware accelerators.");
+                              return;
+                            }
+                            setTrainingProvider('vertex');
+                          }}
                           disabled={trainingJob?.status === 'RUNNING' || trainingJob?.status === 'PAUSED'}
                           className={`flex items-center justify-center gap-1.5 py-1 px-3 rounded-lg text-xs font-bold transition-all ${
                             trainingProvider === 'vertex'
@@ -734,6 +743,9 @@ export default function ValidationPanel() {
                         >
                           <Globe size={11} />
                           <span>Vertex AI (GPU)</span>
+                          {activeProjectId === 'sandbox' && (
+                            <Lock size={10} className="text-[#ffe082] ml-0.5 shrink-0" />
+                          )}
                         </button>
                       </div>
                     </div>

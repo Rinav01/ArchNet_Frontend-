@@ -1,10 +1,7 @@
 import { CanvasNode, CanvasEdge, ValidationError } from '@/types/canvas';
 import { getTopologicalOrder, cleanVarName } from './astBuilder';
-
-// Note: To avoid circular imports, we could duplicate computeNodeOutputShape logic here, 
-// or import it from a shared utils file. For now, we will import it from canvasStore.
-// Wait, we can just use the store's computeNodeOutputShape directly, but let's implement the core validation logic.
 import { computeNodeOutputShape } from '@/store/canvasStore';
+import { compilerRegistry } from './compilerRegistry';
 
 export function validateGraph(nodes: CanvasNode[], edges: CanvasEdge[]): ValidationError[] {
   const errors: ValidationError[] = [];
@@ -13,7 +10,42 @@ export function validateGraph(nodes: CanvasNode[], edges: CanvasEdge[]): Validat
     return [];
   }
 
-  // 1. Check for cycles using DFS
+  // 1. Check for unsupported layers
+  for (const node of nodes) {
+    if (!compilerRegistry[node.type]) {
+      errors.push({
+        nodeId: node.id,
+        type: 'error',
+        severity: 'fatal',
+        category: 'compatibility',
+        message: `Unsupported layer type '${node.type}' detected at node '${node.id}'`
+      });
+    }
+  }
+
+  // 2. Check for missing input node
+  const hasInput = nodes.some(n => n.type === 'Input');
+  if (!hasInput) {
+    errors.push({
+      type: 'error',
+      severity: 'fatal',
+      category: 'compilation',
+      message: 'Graph lacks an Input layer.'
+    });
+  }
+
+  // 3. Check for missing output node (terminal nodes with no outgoing edges)
+  const hasTerminal = nodes.some(n => !edges.some(e => e.source === n.id));
+  if (nodes.length > 0 && !hasTerminal) {
+    errors.push({
+      type: 'error',
+      severity: 'fatal',
+      category: 'compilation',
+      message: 'Graph lacks a terminal node (no outgoing edges).'
+    });
+  }
+
+  // 4. Check for cycles using DFS
   const adj = new Map<string, string[]>();
   nodes.forEach(n => adj.set(n.id, []));
   edges.forEach(e => {
@@ -53,6 +85,7 @@ export function validateGraph(nodes: CanvasNode[], edges: CanvasEdge[]): Validat
   if (hasCycle) {
     errors.push({
       type: 'error',
+      severity: 'fatal',
       category: 'cycle',
       message: 'Cycle detected in the computation graph. Directed Acyclic Graph (DAG) required.'
     });
@@ -60,7 +93,7 @@ export function validateGraph(nodes: CanvasNode[], edges: CanvasEdge[]): Validat
     return errors;
   }
 
-  // 2. Validate Shapes based on pre-computed inputShape and outputShape in nodes
+  // 5. Validate Shapes based on pre-computed inputShape and outputShape in nodes
   for (const node of nodes) {
     const incomingEdges = edges.filter(e => e.target === node.id);
     
@@ -69,6 +102,7 @@ export function validateGraph(nodes: CanvasNode[], edges: CanvasEdge[]): Validat
         errors.push({
           nodeId: node.id,
           type: 'warning',
+          severity: 'warning',
           category: 'disconnected',
           message: `Node ${node.name} has no inputs but is not an Input layer.`
         });
@@ -81,28 +115,39 @@ export function validateGraph(nodes: CanvasNode[], edges: CanvasEdge[]): Validat
       });
       
       if (node.type === 'ResidualAdd') {
-        // Validate broadcast compatibility for Addition
-        const baseShape = parentOuts[0];
-        let shapeMismatch = false;
-        for (let i = 1; i < parentOuts.length; i++) {
-          if (parentOuts[i].length !== baseShape.length) {
-            shapeMismatch = true;
-            break;
-          }
-          for (let j = 0; j < baseShape.length; j++) {
-            if (baseShape[j] !== parentOuts[i][j] && baseShape[j] !== 1 && parentOuts[i][j] !== 1) {
-              shapeMismatch = true;
-            }
-          }
-        }
-        
-        if (shapeMismatch) {
+        if (incomingEdges.length !== 2) {
           errors.push({
             nodeId: node.id,
             type: 'error',
+            severity: 'fatal',
             category: 'broadcast',
-            message: `ResidualAdd expected matching shapes but received mismatched inputs: [${parentOuts.map(s => s.join(',')).join('] and [')}]`
+            message: `ResidualAdd must have exactly 2 incoming connections, but got ${incomingEdges.length}.`
           });
+        } else {
+          // Validate broadcast compatibility for Addition
+          const baseShape = parentOuts[0];
+          let shapeMismatch = false;
+          for (let i = 1; i < parentOuts.length; i++) {
+            if (parentOuts[i].length !== baseShape.length) {
+              shapeMismatch = true;
+              break;
+            }
+            for (let j = 0; j < baseShape.length; j++) {
+              if (baseShape[j] !== parentOuts[i][j] && baseShape[j] !== 1 && parentOuts[i][j] !== 1) {
+                shapeMismatch = true;
+              }
+            }
+          }
+          
+          if (shapeMismatch) {
+            errors.push({
+              nodeId: node.id,
+              type: 'error',
+              severity: 'error',
+              category: 'broadcast',
+              message: `ResidualAdd expected matching shapes but received mismatched inputs: [${parentOuts.map(s => s.join(',')).join('] and [')}]`
+            });
+          }
         }
       } else {
         // Concat validation
@@ -119,10 +164,22 @@ export function validateGraph(nodes: CanvasNode[], edges: CanvasEdge[]): Validat
             errors.push({
                 nodeId: node.id,
                 type: 'error',
+                severity: 'error',
                 category: 'reshape',
                 message: `Implicit concatenation expected matching spatial dimensions but got mismatched ranks.`
             });
         }
+      }
+    } else {
+      // incomingEdges.length === 1
+      if (node.type === 'ResidualAdd') {
+        errors.push({
+          nodeId: node.id,
+          type: 'error',
+          severity: 'fatal',
+          category: 'broadcast',
+          message: `ResidualAdd must have exactly 2 incoming connections, but got 1.`
+        });
       }
     }
 
@@ -132,6 +189,7 @@ export function validateGraph(nodes: CanvasNode[], edges: CanvasEdge[]): Validat
         errors.push({
           nodeId: node.id,
           type: 'error',
+          severity: 'error',
           category: 'rank',
           message: `Layer '${node.name}' expects 3D input [H, W, C], got [${node.inputShape.join(', ')}] (rank ${node.inputShape.length})`
         });
@@ -141,6 +199,7 @@ export function validateGraph(nodes: CanvasNode[], edges: CanvasEdge[]): Validat
         errors.push({
           nodeId: node.id,
           type: 'error',
+          severity: 'error',
           category: 'rank',
           message: `Layer '${node.name}' expects 1D flattened input [Features], got [${node.inputShape.join(', ')}].`
         });
@@ -148,7 +207,7 @@ export function validateGraph(nodes: CanvasNode[], edges: CanvasEdge[]): Validat
     }
   }
 
-  // 3. Disconnected components check
+  // 6. Disconnected components check
   const inputNode = nodes.find(n => n.type === 'Input');
   if (inputNode) {
     const flowVisited = new Set<string>();
@@ -169,6 +228,7 @@ export function validateGraph(nodes: CanvasNode[], edges: CanvasEdge[]): Validat
         errors.push({
           nodeId: n.id,
           type: 'warning',
+          severity: 'warning',
           category: 'disconnected',
           message: `Layer '${n.name}' is disconnected from the main 'Input' graph flow. All active layers must connect.`
         });
@@ -178,6 +238,7 @@ export function validateGraph(nodes: CanvasNode[], edges: CanvasEdge[]): Validat
 
   return errors;
 }
+
 
 function incomingEdgesCount(nodeId: string, edges: CanvasEdge[]): number {
   return edges.filter(e => e.target === nodeId).length;

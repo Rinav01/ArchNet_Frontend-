@@ -9,6 +9,7 @@ import { compileToJAX } from '@/lib/canvas/jaxCompiler';
 import { compileToONNX } from '@/lib/canvas/onnxCompiler';
 import { useProjectStore } from '@/store/projectStore';
 import { graphqlRequest, EXPORT_ONNX } from '@/lib/graphql/client';
+import { validateGraph } from '@/lib/canvas/validationEngine';
 interface ExportModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -137,6 +138,9 @@ export default function ExportModal({ isOpen, onClose, nodes, edges, project }: 
 
   if (!isOpen) return null;
 
+  const validationErrors = validateGraph(nodes, edges);
+  const hasFatalErrors = validationErrors.some(e => e.severity === 'fatal');
+
   // Minimal Valid ONNX file Base64 string for Identity model [1, 1] -> [1, 1]
   const ONNX_BASE64 = 'ChwKB21pbmltYWwiFgoISWRlbnRpdHkSBUlucHV0GgZPdXRwdXQaDgoFSU5QVVQQAxICGgEaDgoGT1VUUFVUEAMSAhoBGAEqFgoJbWluaW1hbC0xGgZJbnB1dBoGT3V0cHV0KAgQATIAIAE=';
 
@@ -172,7 +176,7 @@ export default function ExportModal({ isOpen, onClose, nodes, edges, project }: 
     
     const code = getActiveCompiledCode();
     const blob = new Blob([code], { type: 'text/plain' });
-    triggerDownload(blob, 'model.py');
+    triggerDownload(blob, hasFatalErrors ? 'compilation_report.py' : 'model.py');
     
     setExporting('none');
     setSuccessState('py');
@@ -180,6 +184,7 @@ export default function ExportModal({ isOpen, onClose, nodes, edges, project }: 
   };
 
   const handleExportOnnx = async () => {
+    if (hasFatalErrors) return;
     setExporting('onnx');
 
     if (isOnline && project?.id) {
@@ -223,6 +228,7 @@ export default function ExportModal({ isOpen, onClose, nodes, edges, project }: 
   };
 
   const handleExportPackage = async () => {
+    if (hasFatalErrors) return;
     setExporting('package');
 
     const encoder = new TextEncoder();
@@ -347,7 +353,9 @@ python model.py
             </div>
             <div className="text-right">
               <span className="text-[10px] uppercase font-black tracking-wider text-gray-500">Topology Status</span>
-              <p className="text-[10px] font-bold text-[#81c784] mt-0.5">Ready for compiler pass</p>
+              <p className={`text-[10px] font-bold mt-0.5 ${hasFatalErrors ? 'text-red-400' : 'text-[#81c784]'}`}>
+                {hasFatalErrors ? '🔴 Compilation Failed' : '🟢 Ready for compiler pass'}
+              </p>
             </div>
           </div>
 
@@ -380,7 +388,7 @@ python model.py
                 ) : (
                   <>
                     <Download size={12} />
-                    <span>Download Script</span>
+                    <span>{hasFatalErrors ? 'Download Compilation Report' : 'Download Script'}</span>
                   </>
                 )}
               </button>
@@ -397,10 +405,12 @@ python model.py
               </p>
               <button
                 onClick={handleExportOnnx}
-                disabled={exporting !== 'none'}
+                disabled={exporting !== 'none' || hasFatalErrors}
                 className="w-full mt-4 flex items-center justify-center gap-2 py-2 bg-[#2b2d31]/60 hover:bg-teal-600 border border-[#3f4046] hover:border-transparent text-[10px] font-black tracking-wider text-white hover:text-white rounded-xl transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                {exporting === 'onnx' ? (
+                {hasFatalErrors ? (
+                  <span>Export Blocked</span>
+                ) : exporting === 'onnx' ? (
                   <>
                     <Loader2 size={12} className="animate-spin" />
                     <span>Serializing...</span>
@@ -430,10 +440,12 @@ python model.py
               </p>
               <button
                 onClick={handleExportPackage}
-                disabled={exporting !== 'none'}
+                disabled={exporting !== 'none' || hasFatalErrors}
                 className="w-full mt-4 flex items-center justify-center gap-2 py-2 bg-[#2b2d31]/60 hover:bg-purple-600 border border-[#3f4046] hover:border-transparent text-[10px] font-black tracking-wider text-white hover:text-white rounded-xl transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                {exporting === 'package' ? (
+                {hasFatalErrors ? (
+                  <span>Export Blocked</span>
+                ) : exporting === 'package' ? (
                   <>
                     <Loader2 size={12} className="animate-spin" />
                     <span>Packaging...</span>

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import MainLayout from '@/components/Layout/MainLayout';
 import LayerLibrary from '@/components/Panels/LayerLibrary';
@@ -19,6 +19,7 @@ import GraphSearch from '@/components/Modals/GraphSearch';
 import DiffViewerModal from '@/components/Modals/DiffViewerModal';
 import TrainingConfigModal from '@/components/Modals/TrainingConfigModal';
 import TemplateSelectionModal from '@/components/Modals/TemplateSelectionModal';
+import LoginPromoModal from '@/components/Modals/LoginPromoModal';
 import DockablePanel from '@/components/Common/DockablePanel';
 import { useLayoutStore } from '@/store/layoutStore';
 import { useCanvasStore } from '@/store/canvasStore';
@@ -70,6 +71,7 @@ export default function EditorPage() {
     loadCustomBlocks,
     loadPrebuiltTemplate,
     clearCanvas,
+    removeNode,
   } = useCanvasStore();
   
   const setActiveProjectId = useProjectStore((state) => state.setActiveProjectId);
@@ -81,6 +83,9 @@ export default function EditorPage() {
   const dockPreview = useLayoutStore((state) => state.dockPreview);
   const initializeCanvasLayout = useLayoutStore((state) => state.initializeCanvasLayout);
   const togglePanel = useLayoutStore((state) => state.togglePanel);
+  const isLoginPromoOpen = useLayoutStore((state) => state.isLoginPromoOpen);
+  const loginPromoReason = useLayoutStore((state) => state.loginPromoReason);
+  const closeLoginPromo = useLayoutStore((state) => state.closeLoginPromo);
 
   // Modals state
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
@@ -105,6 +110,10 @@ export default function EditorPage() {
           return;
         } else if (e.shiftKey && e.key.toLowerCase() === 'd') {
           e.preventDefault();
+          if (projectId === 'sandbox') {
+            useLayoutStore.getState().openLoginPromo("Version diff comparison is a premium feature. Please register or log in to compare visual model snapshots.");
+            return;
+          }
           setIsDiffModalOpen(prev => !prev);
           return;
         }
@@ -126,6 +135,15 @@ export default function EditorPage() {
           e.preventDefault();
           redo();
         }
+      } else if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (userRole === 'Viewer') return;
+        if (selectedNodeIds.length > 0) {
+          e.preventDefault();
+          selectedNodeIds.forEach(id => {
+            removeNode(id);
+          });
+          useCanvasStore.setState({ selectedNodeIds: [] });
+        }
       }
     };
 
@@ -133,11 +151,14 @@ export default function EditorPage() {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [undo, redo]);
+  }, [undo, redo, projectId, removeNode, selectedNodeIds, userRole]);
+
+  const isInitializedRef = useRef(false);
 
   // Set active project context on load
   useEffect(() => {
-    if (projectId) {
+    if (projectId && !isInitializedRef.current) {
+      isInitializedRef.current = true;
       setActiveProjectId(projectId);
       loadProjects();
       loadGraph(projectId).then(() => {
@@ -147,24 +168,32 @@ export default function EditorPage() {
           const url = new URL(window.location.href);
           url.searchParams.delete('template');
           window.history.replaceState({}, '', url.pathname + url.search);
+        } else if (projectId === 'sandbox') {
+          if (typeof window !== 'undefined' && !localStorage.getItem('archnet_project_draft_sandbox')) {
+            loadPrebuiltTemplate('Simple CNN');
+          }
         }
       });
       connectCollaboration(projectId);
       loadCustomBlocks();
     }
+  }, [projectId, templateName, setActiveProjectId, loadProjects, loadGraph, loadPrebuiltTemplate, connectCollaboration, loadCustomBlocks]);
+
+  // Handle collaboration and draft cleanup strictly on component unmount
+  useEffect(() => {
     return () => {
       disconnectCollaboration();
       if (projectId === 'sandbox') {
         localStorage.removeItem('archnet_project_draft_sandbox');
       }
     };
-  }, [projectId, templateName, setActiveProjectId, loadProjects, loadGraph, loadPrebuiltTemplate, connectCollaboration, disconnectCollaboration, loadCustomBlocks]);
+  }, [projectId, disconnectCollaboration]);
 
   
-  // Set layout: only the IDE Terminal Console is open by default when the editor mounts
+  // Set layout: only the IDE Terminal Console is open by default when the editor mounts (except in sandbox where library, console, and codePreview are open)
   useEffect(() => {
-    initializeCanvasLayout();
-  }, [initializeCanvasLayout]);
+    initializeCanvasLayout(projectId);
+  }, [initializeCanvasLayout, projectId]);
 
   const handleZoomIn = () => setZoom(z => z + 0.1);
   const handleZoomOut = () => setZoom(z => z - 0.1);
@@ -238,10 +267,28 @@ export default function EditorPage() {
   return (
     <MainLayout 
       onGenerateCode={() => togglePanel('codePreview')} 
-      onCompareVersions={() => setIsDiffModalOpen(true)}
+      onCompareVersions={() => {
+        if (projectId === 'sandbox') {
+          useLayoutStore.getState().openLoginPromo("Version diff comparison is a premium feature. Please register or log in to compare model snapshots.");
+          return;
+        }
+        setIsDiffModalOpen(true);
+      }}
       onOpenTrainingConfig={() => setIsTrainingConfigOpen(true)}
-      onOpenExport={() => setIsExportModalOpen(true)}
-      onOpenCompare={() => setIsComparisonModalOpen(true)}
+      onOpenExport={() => {
+        if (projectId === 'sandbox') {
+          useLayoutStore.getState().openLoginPromo("Exporting compiled modules is a premium feature. Please register or log in to download assets.");
+          return;
+        }
+        setIsExportModalOpen(true);
+      }}
+      onOpenCompare={() => {
+        if (projectId === 'sandbox') {
+          useLayoutStore.getState().openLoginPromo("Framework comparison is a premium feature. Please register or log in to compare compiled frameworks.");
+          return;
+        }
+        setIsComparisonModalOpen(true);
+      }}
     >
       {isExportModalOpen && <ExportModal onClose={() => setIsExportModalOpen(false)} isOpen={false} nodes={[]} edges={[]} project={undefined} />}
       {isComparisonModalOpen && <FrameworkComparisonModal onClose={() => setIsComparisonModalOpen(false)} isOpen={false} nodes={[]} edges={[]} project={undefined} />}
@@ -253,6 +300,12 @@ export default function EditorPage() {
           setIsTemplateModalOpen(false);
           loadPrebuiltTemplate(template);
         }} 
+      />
+
+      <LoginPromoModal 
+        isOpen={isLoginPromoOpen} 
+        onClose={closeLoginPromo} 
+        reason={loginPromoReason} 
       />
 
       <div className="flex h-[calc(100vh-4rem)] overflow-hidden relative z-10 select-none bg-[#090a0f] w-full">
