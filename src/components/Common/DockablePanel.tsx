@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useRef, useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useLayoutStore } from '@/store/layoutStore';
 import { useProjectStore } from '@/store/projectStore';
 import { Minimize2, Maximize2, X, Move, Box } from 'lucide-react';
@@ -245,14 +246,17 @@ export default function DockablePanel({ id, children }: DockablePanelProps) {
       };
 
   return (
-    <div
+    <motion.div
       id={id}
       ref={containerRef}
       style={style}
       onClick={() => panel.isFloating && bringToFront(id)}
+      initial={panel.isFloating ? { scale: 0.95, opacity: 0 } : false}
+      animate={panel.isFloating ? { scale: 1, opacity: 1 } : false}
+      transition={{ type: 'spring', stiffness: 300, damping: 25 }}
       className={`flex flex-col bg-[#1e1f22]/95 border border-[#3f4046] shadow-xl overflow-hidden select-none relative ${
         panel.isFloating 
-          ? 'rounded-2xl border-t border-t-[#8ab4f8]/40 animate-in fade-in zoom-in-95 duration-150 shadow-2xl backdrop-blur-md' 
+          ? 'rounded-2xl border-t border-t-[#8ab4f8]/40 shadow-2xl backdrop-blur-md' 
           : 'h-full border-none'
       } ${isDragging ? 'opacity-85 scale-[0.99] border-dashed border-[#8ab4f8]' : ''}`}
     >
@@ -273,7 +277,7 @@ export default function DockablePanel({ id, children }: DockablePanelProps) {
           {panel.isFloating ? (
             <button
               onClick={() => dockPanel(id, id === 'console' ? 'bottom' : id === 'library' ? 'left' : 'right')}
-              className="panel-control-btn p-1 hover:bg-[#2b2d31] rounded text-gray-500 hover:text-white transition-colors cursor-pointer border-none bg-transparent"
+              className="panel-control-btn p-1 hover:bg-[#2b2d31] rounded text-gray-500 hover:text-white transition-all hover:scale-115 active:scale-90 duration-200 cursor-pointer border-none bg-transparent"
               title="Dock Window"
             >
               <Minimize2 size={12} />
@@ -281,7 +285,7 @@ export default function DockablePanel({ id, children }: DockablePanelProps) {
           ) : (
             <button
               onClick={() => undockPanel(id, 200 + Math.random() * 200, 150 + Math.random() * 150)}
-              className="panel-control-btn p-1 hover:bg-[#2b2d31] rounded text-gray-500 hover:text-white transition-colors cursor-pointer border-none bg-transparent"
+              className="panel-control-btn p-1 hover:bg-[#2b2d31] rounded text-gray-500 hover:text-white transition-all hover:scale-115 active:scale-90 duration-200 cursor-pointer border-none bg-transparent"
               title="Float Window"
             >
               <Maximize2 size={12} />
@@ -289,7 +293,7 @@ export default function DockablePanel({ id, children }: DockablePanelProps) {
           )}
           <button
             onClick={() => togglePanel(id)}
-            className="panel-control-btn p-1 hover:bg-red-500/10 rounded text-gray-500 hover:text-red-400 transition-colors cursor-pointer border-none bg-transparent"
+            className="panel-control-btn p-1 hover:bg-red-500/10 rounded text-gray-500 hover:text-red-400 transition-all hover:scale-115 active:scale-90 duration-200 cursor-pointer border-none bg-transparent"
             title="Close Panel"
           >
             <X size={12} />
@@ -304,6 +308,6 @@ export default function DockablePanel({ id, children }: DockablePanelProps) {
 
       {/* 3. Dynamic Resize Handles */}
       {renderResizers()}
-    </div>
+    </motion.div>
   );
 }

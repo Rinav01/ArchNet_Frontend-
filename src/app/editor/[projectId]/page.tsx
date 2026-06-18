@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
+import { motion, AnimatePresence } from 'framer-motion';
 import MainLayout from '@/components/Layout/MainLayout';
 import LayerLibrary from '@/components/Panels/LayerLibrary';
 import ConfigPanel from '@/components/Panels/ConfigPanel';
@@ -338,21 +339,29 @@ export default function EditorPage() {
         )}
 
         {/* 1. LEFT DOCK COLUMN CONTAINER */}
-        {leftDock.length > 0 && (
-          <div className="flex flex-col h-full shrink-0 border-r border-[#3f4046] relative z-20">
-            {leftDock.map((p) => (
-              <div 
-                key={p.id} 
-                style={{ height: `${100 / leftDock.length}%`, width: p.width }} 
-                className="relative border-b border-[#3f4046]/50 last:border-b-0"
-              >
-                <DockablePanel id={p.id}>
-                  {renderPanelContent(p.id)}
-                </DockablePanel>
-              </div>
-            ))}
-          </div>
-        )}
+        <AnimatePresence initial={false}>
+          {leftDock.length > 0 && (
+            <motion.div 
+              initial={{ width: 0, opacity: 0 }}
+              animate={{ width: leftDock[0].width, opacity: 1 }}
+              exit={{ width: 0, opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 220, damping: 26 }}
+              className="flex flex-col h-full shrink-0 border-r border-[#3f4046] relative z-20 overflow-hidden"
+            >
+              {leftDock.map((p) => (
+                <div 
+                  key={p.id} 
+                  style={{ height: `${100 / leftDock.length}%`, width: p.width }} 
+                  className="relative border-b border-[#3f4046]/50 last:border-b-0"
+                >
+                  <DockablePanel id={p.id}>
+                    {renderPanelContent(p.id)}
+                  </DockablePanel>
+                </div>
+              ))}
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* 2. MIDDLE AREA: CANVAS + BOTTOM DOCK ROW */}
         <div className="flex-1 flex flex-col h-full relative overflow-hidden min-w-0">
@@ -611,39 +620,54 @@ export default function EditorPage() {
           </div>
 
           {/* BOTTOM DOCK ROW */}
-          {bottomDock.length > 0 && (
-            <div className="w-full flex shrink-0 border-t border-[#3f4046] relative z-20">
-              {bottomDock.map((p) => (
+          <AnimatePresence initial={false}>
+            {bottomDock.length > 0 && (
+              <motion.div 
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: bottomDock[0].height, opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ type: 'spring', stiffness: 220, damping: 26 }}
+                className="w-full flex shrink-0 border-t border-[#3f4046] relative z-20 overflow-hidden"
+              >
+                {bottomDock.map((p) => (
+                  <div 
+                    key={p.id} 
+                    className="w-full h-full relative"
+                  >
+                    <DockablePanel id={p.id}>
+                      {renderPanelContent(p.id)}
+                    </DockablePanel>
+                  </div>
+                ))}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* 3. RIGHT DOCK COLUMN CONTAINER */}
+        <AnimatePresence initial={false}>
+          {rightDock.length > 0 && (
+            <motion.div 
+              initial={{ width: 0, opacity: 0 }}
+              animate={{ width: rightDock[0].width, opacity: 1 }}
+              exit={{ width: 0, opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 220, damping: 26 }}
+              className="flex flex-col h-full shrink-0 border-l border-[#3f4046] relative z-20 overflow-hidden"
+            >
+              {rightDock.map((p) => (
                 <div 
                   key={p.id} 
-                  style={{ height: p.height }} 
-                  className="w-full relative"
+                  style={{ height: `${100 / rightDock.length}%`, width: p.width }} 
+                  className="relative border-b border-[#3f4046]/50 last:border-b-0"
                 >
                   <DockablePanel id={p.id}>
                     {renderPanelContent(p.id)}
                   </DockablePanel>
                 </div>
               ))}
-            </div>
+            </motion.div>
           )}
-        </div>
-
-        {/* 3. RIGHT DOCK COLUMN CONTAINER */}
-        {rightDock.length > 0 && (
-          <div className="flex flex-col h-full shrink-0 border-l border-[#3f4046] relative z-20 animate-in slide-in-from-right duration-250">
-            {rightDock.map((p) => (
-              <div 
-                key={p.id} 
-                style={{ height: `${100 / rightDock.length}%`, width: p.width }} 
-                className="relative border-b border-[#3f4046]/50 last:border-b-0"
-              >
-                <DockablePanel id={p.id}>
-                  {renderPanelContent(p.id)}
-                </DockablePanel>
-              </div>
-            ))}
-          </div>
-        )}
+        </AnimatePresence>
 
         {/* 4. FLOATING PANELS OVERLAYS */}
         {floating.map((p) => (

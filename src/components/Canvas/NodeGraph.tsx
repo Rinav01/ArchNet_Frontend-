@@ -837,7 +837,7 @@ export default function NodeGraph() {
   return (
     <div id="tour-canvas" ref={containerRef} className="w-full h-full relative bg-[#1e1f22] overflow-hidden select-none">
       {/* Background dot grid */}
-      <div className="absolute inset-0 dot-grid opacity-50 z-0"></div>
+      <div className={`absolute inset-0 dot-grid z-0 ${draggedNodeId ? 'dragging-active' : 'opacity-50'}`}></div>
 
       <Stage
         ref={stageRef}
@@ -1154,11 +1154,17 @@ export default function NodeGraph() {
               metricText = `${metrics.latency.toFixed(2)} ms`;
             }
 
+            const isDragged = draggedNodeId === node.id;
+
             return (
               <Group
                 key={node.id}
                 x={node.x}
                 y={node.y}
+                scaleX={isDragged ? 1.03 : 1}
+                scaleY={isDragged ? 1.03 : 1}
+                offsetX={isDragged ? NODE_WIDTH * 0.015 : 0}
+                offsetY={isDragged ? NODE_HEIGHT * 0.015 : 0}
                 draggable={userRole !== 'Viewer'}
                 onDragStart={() => handleNodeDragStart(node.id)}
                 onDragMove={(e) => handleNodeDragMove(node.id, e)}
@@ -1240,6 +1246,10 @@ export default function NodeGraph() {
                   cornerRadius={8}
                   stroke={badgeColor ? badgeColor : isAnimating ? '#8ab4f8' : isSelected ? '#8ab4f8' : '#3f4046'}
                   strokeWidth={badgeColor ? 1.8 : isAnimating ? 2.5 : isSelected ? 2.2 : 1}
+                  shadowColor="#000000"
+                  shadowBlur={isDragged ? 15 : isSelected ? 6 : 0}
+                  shadowOpacity={isDragged ? 0.45 : isSelected ? 0.25 : 0}
+                  shadowOffset={isDragged ? { x: 8, y: 12 } : isSelected ? { x: 2, y: 4 } : { x: 0, y: 0 }}
                 />
 
                 {/* Heatmap overlay */}
