@@ -87,7 +87,7 @@ describe('Topological Shape Solver & Validation Engine Tests', () => {
       const errors = validateGraph(nodes, edges);
       const rankErr = errors.find(e => e.nodeId === '2' && e.category === 'rank');
       expect(rankErr).toBeDefined();
-      expect(rankErr?.message).toContain("expects 1D flattened input");
+      expect(rankErr?.message).toContain("expects 1D or 2D input");
     });
 
     test('should validate ResidualAdd input broadcasting compatibility', () => {
