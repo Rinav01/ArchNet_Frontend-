@@ -460,6 +460,37 @@ export const DELETE_WORKFLOW = `
   }
 `;
 
+export const GET_WORKFLOW_RUNS = `
+  query GetWorkflowRuns($workflowId: ID!) {
+    workflowRuns(workflowId: $workflowId) {
+      id
+      workflowId
+      status
+      triggerEvent
+      triggeredByResourceId
+      executionLogs
+      createdAt
+      updatedAt
+    }
+  }
+`;
+
+export const TRIGGER_WORKFLOW = `
+  mutation TriggerWorkflow($workflowId: ID!) {
+    triggerWorkflow(workflowId: $workflowId) {
+      id
+      workflowId
+      status
+      triggerEvent
+      triggeredByResourceId
+      executionLogs
+      createdAt
+      updatedAt
+    }
+  }
+`;
+
+
 export const ESTIMATE_COSTS = `
   query EstimateCosts($projectId: ID!, $datasetId: ID, $epochs: Int, $gpuType: String) {
     estimateCosts(projectId: $projectId, datasetId: $datasetId, epochs: $epochs, gpuType: $gpuType) {

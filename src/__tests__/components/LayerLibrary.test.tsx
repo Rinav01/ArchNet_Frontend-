@@ -68,7 +68,16 @@ describe('LayerLibrary Component Sandbox Gating Tests', () => {
         {
           id: 'block-1',
           name: 'My Custom Block',
-          nodes: [{ id: 'n1', type: 'Conv2D', x: 0, y: 0, inputs: {}, outputs: {} }],
+          nodes: [{ 
+            id: 'n1', 
+            type: 'Conv2D', 
+            name: 'Conv2D_1',
+            x: 0, 
+            y: 0, 
+            inputShape: [], 
+            outputShape: [], 
+            config: {} 
+          }],
           edges: [],
         }
       ]
