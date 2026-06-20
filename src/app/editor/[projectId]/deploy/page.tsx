@@ -29,6 +29,11 @@ export default function DeployPage() {
   const router = useRouter();
   const projectId = params.projectId as string;
   
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+  
   const projects = useProjectStore((state) => state.projects);
   const currentProject = projects.find((p) => p.id === projectId);
   
@@ -414,51 +419,57 @@ export default function DeployPage() {
                     </div>
                   </div>
 
-                  <div className="h-[250px] w-full text-[10px] font-mono">
-                    <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                      <AreaChart data={historyData} margin={{ top: 10, right: 10, left: -25, bottom: 5 }}>
-                        <defs>
-                          <linearGradient id="colorRps" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#80cbc4" stopOpacity={0.2}/>
-                            <stop offset="95%" stopColor="#80cbc4" stopOpacity={0}/>
-                          </linearGradient>
-                          <linearGradient id="colorLatency" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#ffe082" stopOpacity={0.2}/>
-                            <stop offset="95%" stopColor="#ffe082" stopOpacity={0}/>
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#2b2d31" />
-                        <XAxis dataKey="timestamp" stroke="#5f6368" />
-                        <YAxis stroke="#5f6368" />
-                        <Tooltip 
-                          contentStyle={{ 
-                            backgroundColor: '#1e1f22', 
-                            borderColor: '#3f4046', 
-                            borderRadius: '12px',
-                            color: '#e3e3e3',
-                            fontSize: '10px'
-                          }} 
-                        />
-                        <Area
-                          name="Requests/sec"
-                          type="monotone"
-                          dataKey="requestsPerSec"
-                          stroke="#80cbc4"
-                          strokeWidth={2}
-                          fillOpacity={1}
-                          fill="url(#colorRps)"
-                        />
-                        <Area
-                          name="Latency (ms)"
-                          type="monotone"
-                          dataKey="latencyMs"
-                          stroke="#ffe082"
-                          strokeWidth={2}
-                          fillOpacity={1}
-                          fill="url(#colorLatency)"
-                        />
-                      </AreaChart>
-                    </ResponsiveContainer>
+                   <div className="h-[250px] w-full text-[10px] font-mono">
+                    {mounted ? (
+                      <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                        <AreaChart data={historyData} margin={{ top: 10, right: 10, left: -25, bottom: 5 }}>
+                          <defs>
+                            <linearGradient id="colorRps" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#80cbc4" stopOpacity={0.2}/>
+                              <stop offset="95%" stopColor="#80cbc4" stopOpacity={0}/>
+                            </linearGradient>
+                            <linearGradient id="colorLatency" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#ffe082" stopOpacity={0.2}/>
+                              <stop offset="95%" stopColor="#ffe082" stopOpacity={0}/>
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#2b2d31" />
+                          <XAxis dataKey="timestamp" stroke="#5f6368" />
+                          <YAxis stroke="#5f6368" />
+                          <Tooltip 
+                            contentStyle={{ 
+                              backgroundColor: '#1e1f22', 
+                              borderColor: '#3f4046', 
+                              borderRadius: '12px',
+                              color: '#e3e3e3',
+                              fontSize: '10px'
+                            }} 
+                          />
+                          <Area
+                            name="Requests/sec"
+                            type="monotone"
+                            dataKey="requestsPerSec"
+                            stroke="#80cbc4"
+                            strokeWidth={2}
+                            fillOpacity={1}
+                            fill="url(#colorRps)"
+                          />
+                          <Area
+                            name="Latency (ms)"
+                            type="monotone"
+                            dataKey="latencyMs"
+                            stroke="#ffe082"
+                            strokeWidth={2}
+                            fillOpacity={1}
+                            fill="url(#colorLatency)"
+                          />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <div className="h-full w-full flex items-center justify-center text-gray-500 font-sans font-semibold">
+                        Initializing performance curves chart...
+                      </div>
+                    )}
                   </div>
                 </div>
 

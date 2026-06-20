@@ -38,6 +38,23 @@ interface LayoutState {
   loginPromoReason: string;
   openLoginPromo: (reason: string) => void;
   closeLoginPromo: () => void;
+  confirmDialog: {
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmLabel?: string;
+    cancelLabel?: string;
+    isDestructive?: boolean;
+    resolve: (value: boolean) => void;
+  } | null;
+  confirm: (options: {
+    title: string;
+    message: string;
+    confirmLabel?: string;
+    cancelLabel?: string;
+    isDestructive?: boolean;
+  }) => Promise<boolean>;
+  closeConfirm: (value: boolean) => void;
 }
 
 const DEFAULT_PANELS: Record<string, PanelState> = {
@@ -138,6 +155,31 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
   loginPromoReason: '',
   openLoginPromo: (reason) => set({ isLoginPromoOpen: true, loginPromoReason: reason }),
   closeLoginPromo: () => set({ isLoginPromoOpen: false, loginPromoReason: '' }),
+  confirmDialog: null,
+  confirm: (options) => {
+    return new Promise<boolean>((resolve) => {
+      set({
+        confirmDialog: {
+          isOpen: true,
+          title: options.title,
+          message: options.message,
+          confirmLabel: options.confirmLabel || 'Confirm',
+          cancelLabel: options.cancelLabel || 'Cancel',
+          isDestructive: options.isDestructive || false,
+          resolve: (val) => {
+            set({ confirmDialog: null });
+            resolve(val);
+          }
+        }
+      });
+    });
+  },
+  closeConfirm: (value) => {
+    const dialog = get().confirmDialog;
+    if (dialog) {
+      dialog.resolve(value);
+    }
+  },
 
   togglePanel: (id) => {
     set((state) => {

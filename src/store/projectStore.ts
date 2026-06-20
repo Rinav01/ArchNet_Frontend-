@@ -52,7 +52,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
               name: p.name,
               framework: p.framework || 'PyTorch',
               status: activeStatus,
-              layersCount: 4,
+              layersCount: p.nodes ? p.nodes.length : 0,
               updatedAt: new Date(p.updatedAt).toLocaleDateString() || 'Synced',
               notes: isValStatus ? `Milestone: ${p.description}` : (p.description || 'Live cloud model'),
               totalParameterCount: p.totalParameterCount || 0,
@@ -92,7 +92,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
           name: p.name,
           framework: p.framework || 'PyTorch',
           status: activeStatus,
-          layersCount: 1,
+          layersCount: 0,
           updatedAt: 'Just now',
           notes: isValStatus ? `Milestone: ${p.description}` : (p.description || ''),
         };

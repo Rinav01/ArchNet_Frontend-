@@ -12,7 +12,8 @@ import {
   VALIDATE_PROJECT_COMPILATION,
   TRIGGER_TRAINING_JOB,
   GET_TRAINING_JOB,
-  GET_DATASETS
+  GET_DATASETS,
+  CLEAR_PROJECT_CANVAS
 } from '@/lib/graphql/client';
 import { useProjectStore } from './projectStore';
 import { validateGraph } from '@/lib/canvas/validationEngine';
@@ -25,6 +26,7 @@ let reconnectTimeout: NodeJS.Timeout | null = null;
 let trainingInterval: NodeJS.Timeout | null = null;
 let hardwareFluctuationInterval: NodeJS.Timeout | null = null;
 let autoSaveTimeout: NodeJS.Timeout | null = null;
+let latestTemplateImportId: string | null = null;
 
 interface CanvasState {
   nodes: CanvasNode[];
@@ -65,14 +67,14 @@ interface CanvasState {
   syncStatus: 'disconnected' | 'connecting' | 'connected';
   
   // Core Actions
-  loadGraph: (projectId: string) => Promise<void>;
+  loadGraph: (projectId: string, templateImportId?: string | null) => Promise<void>;
   addNode: (type: NodeType, x: number, y: number, presetId?: string, isRemote?: boolean) => Promise<string | undefined>;
   removeNode: (id: string, isUndoRedo?: boolean, isRemote?: boolean) => Promise<void>;
   updateNodeConfig: (id: string, config: Partial<NodeConfig>, isUndoRedo?: boolean, isRemote?: boolean) => void;
   updateNodeName: (id: string, name: string, isUndoRedo?: boolean, isRemote?: boolean) => void;
   addEdge: (sourceId: string, targetId: string, presetId?: string, isRemote?: boolean) => Promise<void>;
   removeEdge: (id: string, isUndoRedo?: boolean, isRemote?: boolean) => Promise<void>;
-  moveNode: (id: string, x: number, y: number, isUndoRedo?: boolean, isRemote?: boolean) => void;
+  moveNode: (id: string, x: number, y: number, isUndoRedo?: boolean, isRemote?: boolean, oldX?: number, oldY?: number) => void;
   setSelectedNodeId: (id: string | null) => void;
   setZoom: (zoom: number | ((prev: number) => number)) => void;
   setPan: (pan: { x: number; y: number } | ((prev: { x: number; y: number }) => { x: number; y: number })) => void;
@@ -396,8 +398,9 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
     heatmapMode: 'none',
     customBlocks: [],
 
-    loadGraph: async (projectId) => {
+    loadGraph: async (projectId, templateImportId = null) => {
       const isOnline = await useProjectStore.getState().checkBackendStatus();
+      if (templateImportId && latestTemplateImportId !== templateImportId) return;
       const time = getFormattedTime();
 
       // Always load checkpoints from local storage
@@ -406,6 +409,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
       if (isOnline && projectId !== 'sandbox') {
         try {
           const data = await graphqlRequest(GET_PROJECT_DETAILS, { id: projectId });
+          if (templateImportId && latestTemplateImportId !== templateImportId) return;
           if (data && data.project) {
             const p = data.project;
             const nodesTranslated: CanvasNode[] = (p.nodes || []).map((n: any) => ({
@@ -439,6 +443,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
               }
             }
 
+            if (templateImportId && latestTemplateImportId !== templateImportId) return;
             set({
               nodes: nodesTranslated,
               edges: edgesTranslated,
@@ -458,9 +463,11 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
       // Check if there's a saved draft in localStorage as a self-healing sandbox recovery
       if (typeof window !== 'undefined') {
         const savedDraft = localStorage.getItem(`archnet_project_draft_${projectId}`);
+        if (templateImportId && latestTemplateImportId !== templateImportId) return;
         if (savedDraft) {
           try {
             const parsed = JSON.parse(savedDraft);
+            if (templateImportId && latestTemplateImportId !== templateImportId) return;
             set({
               nodes: parsed.nodes || [],
               edges: parsed.edges || [],
@@ -478,6 +485,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
       }
 
       // Enforce connection warning and set empty state
+      if (templateImportId && latestTemplateImportId !== templateImportId) return;
       set({
         nodes: [],
         edges: [],
@@ -834,7 +842,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
       }));
     },
 
-    moveNode: (id, x, y, isUndoRedo = false, isRemote = false) => {
+    moveNode: (id, x, y, isUndoRedo = false, isRemote = false, oldX, oldY) => {
       const node = get().nodes.find(n => n.id === id);
       if (!node) return;
 
@@ -857,16 +865,20 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
       }
 
       if (!isUndoRedo && !get().isApplyingUndoRedo && !isRemote) {
-        get().pushOperation({
-          type: 'MOVE_NODE',
-          payload: {
-            nodeId: id,
-            oldX: node.x,
-            oldY: node.y,
-            newX: x,
-            newY: y,
-          },
-        });
+        const recordedOldX = oldX !== undefined ? oldX : node.x;
+        const recordedOldY = oldY !== undefined ? oldY : node.y;
+        if (recordedOldX !== x || recordedOldY !== y) {
+          get().pushOperation({
+            type: 'MOVE_NODE',
+            payload: {
+              nodeId: id,
+              oldX: recordedOldX,
+              oldY: recordedOldY,
+              newX: x,
+              newY: y,
+            },
+          });
+        }
       }
 
       set((state) => ({
@@ -1974,6 +1986,17 @@ Success! Forward pass completed.
                 (async () => {
                   try {
                     switch (op.type || op.action) {
+                      case 'CLEAR_PROJECT': {
+                        set({
+                          nodes: [],
+                          edges: [],
+                          nodeGroups: [],
+                          selectedNodeIds: [],
+                          selectedNodeId: null
+                        });
+                        get().addLog('info', 'Collaborator cleared the canvas.');
+                        break;
+                      }
                       case 'ADD_NODE': {
                         const payload = op.payload || {};
                         const nodeId = payload.node_id || payload.node?.id;
@@ -2922,6 +2945,9 @@ Success! Forward pass completed.
     },
 
     loadPrebuiltTemplate: async (templateName) => {
+      const importId = Math.random().toString(36).substring(7) + '-' + Date.now();
+      latestTemplateImportId = importId;
+
       const oldNodes = JSON.parse(JSON.stringify(get().nodes));
       const oldEdges = JSON.parse(JSON.stringify(get().edges));
       const oldNodeGroups = JSON.parse(JSON.stringify(get().nodeGroups));
@@ -3873,28 +3899,30 @@ Success! Forward pass completed.
         // Poll for WebSocket connection readiness up to 15 times (3 seconds)
         let attempts = 0;
         while (get().syncStatus !== 'connected' && attempts < 15) {
+          if (latestTemplateImportId !== importId) return;
           await new Promise(resolve => setTimeout(resolve, 200));
           attempts++;
         }
+
+        if (latestTemplateImportId !== importId) return;
 
         const ws = get().ws;
         const isWsConnected = get().syncStatus === 'connected' && ws && ws.readyState === WebSocket.OPEN;
 
         if (isWsConnected) {
-          // 1. Delete all old nodes (backend cascades to edges)
-          oldNodes.forEach((n: CanvasNode) => {
-            ws.send(JSON.stringify({
-              type: 'operation',
-              op: {
-                action: 'DELETE_NODE',
-                payload: { node_id: n.id },
-                timestamp: Date.now() / 1000
-              }
-            }));
-          });
+          // 1. Clear the canvas first in database
+          ws.send(JSON.stringify({
+            type: 'operation',
+            op: {
+              action: 'CLEAR_PROJECT',
+              payload: {},
+              timestamp: Date.now() / 1000
+            }
+          }));
 
           // 2. Add new nodes
           newNodes.forEach((n: CanvasNode) => {
+            if (latestTemplateImportId !== importId) return;
             ws.send(JSON.stringify({
               type: 'operation',
               op: {
@@ -3914,6 +3942,7 @@ Success! Forward pass completed.
 
           // 3. Add new edges
           newEdges.forEach((e: CanvasEdge) => {
+            if (latestTemplateImportId !== importId) return;
             ws.send(JSON.stringify({
               type: 'operation',
               op: {
@@ -3928,19 +3957,23 @@ Success! Forward pass completed.
             }));
           });
 
+          if (latestTemplateImportId !== importId) return;
           get().addLog('success', `Database Synced: Pushed ${newNodes.length} nodes & ${newEdges.length} edges via WebSocket.`);
+          if (latestTemplateImportId === importId) {
+            latestTemplateImportId = null;
+          }
         } else {
           // Fallback to GraphQL if WS is still not connected
           get().addLog('warning', 'WebSocket sync unavailable. Syncing template via GraphQL...');
           try {
-            // Delete old nodes
-            for (const n of oldNodes) {
-              await graphqlRequest(DELETE_NODE, { projectId: activeProjId, nodeId: n.id });
-            }
+            // Clear the project canvas in database
+            if (latestTemplateImportId !== importId) return;
+            await graphqlRequest(CLEAR_PROJECT_CANVAS, { projectId: activeProjId });
             
             // Map old client IDs to new database UUIDs
             const oldToNewIdMap = new Map<string, string>();
             for (const n of newNodes) {
+              if (latestTemplateImportId !== importId) return;
               const res = await graphqlRequest(ADD_NODE, {
                 projectId: activeProjId,
                 type: n.type,
@@ -3955,6 +3988,7 @@ Success! Forward pass completed.
 
             // Add new edges
             for (const e of newEdges) {
+              if (latestTemplateImportId !== importId) return;
               const newSource = oldToNewIdMap.get(e.source);
               const newTarget = oldToNewIdMap.get(e.target);
               if (newSource && newTarget) {
@@ -3965,6 +3999,8 @@ Success! Forward pass completed.
                 });
               }
             }
+
+            if (latestTemplateImportId !== importId) return;
 
             // Map old client IDs to new database UUIDs in nodeGroups
             const updatedNodeGroups = newNodeGroups.map(group => ({
@@ -3991,18 +4027,28 @@ Success! Forward pass completed.
               localStorage.setItem(`archnet_project_draft_${activeProjId}`, draftData);
             }
 
+            if (latestTemplateImportId !== importId) return;
+
             // Since GraphQL mutations generated new database IDs, reload graph to align client IDs
-            await get().loadGraph(activeProjId);
+            await get().loadGraph(activeProjId, importId);
+            if (latestTemplateImportId !== importId) return;
+            if (latestTemplateImportId === importId) {
+              latestTemplateImportId = null;
+            }
             get().addLog('success', `GraphQL Synced: Template saved successfully.`);
           } catch (err: any) {
+            if (latestTemplateImportId !== importId) return;
             console.error('GraphQL template sync failed:', err);
             get().addLog('error', `Database Sync Error: Failed to save template. ${err.message || err}`);
           }
         }
       };
 
-      if (useProjectStore.getState().isOnline) {
+      const activeProjId = useProjectStore.getState().activeProjectId;
+      if (useProjectStore.getState().isOnline && activeProjId !== 'sandbox') {
         syncWithDatabase();
+      } else {
+        latestTemplateImportId = null;
       }
     },
 

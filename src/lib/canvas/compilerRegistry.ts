@@ -13,4 +13,9 @@ export const compilerRegistry: Record<string, boolean> = {
   TransformerBlock: true,
   GCN: true,
   GraphSAGE: true,
+  LSTM: true,
+  BiLSTM: true,
+  GRU: true,
+  RNN: true,
 };
+

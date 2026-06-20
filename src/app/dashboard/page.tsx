@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import MainLayout from '@/components/Layout/MainLayout';
 import { useProjectStore } from '@/store/projectStore';
 import { useCanvasStore } from '@/store/canvasStore';
+import { useLayoutStore } from '@/store/layoutStore';
 import { 
   Plus, 
   ArrowRight, 
@@ -23,6 +24,7 @@ import { Project } from '@/types/canvas';
 
 export default function Dashboard() {
   const router = useRouter();
+  const confirm = useLayoutStore((state) => state.confirm);
   const { projects, gpuLoad, gpuCluster, addProject, setActiveProjectId, loadProjects, isOnline, deleteProject, userRole } = useProjectStore();
   const clearLogs = useCanvasStore((state) => state.clearLogs);
   const addLog = useCanvasStore((state) => state.addLog);
@@ -307,7 +309,10 @@ export default function Dashboard() {
                       {!project.latency && !project.loss && (
                         <div>
                           <span className="text-[10px] text-[#9aa0a6] uppercase tracking-wider block font-bold">Status</span>
-                          <span className="text-sm font-bold text-gray-300 font-mono">{project.status === 'Draft' ? 'Incomplete' : 'Complete'}</span>
+                          <span className="text-sm font-bold text-gray-300 font-mono">
+                            {project.status === 'Draft' ? 'Incomplete' : 
+                             project.status === 'Training' ? 'Training' : 'Complete'}
+                          </span>
                         </div>
                       )}
                     </div>
@@ -315,9 +320,16 @@ export default function Dashboard() {
                     <div className="flex items-center gap-2">
                       {userRole !== 'Viewer' && (
                         <button
-                          onClick={(e) => {
+                          onClick={async (e) => {
                             e.stopPropagation();
-                            if (window.confirm(`Are you sure you want to delete the project "${project.name}"?`)) {
+                            const confirmed = await confirm({
+                              title: 'Delete Project',
+                              message: `Are you sure you want to delete the project "${project.name}"? This action cannot be undone.`,
+                              isDestructive: true,
+                              confirmLabel: 'Delete Project',
+                              cancelLabel: 'Cancel',
+                            });
+                            if (confirmed) {
                               deleteProject(project.id);
                             }
                           }}

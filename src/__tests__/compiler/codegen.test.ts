@@ -50,18 +50,18 @@ describe('Code Generation & PyTorch Compiler Tests', () => {
   test('should generate compilation failure report when graph has fatal errors (unsupported layer)', () => {
     const nodes: CanvasNode[] = [
       { id: '1', type: 'Input', name: 'IN', x: 0, y: 0, inputShape: [], outputShape: [224, 224, 3], config: { dim: [224, 224, 3] } },
-      { id: 'lstm_1', type: 'LSTM' as any, name: 'LSTM_LAYER', x: 0, y: 0, inputShape: [], outputShape: [], config: {} }
+      { id: 'fake_1', type: 'FakeLayer' as any, name: 'FAKE_LAYER', x: 0, y: 0, inputShape: [], outputShape: [], config: {} }
     ];
     const edges: CanvasEdge[] = [
-      { id: 'e1', source: '1', target: 'lstm_1' }
+      { id: 'e1', source: '1', target: 'fake_1' }
     ];
 
     const output = compileToPyTorch(nodes, edges);
 
     expect(output).toContain('ArchNet Compilation Report');
     expect(output).toContain('Compilation Status: FAILED');
-    expect(output).toContain("Unsupported layer type 'LSTM' detected at node 'lstm_1'");
-    expect(output).toContain('raise NotImplementedError("Unsupported layer type \'LSTM\' detected at node \'lstm_1\'")');
+    expect(output).toContain("Unsupported layer type 'FakeLayer' detected at node 'fake_1'");
+    expect(output).toContain('raise NotImplementedError("Unsupported layer type \'FakeLayer\' detected at node \'fake_1\'")');
   });
 
   test('should generate correct addition code for ResidualAdd connection', () => {

@@ -331,63 +331,64 @@ export default function WorkflowsPage() {
               Flow Workspace Canvas
             </div>
 
-            {/* Render lines between nodes */}
-            <svg className="absolute inset-0 w-full h-full pointer-events-none z-0">
-              <defs>
-                <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-                  <path d="M 0 2 L 10 5 L 0 8 z" fill="#3f4046" />
-                </marker>
-              </defs>
+            <div className="w-[520px] h-full mx-auto relative z-10">
+              {/* Render lines between nodes */}
+              <svg className="absolute inset-0 w-full h-full pointer-events-none z-0">
+                <defs>
+                  <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                    <path d="M 0 2 L 10 5 L 0 8 z" fill="#3f4046" />
+                  </marker>
+                </defs>
 
-              {connections.map(conn => {
-                const src = nodes.find(n => n.id === conn.source);
-                const tgt = nodes.find(n => n.id === conn.target);
-                if (!src || !tgt) return null;
+                {connections.map(conn => {
+                  const src = nodes.find(n => n.id === conn.source);
+                  const tgt = nodes.find(n => n.id === conn.target);
+                  if (!src || !tgt) return null;
 
-                const startX = src.x + 160;
-                const startY = src.y + 20;
-                const endX = tgt.x;
-                const endY = tgt.y + 20;
+                  const startX = src.x + 160; // 160 is w-40 (node width)
+                  const startY = src.y + 24;  // 24 is half node height
+                  const endX = tgt.x;
+                  const endY = tgt.y + 24;
 
-                const isSignalActive = activeSignal === conn.id;
+                  const isSignalActive = activeSignal === conn.id;
 
-                return (
-                  <g key={conn.id}>
-                    {/* Background Link path */}
-                    <path
-                      d={`M ${startX} ${startY} C ${(startX + endX) / 2} ${startY}, ${(startX + endX) / 2} ${endY}, ${endX} ${endY}`}
-                      fill="none"
-                      stroke={isSignalActive ? '#80cbc4' : '#3f4046'}
-                      strokeWidth={isSignalActive ? 3 : 1.5}
-                      className={isSignalActive ? 'animated-edge' : ''}
-                      markerEnd="url(#arrow)"
-                    />
-                  </g>
-                );
-              })}
-            </svg>
+                  return (
+                    <g key={conn.id}>
+                      {/* Background Link path */}
+                      <path
+                        d={`M ${startX} ${startY} C ${(startX + endX) / 2} ${startY}, ${(startX + endX) / 2} ${endY}, ${endX} ${endY}`}
+                        fill="none"
+                        stroke={isSignalActive ? '#80cbc4' : '#3f4046'}
+                        strokeWidth={isSignalActive ? 3 : 1.5}
+                        className={isSignalActive ? 'animated-edge' : ''}
+                        markerEnd="url(#arrow)"
+                      />
+                    </g>
+                  );
+                })}
+              </svg>
 
-            {/* Render Flow Nodes */}
-            <div className="absolute inset-0 overflow-y-auto p-6 z-10 space-y-1">
-              
-              {/* Trigger nodes column */}
-              <div className="absolute left-6 top-10 bottom-10 flex flex-col justify-around">
-                {nodes.filter(n => n.type === 'trigger').map(node => (
+              {/* Render Flow Nodes */}
+              <div className="absolute inset-0 overflow-y-auto p-6 z-10 custom-scrollbar">
+                {nodes.map(node => (
                   <div
                     key={node.id}
                     onClick={() => setSelectedNodeId(node.id)}
-                    className={`w-40 bg-[#1e1f22]/90 border p-3 rounded-xl flex items-center justify-between shadow-lg cursor-pointer transition-all ${
+                    className={`w-40 bg-[#1e1f22]/90 border p-3 rounded-xl flex items-center justify-between shadow-lg cursor-pointer transition-all absolute ${
                       selectedNodeId === node.id 
-                        ? 'border-[#f28b82] glow-node' 
+                        ? (node.type === 'trigger' ? 'border-[#f28b82] glow-node' : 'border-[#8ab4f8] glow-node')
                         : 'border-[#3f4046]'
                     }`}
-                    style={{ transform: `translateY(${node.y - 120}px)` }}
+                    style={{ 
+                      left: `${node.x}px`, 
+                      top: `${node.y}px` 
+                    }}
                   >
                     <div className="flex items-center gap-2 overflow-hidden">
                       {getNodeIcon(node.label)}
                       <div className="overflow-hidden">
                         <span className="text-[10px] font-extrabold text-white block truncate">{node.label}</span>
-                        <span className="text-[8px] text-gray-500 font-bold uppercase block mt-0.5">Trigger</span>
+                        <span className="text-[8px] text-gray-500 font-bold uppercase block mt-0.5">{node.type}</span>
                       </div>
                     </div>
                     <button
@@ -399,37 +400,6 @@ export default function WorkflowsPage() {
                   </div>
                 ))}
               </div>
-
-              {/* Action nodes column */}
-              <div className="absolute right-6 top-10 bottom-10 flex flex-col justify-around">
-                {nodes.filter(n => n.type === 'action').map(node => (
-                  <div
-                    key={node.id}
-                    onClick={() => setSelectedNodeId(node.id)}
-                    className={`w-40 bg-[#1e1f22]/90 border p-3 rounded-xl flex items-center justify-between shadow-lg cursor-pointer transition-all ${
-                      selectedNodeId === node.id 
-                        ? 'border-[#8ab4f8] glow-node' 
-                        : 'border-[#3f4046]'
-                    }`}
-                    style={{ transform: `translateY(${node.y - 120}px)` }}
-                  >
-                    <div className="flex items-center gap-2 overflow-hidden">
-                      {getNodeIcon(node.label)}
-                      <div className="overflow-hidden">
-                        <span className="text-[10px] font-extrabold text-white block truncate">{node.label}</span>
-                        <span className="text-[8px] text-gray-500 font-bold uppercase block mt-0.5">Action</span>
-                      </div>
-                    </div>
-                    <button
-                      onClick={(e) => handleDeleteNode(node.id, e)}
-                      className="p-1 hover:bg-[#2b2d31] rounded-lg text-gray-600 hover:text-rose-400 transition-all cursor-pointer shrink-0 border-none bg-transparent"
-                    >
-                      <Trash2 size={10} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-
             </div>
           </div>
 

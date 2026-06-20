@@ -11,6 +11,8 @@ export default function LayerLibrary() {
   const [isOpen, setIsOpen] = useState(true);
   const [isCustomExpanded, setIsCustomExpanded] = useState(true);
   const [isMarketplaceExpanded, setIsMarketplaceExpanded] = useState(true);
+  const [confirmTemplateName, setConfirmTemplateName] = useState<string | null>(null);
+  const [confirmDeleteBlock, setConfirmDeleteBlock] = useState<{ id: string; name: string } | null>(null);
   
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
     'Standard Layers': true,
@@ -117,9 +119,18 @@ export default function LayerLibrary() {
       openLoginPromo(`The ${name} template is an advanced production-grade architecture. Please register or log in to unlock advanced pre-built models.`);
       return;
     }
-    if (window.confirm(`Load prebuilt "${name}" architecture? This will replace your current active canvas.`)) {
-      loadPrebuiltTemplate(name);
+    setConfirmTemplateName(name);
+  };
+
+  const handleConfirmTemplateLoad = () => {
+    if (confirmTemplateName) {
+      loadPrebuiltTemplate(confirmTemplateName);
+      setConfirmTemplateName(null);
     }
+  };
+
+  const handleCancelTemplateLoad = () => {
+    setConfirmTemplateName(null);
   };
 
   if (!isOpen) {
@@ -263,9 +274,8 @@ export default function LayerLibrary() {
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (window.confirm(`Delete custom block "${block.name}"?`)) {
-                          deleteCustomBlock(block.id);
-                        }
+                        if (userRole === 'Viewer') return;
+                        setConfirmDeleteBlock({ id: block.id, name: block.name });
                       }}
                       className="p-1.5 hover:bg-red-500/10 text-[#5f6368] hover:text-red-400 rounded-lg transition-all opacity-0 group-hover:opacity-100 cursor-pointer border-none bg-transparent"
                       title="Delete Custom Block"
@@ -328,6 +338,83 @@ export default function LayerLibrary() {
           <span>Drag nodes on canvas to reposition.</span>
         </div>
       </div>
+
+      {confirmTemplateName && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="w-[380px] bg-[#1b1c1e] border border-[#3f4046]/80 rounded-2xl p-6 shadow-2xl flex flex-col gap-4 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3">
+              <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-400">
+                <Sparkles size={20} />
+              </div>
+              <div>
+                <h4 className="text-sm font-black text-white">Load Prebuilt Template</h4>
+                <p className="text-[10px] text-[#9aa0a6] font-semibold mt-0.5">Replace Workspace Layout</p>
+              </div>
+            </div>
+            
+            <p className="text-xs text-gray-300 leading-relaxed font-medium">
+              Are you sure you want to load the prebuilt <strong className="text-[#8ab4f8]">"{confirmTemplateName}"</strong> architecture? This will replace your current active canvas nodes and connections.
+            </p>
+
+            <div className="flex items-center gap-2.5 mt-2">
+              <button
+                type="button"
+                onClick={handleCancelTemplateLoad}
+                className="flex-1 py-2 bg-[#2b2d31] hover:bg-[#313338] border border-[#3f4046] text-gray-300 text-xs font-bold rounded-xl transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmTemplateLoad}
+                className="flex-1 py-2 bg-[#8ab4f8] hover:bg-[#a8c7fa] text-[#1e1f22] text-xs font-extrabold rounded-xl transition-all cursor-pointer border-none shadow-lg shadow-[#8ab4f8]/10"
+              >
+                Load Template
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmDeleteBlock && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="w-[380px] bg-[#1b1c1e] border border-[#3f4046]/80 rounded-2xl p-6 shadow-2xl flex flex-col gap-4 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3">
+              <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400">
+                <Trash2 size={20} />
+              </div>
+              <div>
+                <h4 className="text-sm font-black text-white">Delete Custom Block</h4>
+                <p className="text-[10px] text-[#9aa0a6] font-semibold mt-0.5">Remove Saved Component</p>
+              </div>
+            </div>
+            
+            <p className="text-xs text-gray-300 leading-relaxed font-medium">
+              Are you sure you want to delete the custom block <strong className="text-red-400">"{confirmDeleteBlock.name}"</strong>? This action cannot be undone.
+            </p>
+
+            <div className="flex items-center gap-2.5 mt-2">
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteBlock(null)}
+                className="flex-1 py-2 bg-[#2b2d31] hover:bg-[#313338] border border-[#3f4046] text-gray-300 text-xs font-bold rounded-xl transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  deleteCustomBlock(confirmDeleteBlock.id);
+                  setConfirmDeleteBlock(null);
+                }}
+                className="flex-1 py-2 bg-red-500 hover:bg-red-600 text-white text-xs font-extrabold rounded-xl transition-all cursor-pointer border-none shadow-lg shadow-red-500/10"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

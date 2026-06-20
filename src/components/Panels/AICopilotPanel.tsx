@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useCanvasStore } from '@/store/canvasStore';
 import { useProjectStore } from '@/store/projectStore';
+import { useLayoutStore } from '@/store/layoutStore';
 import { useRouter } from 'next/navigation';
 import { toast } from '@/store/notificationStore';
 import { 
@@ -29,6 +30,7 @@ interface Message {
 
 export default function AICopilotPanel() {
   const router = useRouter();
+  const confirm = useLayoutStore((state) => state.confirm);
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -364,8 +366,15 @@ export default function AICopilotPanel() {
     }
   };
 
-  const clearChatHistory = () => {
-    if (confirm('Clear Copilot conversation history?')) {
+  const clearChatHistory = async () => {
+    const confirmed = await confirm({
+      title: 'Clear Chat History',
+      message: 'Are you sure you want to clear your Copilot conversation history?',
+      isDestructive: true,
+      confirmLabel: 'Clear History',
+      cancelLabel: 'Cancel',
+    });
+    if (confirmed) {
       const welcome: Message = {
         id: 'welcome',
         sender: 'assistant',

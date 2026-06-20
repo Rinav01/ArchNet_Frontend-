@@ -30,6 +30,16 @@ Compiler Supported Layers:
 - BatchNorm2D
 - Dropout
 - ResidualAdd
+- Embedding
+- PositionalEncoding
+- LayerNorm
+- TransformerBlock
+- GCN
+- GraphSAGE
+- LSTM
+- BiLSTM
+- GRU
+- RNN
 """
 raise NotImplementedError(${JSON.stringify(firstMessage)})
 `;
@@ -211,6 +221,81 @@ raise NotImplementedError(${JSON.stringify(firstMessage)})
       forwardBody.push(new Comment(`Residual Addition`));
       const addExpr = parentVars.length >= 2 ? parentVars.join(' + ') : (parentVars[0] || 'x');
       forwardBody.push(new Assignment([new Identifier(varName)], new RawCode(addExpr)));
+    }
+
+    else if (node.type === 'LSTM' || node.type === 'RNN') {
+      const hiddenSize = config.hidden_size || config.units || 64;
+      const returnSeqs = config.return_sequences !== false;
+      // inputSize derived from last dimension of incoming sequence tensor
+      const inputSize = (node.inputShape && node.inputShape.length >= 2)
+        ? node.inputShape[node.inputShape.length - 1]
+        : 128;
+      const nnClass = node.type === 'LSTM' ? 'nn.LSTM' : 'nn.RNN';
+      initBody.push(new Assignment(
+        [new Identifier(`self.${varName}`)],
+        new Instantiation(nnClass, [], {
+          input_size: new Literal(inputSize),
+          hidden_size: new Literal(hiddenSize),
+          batch_first: new Literal(true)
+        })
+      ));
+      const comment = node.type === 'LSTM' ? 'LSTM sequence layer' : 'RNN sequence layer';
+      forwardBody.push(new Comment(comment));
+      let inp = inputVar.type === 'Identifier' ? (inputVar as Identifier).name : 'x';
+      if (returnSeqs) {
+        // Returns (output [B, T, H], (h_n, c_n)) — take full sequence
+        forwardBody.push(new Assignment([new Identifier(varName)], new RawCode(`self.${varName}(${inp})[0]`)));
+      } else {
+        // Take only last timestep hidden state
+        forwardBody.push(new Assignment([new Identifier(varName)], new RawCode(`self.${varName}(${inp})[0][:, -1, :]`)));
+      }
+    }
+
+    else if (node.type === 'BiLSTM') {
+      const hiddenSize = config.hidden_size || config.units || 64;
+      const returnSeqs = config.return_sequences !== false;
+      const inputSize = (node.inputShape && node.inputShape.length >= 2)
+        ? node.inputShape[node.inputShape.length - 1]
+        : 128;
+      initBody.push(new Assignment(
+        [new Identifier(`self.${varName}`)],
+        new Instantiation('nn.LSTM', [], {
+          input_size: new Literal(inputSize),
+          hidden_size: new Literal(hiddenSize),
+          batch_first: new Literal(true),
+          bidirectional: new Literal(true)
+        })
+      ));
+      forwardBody.push(new Comment(`Bidirectional LSTM sequence layer`));
+      let inp = inputVar.type === 'Identifier' ? (inputVar as Identifier).name : 'x';
+      if (returnSeqs) {
+        forwardBody.push(new Assignment([new Identifier(varName)], new RawCode(`self.${varName}(${inp})[0]`)));
+      } else {
+        forwardBody.push(new Assignment([new Identifier(varName)], new RawCode(`self.${varName}(${inp})[0][:, -1, :]`)));
+      }
+    }
+
+    else if (node.type === 'GRU') {
+      const hiddenSize = config.hidden_size || config.units || 64;
+      const returnSeqs = config.return_sequences !== false;
+      const inputSize = (node.inputShape && node.inputShape.length >= 2)
+        ? node.inputShape[node.inputShape.length - 1]
+        : 128;
+      initBody.push(new Assignment(
+        [new Identifier(`self.${varName}`)],
+        new Instantiation('nn.GRU', [], {
+          input_size: new Literal(inputSize),
+          hidden_size: new Literal(hiddenSize),
+          batch_first: new Literal(true)
+        })
+      ));
+      forwardBody.push(new Comment(`GRU sequence layer`));
+      let inp = inputVar.type === 'Identifier' ? (inputVar as Identifier).name : 'x';
+      if (returnSeqs) {
+        forwardBody.push(new Assignment([new Identifier(varName)], new RawCode(`self.${varName}(${inp})[0]`)));
+      } else {
+        forwardBody.push(new Assignment([new Identifier(varName)], new RawCode(`self.${varName}(${inp})[0][:, -1, :]`)));
+      }
     }
     
     else if (node.type === 'Embedding') {

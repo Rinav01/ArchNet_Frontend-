@@ -65,6 +65,9 @@ export const GET_PROJECTS = `
       updatedAt
       totalParameterCount
       estimatedGpuMemoryMb
+      nodes {
+        id
+      }
     }
   }
 `;
@@ -196,6 +199,12 @@ export const DELETE_EDGE = `
 export const DELETE_PROJECT = `
   mutation DeleteProject($id: ID!) {
     deleteProject(id: $id)
+  }
+`;
+
+export const CLEAR_PROJECT_CANVAS = `
+  mutation ClearProjectCanvas($projectId: ID!) {
+    clearProjectCanvas(projectId: $projectId)
   }
 `;
 

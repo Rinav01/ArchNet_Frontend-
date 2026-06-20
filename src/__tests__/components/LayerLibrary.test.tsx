@@ -36,8 +36,7 @@ describe('LayerLibrary Component Sandbox Gating Tests', () => {
     expect(useLayoutStore.getState().loginPromoReason).toContain('Mini-GPT template is an advanced production-grade architecture');
   });
 
-  test('should allow standard templates to load directly', () => {
-    const confirmSpy = jest.spyOn(window, 'confirm').mockImplementation(() => true);
+  test('should allow standard templates to load directly via confirmation modal', () => {
     const loadTemplateSpy = jest.spyOn(useCanvasStore.getState(), 'loadPrebuiltTemplate').mockImplementation(async () => {});
 
     render(<LayerLibrary />);
@@ -48,11 +47,53 @@ describe('LayerLibrary Component Sandbox Gating Tests', () => {
 
     fireEvent.click(sentimentCard);
 
-    expect(confirmSpy).toHaveBeenCalled();
+    // Verify modal is visible
+    expect(screen.getByText('Replace Workspace Layout')).toBeInTheDocument();
+
+    // Click "Load Template" button
+    const loadBtn = screen.getByText('Load Template');
+    fireEvent.click(loadBtn);
+
     expect(loadTemplateSpy).toHaveBeenCalledWith('Sentiment Classifier');
     expect(useLayoutStore.getState().isLoginPromoOpen).toBe(false);
 
-    confirmSpy.mockRestore();
     loadTemplateSpy.mockRestore();
+  });
+
+  test('should allow custom blocks to be deleted via custom confirmation modal', () => {
+    const deleteBlockSpy = jest.spyOn(useCanvasStore.getState(), 'deleteCustomBlock').mockImplementation(() => {});
+    
+    useCanvasStore.setState({
+      customBlocks: [
+        {
+          id: 'block-1',
+          name: 'My Custom Block',
+          nodes: [{ id: 'n1', type: 'Conv2D', x: 0, y: 0, inputs: {}, outputs: {} }],
+          edges: [],
+        }
+      ]
+    });
+
+    render(<LayerLibrary />);
+
+    // Check custom block is rendered
+    expect(screen.getByText('My Custom Block')).toBeInTheDocument();
+
+    // Find and click delete button (the trash icon with specific title)
+    const deleteBtn = screen.getByTitle('Delete Custom Block');
+    expect(deleteBtn).toBeInTheDocument();
+    fireEvent.click(deleteBtn);
+
+    // Verify modal is visible
+    expect(screen.getByText('Remove Saved Component')).toBeInTheDocument();
+    expect(screen.getByText(/Are you sure you want to delete the custom block/)).toBeInTheDocument();
+
+    // Click "Delete" button inside modal
+    const confirmDeleteBtn = screen.getByRole('button', { name: 'Delete' });
+    fireEvent.click(confirmDeleteBtn);
+
+    expect(deleteBlockSpy).toHaveBeenCalledWith('block-1');
+
+    deleteBlockSpy.mockRestore();
   });
 });

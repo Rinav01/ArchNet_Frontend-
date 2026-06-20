@@ -4,6 +4,7 @@ import React, { useRef, useState, useEffect } from 'react';
 import { Stage, Layer, Rect, Circle, Text, Group, Path } from 'react-konva';
 import { useCanvasStore } from '@/store/canvasStore';
 import { useProjectStore } from '@/store/projectStore';
+import { useLayoutStore } from '@/store/layoutStore';
 import { CanvasNode, CanvasEdge, NodeType } from '@/types/canvas';
 import { 
   AlignLeft, 
@@ -164,6 +165,7 @@ const getNodeBenchmarkMetrics = (node: CanvasNode) => {
 
 export default function NodeGraph() {
   const userRole = useProjectStore((state) => state.userRole);
+  const confirm = useLayoutStore((state) => state.confirm);
   const {
     nodes,
     edges,
@@ -510,8 +512,9 @@ export default function NodeGraph() {
     
     targets.forEach(id => {
       const node = nodes.find(n => n.id === id);
-      if (node) {
-        useCanvasStore.getState().moveNode(id, node.x, node.y);
+      const startPos = startPositions[id];
+      if (node && startPos) {
+        useCanvasStore.getState().moveNode(id, node.x, node.y, false, false, startPos.x, startPos.y);
       }
     });
 
@@ -542,7 +545,7 @@ export default function NodeGraph() {
   };
 
   // Handle stage marquee selection end
-  const handleStageMouseUp = () => {
+  const handleStageMouseUp = (e: any) => {
     if (isMarqueeDragging && marqueeStart && marqueeEnd) {
       setIsMarqueeDragging(false);
       
@@ -571,7 +574,13 @@ export default function NodeGraph() {
         });
         
         // Concat to existing selected array if shift key is active
-        setSelectedNodeIds(boundedNodeIds);
+        const isShift = e.evt && e.evt.shiftKey;
+        if (isShift) {
+          const merged = Array.from(new Set([...selectedNodeIds, ...boundedNodeIds]));
+          setSelectedNodeIds(merged);
+        } else {
+          setSelectedNodeIds(boundedNodeIds);
+        }
       }
       setMarqueeStart(null);
       setMarqueeEnd(null);
@@ -760,8 +769,16 @@ export default function NodeGraph() {
           return (
             <Group key={`${edge.id}-${offset}`}>
               {/* Interaction Group */}
-              <Group onClick={() => {
-                if (window.confirm('Delete connection?')) {
+              <Group onClick={async () => {
+                if (userRole === 'Viewer') return;
+                const confirmed = await confirm({
+                  title: 'Delete Connection',
+                  message: 'Are you sure you want to delete this connection?',
+                  isDestructive: true,
+                  confirmLabel: 'Delete',
+                  cancelLabel: 'Cancel',
+                });
+                if (confirmed) {
                   removeEdge(edge.id);
                 }
               }}>
@@ -848,6 +865,11 @@ export default function NodeGraph() {
         x={pan.x}
         y={pan.y}
         draggable={!isConnecting && !isMarqueeDragging}
+        onDragStart={(e) => {
+          if (e.target === stageRef.current && e.evt && e.evt.shiftKey) {
+            e.target.stopDrag();
+          }
+        }}
         onDragMove={handleStageDrag}
         onDragEnd={handleStageDrag}
         onMouseMove={handleStageMouseMove}
@@ -1045,8 +1067,9 @@ export default function NodeGraph() {
                   
                   targets.forEach(id => {
                     const node = nodes.find(n => n.id === id);
-                    if (node) {
-                      useCanvasStore.getState().moveNode(id, node.x, node.y);
+                    const startPos = startPositions[id];
+                    if (node && startPos) {
+                      useCanvasStore.getState().moveNode(id, node.x, node.y, false, false, startPos.x, startPos.y);
                     }
                   });
                 }}

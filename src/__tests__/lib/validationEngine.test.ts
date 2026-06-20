@@ -111,7 +111,7 @@ describe('Topological Shape Solver & Validation Engine Tests', () => {
     test('should trigger fatal error for unsupported layer types', () => {
       const nodes: CanvasNode[] = [
         { id: '1', type: 'Input', name: 'IN', x: 0, y: 0, inputShape: [], outputShape: [224, 224, 3], config: {} },
-        { id: '2', type: 'LSTM' as any, name: 'LSTM_LAYER', x: 0, y: 0, inputShape: [], outputShape: [], config: {} }
+        { id: '2', type: 'FakeLayer' as any, name: 'FAKE_LAYER', x: 0, y: 0, inputShape: [], outputShape: [], config: {} }
       ];
       const edges = [
         { id: 'e1', source: '1', target: '2' }
@@ -120,7 +120,7 @@ describe('Topological Shape Solver & Validation Engine Tests', () => {
       const unsupportedErr = errors.find(e => e.nodeId === '2' && e.category === 'compatibility');
       expect(unsupportedErr).toBeDefined();
       expect(unsupportedErr?.severity).toBe('fatal');
-      expect(unsupportedErr?.message).toContain("Unsupported layer type 'LSTM' detected at node '2'");
+      expect(unsupportedErr?.message).toContain("Unsupported layer type 'FakeLayer' detected at node '2'");
     });
 
     test('should trigger fatal error when graph lacks an Input layer', () => {
