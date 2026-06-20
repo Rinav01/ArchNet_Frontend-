@@ -1,0 +1,78 @@
+{
+  "resnet": {
+    "name": "ResNet-18 (CIFAR-10)",
+    "description": "Residual network for high-performance image classification compiled and trained on CIFAR-10.",
+    "parameters": "11.17M",
+    "dataset": "CIFAR-10",
+    "epochs": 50,
+    "final_accuracy": "93.42%",
+    "download_url": "https://huggingface.co/archnet/resnet18-cifar10/resolve/main/resnet18.pth",
+    "curves": {
+      "epochs": [1, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50],
+      "train_loss": [1.89, 1.12, 0.74, 0.49, 0.31, 0.20, 0.12, 0.08, 0.05, 0.03, 0.01],
+      "val_accuracy": [55.2, 72.1, 81.5, 86.4, 89.2, 91.1, 92.4, 92.9, 93.1, 93.3, 93.42]
+    },
+    "telemetry": {
+      "gpu": "RTX 4090",
+      "average_latency": "14.2 ms/batch",
+      "vram_footprint": "2.41 GB"
+    }
+  },
+  "vit": {
+    "name": "Vision Transformer (ViT-Tiny)",
+    "description": "Transformer architecture projecting image patches into attention sequences for visual classification.",
+    "parameters": "5.72M",
+    "dataset": "ImageNet-1k (Subset)",
+    "epochs": 30,
+    "final_accuracy": "78.90%",
+    "download_url": "https://huggingface.co/archnet/vit-tiny/resolve/main/vit_tiny.pth",
+    "curves": {
+      "epochs": [1, 3, 6, 9, 12, 15, 18, 21, 24, 27, 30],
+      "train_loss": [2.45, 1.82, 1.34, 0.98, 0.75, 0.58, 0.44, 0.35, 0.28, 0.21, 0.17],
+      "val_accuracy": [41.2, 53.4, 62.1, 68.7, 72.1, 74.8, 76.5, 77.4, 78.1, 78.6, 78.9]
+    },
+    "telemetry": {
+      "gpu": "A100 40GB",
+      "average_latency": "22.8 ms/batch",
+      "vram_footprint": "1.85 GB"
+    }
+  },
+  "bert": {
+    "name": "BERT-Base (Sequence Classification)",
+    "description": "Bidirectional transformer representation trained on sentiment classification.",
+    "parameters": "109.48M",
+    "dataset": "SST-2 Sentiment",
+    "epochs": 10,
+    "final_accuracy": "91.80%",
+    "download_url": "https://huggingface.co/archnet/bert-base-sst2/resolve/main/pytorch_model.bin",
+    "curves": {
+      "epochs": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+      "train_loss": [0.45, 0.31, 0.22, 0.16, 0.11, 0.08, 0.06, 0.04, 0.03, 0.02],
+      "val_accuracy": [86.2, 88.5, 90.1, 90.8, 91.2, 91.5, 91.6, 91.7, 91.8, 91.8]
+    },
+    "telemetry": {
+      "gpu": "A10G 24GB",
+      "average_latency": "38.5 ms/batch",
+      "vram_footprint": "4.12 GB"
+    }
+  },
+  "graphsage": {
+    "name": "GraphSAGE (Graph Representation)",
+    "description": "Inductive node feature aggregator for large graphs validated on Cora Citation Network.",
+    "parameters": "0.12M",
+    "dataset": "Cora Citation Network",
+    "epochs": 100,
+    "final_accuracy": "84.10%",
+    "download_url": "https://huggingface.co/archnet/graphsage-cora/resolve/main/graphsage_cora.pth",
+    "curves": {
+      "epochs": [10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
+      "train_loss": [0.98, 0.65, 0.44, 0.31, 0.22, 0.16, 0.12, 0.09, 0.07, 0.05],
+      "val_accuracy": [65.4, 74.2, 78.5, 81.1, 82.4, 83.1, 83.6, 83.9, 84.0, 84.10]
+    },
+    "telemetry": {
+      "gpu": "CPU (Xeon Platinum)",
+      "average_latency": "5.4 ms/epoch",
+      "vram_footprint": "0.15 GB"
+    }
+  }
+}

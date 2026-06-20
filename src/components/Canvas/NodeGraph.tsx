@@ -181,6 +181,8 @@ export default function NodeGraph() {
     toggleStatsOverlay,
     validationErrors,
     highlightedNodeId,
+    hoveredNodeId,
+    setHoveredNodeId,
     setSelectedNodeId,
     setPan,
     addEdge,
@@ -300,7 +302,6 @@ export default function NodeGraph() {
 
   // Local interaction states
   const [draggedNodeId, setDraggedNodeId] = useState<string | null>(null);
-  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [hoveredGroupId, setHoveredGroupId] = useState<string | null>(null);
   
   // Drag Selection Marquee states

@@ -1,4 +1,6 @@
 import { CanvasNode, CanvasEdge } from '@/types/canvas';
+import { validateGraph } from './validationEngine';
+import { generateVerificationHeader } from './metricsHelper';
 
 function cleanVarName(id: string, type: string, name?: string): string {
   let base = (name || type || 'layer').toLowerCase().replace(/[^a-z0-9_]/g, '_');
@@ -119,6 +121,26 @@ export function compileToJAX(nodes: CanvasNode[], edges: CanvasEdge[]): string {
       forwardSteps.push(`        ${varName} = ${inputVar}.reshape((${inputVar}.shape[0], -1))`);
     } 
     
+    else if (node.type === 'Attention' || node.type === 'MultiHeadAttention') {
+      const numHeads = node.type === 'Attention' ? 1 : (config.num_heads || 8);
+      forwardSteps.push(`        # Multi-Head Dot Product Attention`);
+      let q = inputVar, k = inputVar, v = inputVar;
+      if (parentVars.length === 1) {
+        q = parentVars[0];
+        k = parentVars[0];
+        v = parentVars[0];
+      } else if (parentVars.length === 3) {
+        q = parentVars[0];
+        k = parentVars[1];
+        v = parentVars[2];
+      } else if (parentVars.length > 0) {
+        q = parentVars[0];
+        k = parentVars[0];
+        v = parentVars[0];
+      }
+      forwardSteps.push(`        ${varName} = nn.MultiHeadDotProductAttention(num_heads=${numHeads})(inputs_q=${q}, inputs_k=${k}, inputs_v=${v})`);
+    }
+
     else if (node.type === 'Dense') {
       const units = config.units || 10;
       forwardSteps.push(`        # Dense linear projection layer`);
@@ -148,8 +170,7 @@ export function compileToJAX(nodes: CanvasNode[], edges: CanvasEdge[]): string {
     returnStatement = `return ${finalLeaves.map(n => cleanVarName(n.id, n.type, n.name)).join(', ')}`;
   }
 
-  // Assemble full modular Flax Linen subclass
-  return `import jax
+  const code = `import jax
 import jax.numpy as jnp
 from flax import linen as nn
 
@@ -196,4 +217,8 @@ if __name__ == '__main__':
     except Exception as e:
         print("JAX init trace warning:", e)
 `;
+  const errors = validateGraph(nodes, edges);
+  const hasErrors = errors.some(e => e.severity === 'error' || e.severity === 'fatal');
+  const header = generateVerificationHeader('JAX/Flax', nodes, edges, !hasErrors);
+  return header + '\n' + code;
 }

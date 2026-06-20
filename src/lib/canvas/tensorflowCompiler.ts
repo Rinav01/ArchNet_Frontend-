@@ -1,4 +1,6 @@
 import { CanvasNode, CanvasEdge } from '@/types/canvas';
+import { validateGraph } from './validationEngine';
+import { generateVerificationHeader } from './metricsHelper';
 
 function cleanVarName(id: string, type: string, name?: string): string {
   let base = (name || type || 'layer').toLowerCase().replace(/[^a-z0-9_]/g, '_');
@@ -126,6 +128,29 @@ export function compileToTensorFlow(nodes: CanvasNode[], edges: CanvasEdge[]): s
       forwardSteps.push(`        ${varName} = self.${varName}(${inputVar})`);
     } 
     
+    else if (node.type === 'Attention' || node.type === 'MultiHeadAttention') {
+      const embedDim = config.embed_dim || config.embedding_dim || 256;
+      const numHeads = node.type === 'Attention' ? 1 : (config.num_heads || 8);
+      const keyDim = Math.max(1, Math.floor(embedDim / numHeads));
+      initializers.push(`        self.${varName} = layers.MultiHeadAttention(\n            num_heads=${numHeads},\n            key_dim=${keyDim}\n        )`);
+      forwardSteps.push(`        # Multi-Head Self Attention`);
+      let q = inputVar, k = inputVar, v = inputVar;
+      if (parentVars.length === 1) {
+        q = parentVars[0];
+        k = parentVars[0];
+        v = parentVars[0];
+      } else if (parentVars.length === 3) {
+        q = parentVars[0];
+        k = parentVars[1];
+        v = parentVars[2];
+      } else if (parentVars.length > 0) {
+        q = parentVars[0];
+        k = parentVars[0];
+        v = parentVars[0];
+      }
+      forwardSteps.push(`        ${varName} = self.${varName}(query=${q}, value=${v}, key=${k})`);
+    }
+
     else if (node.type === 'Dense') {
       const units = config.units || 10;
       initializers.push(`        self.${varName} = layers.Dense(units=${units})`);
@@ -158,8 +183,7 @@ export function compileToTensorFlow(nodes: CanvasNode[], edges: CanvasEdge[]): s
     returnStatement = `return ${finalLeaves.map(n => cleanVarName(n.id, n.type, n.name)).join(', ')}`;
   }
 
-  // Assemble full modular python class
-  return `import tensorflow as tf
+  const code = `import tensorflow as tf
 from tensorflow.keras import layers, Model
 
 class GeneratedModel(Model):
@@ -199,4 +223,8 @@ if __name__ == '__main__':
     except Exception as e:
         print("Forward trace warning:", e)
 `;
+  const errors = validateGraph(nodes, edges);
+  const hasErrors = errors.some(e => e.severity === 'error' || e.severity === 'fatal');
+  const header = generateVerificationHeader('TensorFlow', nodes, edges, !hasErrors);
+  return header + '\n' + code;
 }

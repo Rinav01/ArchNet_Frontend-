@@ -124,6 +124,7 @@ export default function Header({
   const isDeployPage = pathname.endsWith('/deploy');
   const isInferencePage = pathname.endsWith('/inference');
   const isExperimentsPage = pathname.endsWith('/experiments');
+  const isBenchmarkPage = pathname.endsWith('/benchmark');
   const currentProject = projects.find(p => p.id === activeProjectId);
 
   const [isEditingName, setIsEditingName] = React.useState(false);
@@ -158,7 +159,7 @@ export default function Header({
   };
 
   const handleBack = () => {
-    if ((isTrainingPage || isDeployPage || isInferencePage || isExperimentsPage) && activeProjectId) {
+    if ((isTrainingPage || isDeployPage || isInferencePage || isExperimentsPage || isBenchmarkPage) && activeProjectId) {
       router.push(`/editor/${activeProjectId}`);
     } else if (activeProjectId === 'sandbox') {
       router.push('/');
@@ -415,7 +416,7 @@ export default function Header({
           <button 
             onClick={handleBack}
             className="p-1.5 hover:bg-[#2b2d31] rounded-lg text-[#9aa0a6] hover:text-white transition-all shrink-0 cursor-pointer"
-            title={isTrainingPage ? "Back to Canvas Editor" : "Back to Dashboard"}
+            title={(isTrainingPage || isDeployPage || isInferencePage || isExperimentsPage || isBenchmarkPage) ? "Back to Canvas Editor" : "Back to Dashboard"}
           >
             <ArrowLeft size={16} />
           </button>
@@ -481,7 +482,7 @@ export default function Header({
         {/* ZONE 2: Center — Workspace Toolstrip       */}
         {/* ------------------------------------------- */}
         <div id="tour-zone-2" className="flex items-center justify-center gap-1 min-w-0">
-          {!isTrainingPage && !isDeployPage && !isInferencePage && !isExperimentsPage && (
+          {!isTrainingPage && !isDeployPage && !isInferencePage && !isExperimentsPage && !isBenchmarkPage && (
             <>
               {/* Undo / Redo Group */}
           <div className="flex items-center bg-[#2b2d31]/50 border border-[#3f4046] px-1 py-0.5 rounded-full shrink-0">
@@ -895,7 +896,8 @@ export default function Header({
                 {isDeployPage && <><CloudLightning size={13} className="text-[#80cbc4]" /> <span className="hidden sm:inline">Deployment</span></>}
                 {isInferencePage && <><Play size={13} className="text-[#f28b82]" /> <span className="hidden sm:inline">Live Inference</span></>}
                 {isExperimentsPage && <><GitBranch size={13} className="text-[#c5a3ff]" /> <span className="hidden sm:inline">Experiments</span></>}
-                {!isTrainingPage && !isDeployPage && !isInferencePage && !isExperimentsPage && <><Sliders size={13} className="text-[#8ab4f8]" /> <span className="hidden sm:inline">Canvas Editor</span></>}
+                {isBenchmarkPage && <><BarChart2 size={13} className="text-[#ffe082]" /> <span className="hidden sm:inline">Model Benchmark</span></>}
+                {!isTrainingPage && !isDeployPage && !isInferencePage && !isExperimentsPage && !isBenchmarkPage && <><Sliders size={13} className="text-[#8ab4f8]" /> <span className="hidden sm:inline">Canvas Editor</span></>}
                 <ChevronDown size={10} className={`text-[#9aa0a6] transition-transform ${isViewDropdownOpen ? 'rotate-180' : ''}`} />
               </button>
               
@@ -955,6 +957,16 @@ export default function Header({
                     >
                       <Play size={12} className="text-[#f28b82]" />
                       <span>Live Inference</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { router.push(`/editor/${activeProjectId}/benchmark`); setIsViewDropdownOpen(false); }}
+                      className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-xs font-bold hover:bg-[#2b2d31]/50 rounded-xl transition-all bg-transparent border-none text-left cursor-pointer ${
+                        isBenchmarkPage ? 'text-[#ffe082] bg-[#ffe082]/5' : 'text-[#9aa0a6] hover:text-white'
+                      }`}
+                    >
+                      <BarChart2 size={12} className="text-[#ffe082]" />
+                      <span>Model Benchmark</span>
                     </button>
                   </div>
                 </>

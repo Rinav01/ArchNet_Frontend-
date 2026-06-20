@@ -1,4 +1,6 @@
 import { CanvasNode, CanvasEdge } from '@/types/canvas';
+import { validateGraph } from './validationEngine';
+import { generateVerificationHeader } from './metricsHelper';
 
 function cleanVarName(id: string, type: string, name?: string): string {
   let base = (name || type || 'layer').toLowerCase().replace(/[^a-z0-9_]/g, '_');
@@ -180,6 +182,32 @@ export function compileToONNX(nodes: CanvasNode[], edges: CanvasEdge[]): string 
     onnx_nodes.append(node_${varName})`);
     } 
     
+    else if (node.type === 'Attention' || node.type === 'MultiHeadAttention') {
+      const numHeads = node.type === 'Attention' ? 1 : (config.num_heads || 8);
+      let q = inputVar, k = inputVar, v = inputVar;
+      if (parentVars.length === 1) {
+        q = parentVars[0];
+        k = parentVars[0];
+        v = parentVars[0];
+      } else if (parentVars.length === 3) {
+        q = parentVars[0];
+        k = parentVars[1];
+        v = parentVars[2];
+      } else if (parentVars.length > 0) {
+        q = parentVars[0];
+        k = parentVars[0];
+        v = parentVars[0];
+      }
+      helperNodes.push(`    # Multi-Head Attention: ${varName}
+    node_${varName} = helper.make_node(
+        "Attention",
+        inputs=["${q}", "${k}", "${v}"],
+        outputs=["${varName}"],
+        num_heads=${numHeads}
+    )
+    onnx_nodes.append(node_${varName})`);
+    }
+
     else if (node.type === 'Dense') {
       const units = config.units || 10;
       let inFeatures = 100;
@@ -265,7 +293,7 @@ export function compileToONNX(nodes: CanvasNode[], edges: CanvasEdge[]): string 
   const inputDims = inputNode?.config.dim || [224, 224, 3];
 
   // Assemble full modular python class
-  return `import onnx
+    const code = `import onnx
 from onnx import helper, TensorProto
 import numpy as np
 
@@ -333,4 +361,8 @@ if __name__ == '__main__':
     except Exception as e:
         print("ONNX validation trace warning:", e)
 `;
+  const errors = validateGraph(nodes, edges);
+  const hasErrors = errors.some(e => e.severity === 'error' || e.severity === 'fatal');
+  const header = generateVerificationHeader('ONNX', nodes, edges, !hasErrors);
+  return header + '\n' + code;
 }

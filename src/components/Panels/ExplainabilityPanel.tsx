@@ -15,20 +15,23 @@ import {
   Flame, 
   Sliders, 
   Info, 
-  Maximize2,
   Table,
   LineChart,
+  Sparkles,
   HelpCircle,
-  Sparkles
+  TrendingUp,
+  Settings,
+  Brackets
 } from 'lucide-react';
 
 export default function ExplainabilityPanel() {
-  const { nodes } = useCanvasStore();
+  const { nodes, selectedNodeId } = useCanvasStore();
   const [seqLength, setSeqLength] = useState<number>(128);
   const [customQuestion, setCustomQuestion] = useState('');
   const [aiAnswer, setAiAnswer] = useState('');
 
   const metrics = getGraphMetrics(nodes);
+  const selectedNode = nodes.find(n => n.id === selectedNodeId);
 
   // Check if any transformer layers exist
   const hasTransformerLayers = nodes.some(n => 
@@ -89,6 +92,60 @@ export default function ExplainabilityPanel() {
     setCustomQuestion('');
   };
 
+  const formatShape = (shape: number[] | undefined) => {
+    if (!shape || shape.length === 0) return '[]';
+    return `[${shape.join(', ')}]`;
+  };
+
+  const getParamsExplainer = (node: any) => {
+    const { params } = getNodeMetrics(node);
+    const config = node.config || {};
+    const inputShape = node.inputShape || [];
+
+    if (node.type === 'Conv2D') {
+      const inC = inputShape.length >= 3 ? inputShape[2] : 3;
+      const outC = config.filters || 64;
+      const k = config.kernelSize || 3;
+      return {
+        formula: `(InChannels * KernelH * KernelW + 1) * OutFilters`,
+        calculation: `(${inC} * ${k} * ${k} + 1) * ${outC} = ${params.toLocaleString()} parameters`,
+      };
+    }
+    if (node.type === 'Dense') {
+      const inF = inputShape.length > 0 ? inputShape.reduce((a: number, b: number) => a * b, 1) : 0;
+      const units = config.units || 10;
+      return {
+        formula: `(InFeatures + 1) * Units`,
+        calculation: `(${inF.toLocaleString()} + 1) * ${units} = ${params.toLocaleString()} parameters`,
+      };
+    }
+    if (node.type === 'Embedding') {
+      const vocabSize = config.vocab_size || 30522;
+      const embedDim = config.embed_dim || config.embedding_dim || 768;
+      return {
+        formula: `VocabSize * EmbeddingDim`,
+        calculation: `${vocabSize.toLocaleString()} * ${embedDim} = ${params.toLocaleString()} parameters`,
+      };
+    }
+    if (['RNN', 'LSTM', 'GRU', 'BiLSTM'].includes(node.type)) {
+      const inputDim = inputShape.length > 0 ? inputShape[inputShape.length - 1] : 768;
+      const hiddenDim = config.hidden_size || 768;
+      const isBi = node.type === 'BiLSTM' || config.bidirectional === true;
+      let gates = 1;
+      if (node.type.includes('LSTM')) gates = 4;
+      else if (node.type.includes('GRU')) gates = 3;
+      const directions = isBi ? 2 : 1;
+      return {
+        formula: `Directions * Gates * (HiddenDim * (InputDim + HiddenDim) + HiddenDim)`,
+        calculation: `${directions} * ${gates} * (${hiddenDim} * (${inputDim} + ${hiddenDim}) + ${hiddenDim}) = ${params.toLocaleString()} parameters`,
+      };
+    }
+    return {
+      formula: 'No parameter weights (Activation / Structural block)',
+      calculation: '0 parameters',
+    };
+  };
+
   // Seq lengths scaling table data
   const scalingLengths = [64, 128, 256, 512, 1024, 2048];
 
@@ -106,9 +163,113 @@ export default function ExplainabilityPanel() {
 
       <div className="p-6 space-y-6 flex-1 overflow-y-auto custom-scrollbar">
         
-        {/* Section 1: Aggregated Metrics */}
+        {/* Compiler Explanation Mode (Selected Node Inspection) */}
         <div className="space-y-3">
-          <h4 className="text-[10px] font-extrabold uppercase text-[#9aa0a6] tracking-wider select-none">Model Complexity Aggregates</h4>
+          <h4 className="text-[10px] font-extrabold uppercase text-[#9aa0a6] tracking-wider select-none flex items-center gap-1">
+            <Brackets size={12} className="text-[#8ab4f8]" />
+            <span>Compiler Explanation Mode</span>
+          </h4>
+
+          {selectedNode ? (() => {
+            const explainer = getParamsExplainer(selectedNode);
+            const { params, flops, vram } = getNodeMetrics(selectedNode);
+            return (
+              <div className="bg-[#1b1c21] border border-[#8ab4f8]/30 p-4 rounded-xl space-y-4 shadow-lg shadow-black/25">
+                <div className="flex items-center justify-between border-b border-[#3f4046]/45 pb-2">
+                  <div>
+                    <span className="text-xs font-black text-white uppercase tracking-wide block">{selectedNode.name}</span>
+                    <span className="text-[9px] font-extrabold text-[#8ab4f8] uppercase tracking-widest mt-0.5 block">{selectedNode.type} Operator</span>
+                  </div>
+                  <div className="px-2 py-0.5 bg-[#8ab4f8]/10 rounded border border-[#8ab4f8]/20 text-[8.5px] text-[#8ab4f8] font-bold">
+                    ACTIVE INSPECT
+                  </div>
+                </div>
+
+                {/* Flow layout */}
+                <div className="grid grid-cols-3 gap-2 items-center bg-[#101113] p-3 rounded-lg border border-[#3f4046]/20">
+                  <div className="text-center">
+                    <span className="text-[8px] uppercase tracking-wider font-extrabold text-gray-500 block">Input Shape</span>
+                    <span className="text-[10px] font-mono text-white font-bold block mt-1">{formatShape(selectedNode.inputShape)}</span>
+                  </div>
+                  <div className="text-center flex flex-col items-center">
+                    <span className="text-[8px] uppercase tracking-wider font-extrabold text-gray-500 block">Operator</span>
+                    <div className="w-8 h-[1px] bg-[#3f4046]/50 my-1 relative">
+                      <div className="absolute right-0 top-[-2px] w-1.5 h-1.5 border-t border-r border-[#3f4046]/80 rotate-45"></div>
+                    </div>
+                    <span className="text-[9px] font-black text-[#8ab4f8] uppercase">{selectedNode.type}</span>
+                  </div>
+                  <div className="text-center">
+                    <span className="text-[8px] uppercase tracking-wider font-extrabold text-gray-500 block">Output Shape</span>
+                    <span className="text-[10px] font-mono text-white font-bold block mt-1">{formatShape(selectedNode.outputShape)}</span>
+                  </div>
+                </div>
+
+                {/* Layer configuration params */}
+                {Object.keys(selectedNode.config || {}).length > 0 && (
+                  <div className="space-y-1.5 bg-[#101113]/50 p-2.5 rounded-lg border border-[#3f4046]/15">
+                    <span className="text-[8px] uppercase tracking-wider font-black text-gray-500 block flex items-center gap-1">
+                      <Settings size={10} />
+                      <span>Operational Parameters</span>
+                    </span>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[9.5px]">
+                      {Object.entries(selectedNode.config).map(([key, val]) => (
+                        <div key={key} className="flex justify-between font-mono">
+                          <span className="text-gray-400">{key}:</span>
+                          <span className="text-white font-bold">{String(val)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Math explanation */}
+                <div className="space-y-2">
+                  <span className="text-[8px] uppercase tracking-wider font-black text-gray-500 block flex items-center gap-1">
+                    <Cpu size={10} className="text-[#ffe082]" />
+                    <span>Parameter & FLOPs Math</span>
+                  </span>
+                  <div className="bg-[#101113] p-3 rounded-lg border border-[#3f4046]/30 space-y-2">
+                    <div className="text-[10px]">
+                      <span className="text-gray-400 block font-semibold">Parameters Formula:</span>
+                      <code className="text-amber-300 font-mono text-[9px] block mt-0.5">{explainer.formula}</code>
+                    </div>
+                    <div className="text-[10px] border-t border-[#3f4046]/25 pt-2">
+                      <span className="text-gray-400 block font-semibold">Calculation:</span>
+                      <code className="text-emerald-400 font-mono text-[9px] block mt-0.5">{explainer.calculation}</code>
+                    </div>
+                    {flops > 0 && (
+                      <div className="text-[10px] border-t border-[#3f4046]/25 pt-2 flex justify-between">
+                        <span className="text-gray-400 font-semibold">Estimated Layer FLOPs:</span>
+                        <span className="text-white font-mono font-bold">{formatMetricNumber(flops, 'FLOPs')}</span>
+                      </div>
+                    )}
+                    {vram > 0 && (
+                      <div className="text-[10px] flex justify-between">
+                        <span className="text-gray-400 font-semibold">Estimated VRAM size (F32):</span>
+                        <span className="text-white font-mono font-bold">{formatMetricBytes(vram)}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })() : (
+            <div className="border border-dashed border-[#3f4046]/45 p-6 rounded-xl text-center space-y-2 text-[#9aa0a6] bg-[#1b1c21]/15">
+              <HelpCircle size={24} className="mx-auto text-gray-500 animate-pulse" />
+              <p className="text-[10px] leading-relaxed font-bold uppercase tracking-wide">No Active Layer Selected</p>
+              <p className="text-[9.5px] leading-relaxed text-gray-500 font-semibold max-w-xs mx-auto">
+                Click a layer node on the visual editor canvas to expose its compiled input/output shapes, operation hyperparameters, and mathematical calculations.
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Section 1: Aggregated Metrics */}
+        <div className="space-y-3 pt-2">
+          <h4 className="text-[10px] font-extrabold uppercase text-[#9aa0a6] tracking-wider select-none flex items-center gap-1">
+            <TrendingUp size={12} className="text-[#81c784]" />
+            <span>Model Complexity Aggregates</span>
+          </h4>
           
           <div className="grid grid-cols-1 gap-2.5">
             {/* Params */}

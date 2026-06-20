@@ -1,0 +1,47 @@
+[
+  {
+    "model": "CNN (Sample)",
+    "pytorch_latency": 12.4,
+    "tensorflow_latency": 14.8,
+    "jax_latency": 11.2,
+    "pytorch_vram": 1.2,
+    "tensorflow_vram": 1.8,
+    "jax_vram": 1.1
+  },
+  {
+    "model": "ResNet-18",
+    "pytorch_latency": 24.5,
+    "tensorflow_latency": 28.2,
+    "jax_latency": 22.1,
+    "pytorch_vram": 2.4,
+    "tensorflow_vram": 3.1,
+    "jax_vram": 2.2
+  },
+  {
+    "model": "ViT-Tiny",
+    "pytorch_latency": 45.8,
+    "tensorflow_latency": 51.4,
+    "jax_latency": 39.5,
+    "pytorch_vram": 1.8,
+    "tensorflow_vram": 2.6,
+    "jax_vram": 1.7
+  },
+  {
+    "model": "BERT-Base",
+    "pytorch_latency": 92.1,
+    "tensorflow_latency": 104.5,
+    "jax_latency": 84.8,
+    "pytorch_vram": 4.1,
+    "tensorflow_vram": 5.2,
+    "jax_vram": 3.8
+  },
+  {
+    "model": "LSTM (Seq)",
+    "pytorch_latency": 18.2,
+    "tensorflow_latency": 22.4,
+    "jax_latency": 16.5,
+    "pytorch_vram": 0.8,
+    "tensorflow_vram": 1.2,
+    "jax_vram": 0.7
+  }
+]

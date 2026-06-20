@@ -9,20 +9,27 @@ ArchNet is an enterprise-grade, high-fidelity visual workspace for designing, au
 * **Interactive Canvas Workspace**: A high-performance vector graphics board powered by **Konva.js** supporting node dragging, socket connect ports, bezier linkages, multi-selection, and group operations.
 * **Topological Shape Solver**: Automatically propagates and calculates tensor sizes downstream from root input parameters in real-time, verifying rank compatibility and broadcasting compliance.
 * **Diagnostic Center & AutoML Copilot**: A strict AST compiler and heuristical rules auditor that scans active graphs and saved library components for loop cycles, disconnected nodes, and anti-patterns.
+* **Bidirectional Trace Viewer**: Select nodes on the canvas to highlight and auto-scroll corresponding generated code lines, or click tracking comments (`# node: {nodeId}`) in the code editor to highlight/select nodes on the canvas.
+* **Compiler Explanation Mode**: Click any node on the canvas to inspect its step-by-step shape solver logic, active hyperparameters, parameters formula, and calculated weights arithmetic.
 * **Multi-Framework Compiler**: Generates clean, production-grade Python classes (`class GeneratedModel`) conforming to standard PyTorch, TensorFlow, Flax (JAX), and ONNX specifications.
+* **Framework Benchmarking Dashboard**: Compare compiled model latency (ms/batch) and peak VRAM allocations (GB) across PyTorch, TensorFlow, and JAX using interactive charts.
+* **SOTA Pre-trained Model Gallery**: Browse ResNet, BERT, ViT, and GraphSAGE models, view historical training curves, and download pre-trained weights hosted on Hugging Face.
 * **Dataset Manager**: Ingestion area featuring drag-and-drop CSV/ZIP uploading, tabular data previews, and database processing status tracking.
-* **Training telemetry & Monitor**: stacked vertical monitor panel plotting training/validation loss and validation accuracy curves in real-time using `recharts` connected to live WebSockets.
+* **Training Telemetry & Monitor**: Stacked vertical monitor panel plotting training/validation loss and validation accuracy curves in real-time using `recharts` connected to live WebSockets.
 * **Sandbox Mode**: A zero-login interactive playground for guest builders to draft models, run forward pass animations, and browse templates. Restricts premium functions (ONNX export, framework comparison, version diffing) with context-aware login dialog prompts.
+
+---
 
 ## 🆕 Recent Updates
 
-- **Sandbox Mode Integration**: Added details regarding the guest playground, preloaded template support, session isolation, and contextual login promotion overlays.
+- **Bidirectional Trace Viewer**: Integrated decoupled `hoveredNodeId` and `selectedNodeId` states globally, automatically matching code comments to Konva visual elements.
+- **Compiler Explanation Mode**: Exposed shape solver math in the explainability panel, displaying formula variables and weight equations (e.g. convolution channels projection).
+- **Credibility Dashboard & Walks**: Expanded documentation with an interactive Compiler Architecture flowchart and a 3-step Node-to-Code mapping walkthrough.
+- **Framework Benchmarking Page**: Plotted execution latencies and VRAM usage on A100/RTX 4090 configurations using Recharts charts loaded from verified Python metrics.
+- **Hugging Face Weight Releases**: Integrated lightweight weight cards linking ResNet, BERT, ViT, and GraphSAGE checkpoints to Hugging Face repositories.
 - **Premium UI Polish & Micro-interactions**: Integrated `framer-motion` for fluid, spring-physics slide transitions when opening or closing left, right, and bottom layout panels.
-- **Floating Panel & Control Feedback**: Added smooth pop-in animations for floating panels and micro-interaction scaling effects on title bar actions (Dock, Float, Close).
-- **Weighty Canvas Dragging**: Refactored Konva nodes in [NodeGraph.tsx](file:///d:/Coding/ArchNet_frontend/src/components/Canvas/NodeGraph.tsx) to scale up (1.03x centered) and cast realistic drop shadows when dragged or selected.
-- **Interactive Grid Alignment**: Adjusted the CSS background dot-grid to exactly match the `20px` snapping grid and dynamically tint the dots blue during active node dragging.
-- **CI Workflow & ESLint Upgrades**: Upgraded checkout, setup-node, and upload-artifact actions to `@v6` tags for Node.js 24 compatibility, resolved legacy `require()` linting issues in `jest.config.js`, and ignored generated `coverage/` folders in linter rules.
-- **Training Mode usability**: Updated UI components to improve usability in training mode, with conditional rendering of undo/redo, version history, and panels based on page context.
+- **Weighty Canvas Dragging**: Refactored Konva nodes to scale up (1.03x centered) and cast realistic drop shadows when dragged or selected.
+- **Interactive Grid Snapping**: Adjusted the CSS background dot-grid to exactly match the `20px` snapping grid and dynamically tint the dots blue during active node dragging.
 
 ---
 
@@ -38,6 +45,7 @@ graph TD
     CodeView["Generated Code Viewer"]
     Telemetry["Training Telemetry Dashboard"]
     DatasetMgr["Dataset Upload Manager"]
+    BenchmarkView["Benchmarking Dashboard"]
 
     CanvasStore["canvasStore - Zustand"]
     ProjStore["projectStore - Zustand"]
@@ -72,9 +80,39 @@ graph TD
     TrainingStore -->|Websocket Connection| WS
     WS -->|Live Telemetry Frames| Telemetry
     Celery -->|Emit Metrics Event| WS
+
+    CodeView -.->|Bidirectional Highlight / Select| CanvasStore
+    BenchmarkView -->|Load Verified JSON Logs| CodeView
 ```
 
-### 2. WebSockets Telemetry Flow
+### 2. Bidirectional Trace Mapping
+This diagram maps how user interface interactions in the canvas and the code panels are synchronized bidirectionally.
+
+```mermaid
+graph LR
+    subgraph Canvas ["Visual Canvas"]
+        Node["Konva Node Block"]
+    end
+    subgraph Store ["canvasStore State"]
+        Hover["hoveredNodeId"]
+        Select["selectedNodeId"]
+    end
+    subgraph Editor ["RealTimeCodePanel"]
+        Line["Generated Python Statement"]
+        Comment["node: nodeId comment marker"]
+    end
+
+    Node -->|Hover / MouseEnter| Hover
+    Node -->|Click / MouseDown| Select
+    Hover -->|Hook Subscription| Editor
+    Select -->|Scroll Into View| Editor
+    Editor -->|Highlight Line CSS| Line
+    Line -->|Click Line Gutter| Comment
+    Comment -->|Update Selection| Select
+    Select -.->|Pulsing Highlight Glow| Node
+```
+
+### 3. WebSockets Telemetry Flow
 Telemetry updates from backend Celery tasks or local simulators cascade into charts and experiment histories.
 
 ```mermaid
@@ -114,7 +152,7 @@ sequenceDiagram
 | **Core Runtime** | React 19 & TypeScript 5 | Strict typing and component hierarchy |
 | **Canvas Graphics** | Konva.js & `react-konva` | Interactive workspace vector canvas |
 | **State Manager** | Zustand 5 | Client-side reactive stores (Canvas, Project, Training) |
-| **Charts** | Recharts v2 | Telemetry analytics charts |
+| **Charts** | Recharts v3 | Telemetry and benchmarking charts |
 | **Styling** | Tailwind CSS v4 & Vanilla CSS | Glassmorphism, animations, HSL themes |
 
 ---
@@ -123,33 +161,45 @@ sequenceDiagram
 
 ```text
 frontend/
+├── public/                     # Static public assets
+│   └── artifacts/              
+│       ├── benchmark_data.json # Comparative execution logs
+│       └── sota_metadata.json  # Pre-run training curves and Hugging Face URLs
+│
 ├── src/
 │   ├── app/                    # Next.js App Router Page View Controllers
 │   │   ├── page.tsx            # Main Model Workspace landing dashboard
 │   │   ├── layout.tsx          # General page template controller
 │   │   ├── globals.css         # Custom background animations, scrolls and dark variables
 │   │   │
+│   │   ├── docs/               # Docs, Compiler Architecture flow, and model walkthroughs
 │   │   ├── datasets/           # Dataset Drag-and-Drop repository page
 │   │   ├── editor/[projectId]/ # Dynamic interactive Canvas Node Editor workspace
+│   │   │   ├── benchmark/      # Framework benchmarking page with Recharts
+│   │   │   ├── deploy/         # Deploy setup panel
+│   │   │   ├── experiments/    # Runs history comparator
+│   │   │   ├── inference/      # Model testing API client
+│   │   │   └── training/       # WebSocket telemetry dashboard
+│   │   │
 │   │   ├── models/             # Base visual templates importer panel
-│   │   │   notebook/           # Jupyter-style script sandbox cell
+│   │   │   └── research/       # Prebuilt templates gallery
 │   │   └── settings/           # API credentials and sync setups
 │   │
 │   ├── components/             # Reusable Visual Custom Modules
-│   │   ├── Layout/             # Universal Layout Containers (Header, Sidebar, MainLayout)
+│   │   ├── Layout/             # Header, Sidebar, MainLayout
 │   │   ├── Canvas/             # Interactive Canvas modules (NodeGraph, CanvasWrapper)
-│   │   ├── Panels/             # Workspace panels (LayerLibrary, ConfigPanel, ValidationPanel)
+│   │   ├── Panels/             # LayerLibrary, ConfigPanel, ExplainabilityPanel (Explanation Mode)
 │   │   ├── Modals/             # Code Preview and versioning popups
 │   │   └── Training/           # Training dashboard widgets (Charts, History panels)
 │   │
 │   ├── store/                  # Unified State Managers
 │   │   ├── projectStore.ts     # Project list fetching and auth management
 │   │   ├── trainingStore.ts    # Websocket metrics and historical run records
-│   │   └── canvasStore.ts      # Active canvas nodes, connections, and custom saved blocks
+│   │   └── canvasStore.ts      # Active canvas nodes, connections (including hoveredNodeId)
 │   │
 │   ├── lib/                    # Core compilation algorithms
 │   │   └── canvas/             
-│   │       ├── pytorchCompiler.ts     # Compiles canvas graph to PyTorch scripts
+│   │       ├── pytorchCompiler.ts     # Compiles canvas graph to PyTorch scripts with tracking comments
 │   │       ├── tensorflowCompiler.ts  # Compiles canvas graph to TensorFlow code
 │   │       ├── jaxCompiler.ts         # Compiles canvas graph to Flax/JAX code
 │   │       └── onnxCompiler.ts        # Compiles canvas graph to ONNX binary representation
@@ -205,7 +255,15 @@ The topological shape solver propagates tensor dimensions downstream based on th
 | **BatchNorm2D** | 3D (`[H, W, C]`) | N/A | Returns identical input shape `[H, W, C]` |
 | **Dropout** | Any | `rate` | Returns identical input shape |
 | **Flatten** | Any | N/A | 1D: `[size]` where $size = \prod(\text{inputShape})$ |
-| **Dense** | 1D (`[Features]`) | `units` | 1D: `[units]` |
+| **Dense** | 1D (`[Features]`) or 2D | `units` | `[units]` or `[Seq, units]` |
+| **Embedding** | 1D / 2D (`[Seq]`) | `vocab_size`, `embedding_dim` | `[Seq, embedding_dim]` |
+| **PositionalEncoding** | 2D (`[Seq, Dim]`) | `embed_dim`, `max_len` | `[Seq, embed_dim]` |
+| **MultiHeadAttention** | 2D (`[Seq, Dim]`) | `num_heads`, `embed_dim` | `[Seq, embed_dim]` |
+| **LayerNorm** | Any | N/A | Returns identical input shape |
+| **TransformerBlock** | 2D (`[Seq, Dim]`) | `num_heads`, `embed_dim` | `[Seq, embed_dim]` |
+| **LSTM / GRU / RNN** | 2D (`[Seq, Dim]`) | `hidden_size`, `return_sequences` | **return_sequences = true**: `[Seq, hidden_size]` <br> **return_sequences = false**: `[hidden_size]` |
+| **BiLSTM** | 2D (`[Seq, Dim]`) | `hidden_size`, `return_sequences` | **return_sequences = true**: `[Seq, hidden_size * 2]` <br> **return_sequences = false**: `[hidden_size * 2]` |
+| **GCN / GraphSAGE** | 1D / 2D | `out_features` | `[out_features]` |
 
 ---
 
@@ -226,38 +284,8 @@ The Diagnostic Center scans the active model canvas and saved custom blocks usin
 
 ---
 
-## 🧠 V2 Advanced Layer Extensions & Research Playground (Modules 6.1 - 6.7)
-
-We have extended ArchNet with advanced layer types, sequence complexity explainability, and multi-framework compiler comparative layout structures:
-
-### 1. V2 Layer Library (Module 6.1)
-* **Collapsible Accordion Categories**: Organizes standard layers, sequence-based layers, transformer block components, and graph neural network layers in a clean collapsible accordion within [LayerLibrary.tsx](file:///d:/Coding/ArchNet_frontend/src/components/Panels/LayerLibrary.tsx).
-* **RNN Layer Integration**: Full integration of Recurrent Neural Networks (RNN) across store configurations, inspectors, and compiler generators.
-
-### 2. V2 Shape Visualizations & Attention Sockets (Module 6.2 & 6.3)
-* **Sequence display format**: Visualizes symbolic shapes `[B,T,D]` alongside concrete sequence lengths (e.g. `[32, 128, 768]`) for token and embedding layers.
-* **Q, K, V Multi-Sockets**: Renders three vertically stacked input sockets representing Query (`Q`), Key (`K`), and Value (`V`) for `Attention` and `MultiHeadAttention` blocks on the Konva canvas, using dynamic edge routing to avoid curve overlaps.
-* **Skip Connection Styling**: Automatically detects shortcut paths bypassing layers, rendering them as Coral Red (`#e57373`) dashed lines with labeled skip badges.
-* **Transformer Custom Visual Nodes**: Renders head/dim details inside the MultiheadAttention block and designs a collapsed block visual for `TransformerBlock`, `EncoderBlock`, and `DecoderBlock` showing inline sequence: `Attention -> LayerNorm -> FeedFwd`.
-
-### 3. Research Playground & Templates Marketplace (Module 6.4 & 6.5)
-* **New Route `/models/research`**: A dedicated marketplace at [page.tsx](file:///d:/Coding/ArchNet_frontend/src/app/models/research/page.tsx) featuring category filters and prebuilt SOTA architectures: `BERT`, `GPT`, `Vision Transformer`, `U-Net`, and `GraphSAGE`.
-* **Animated Flowchart Previews**: Renders real-time node structures, Parameter sizes, compute FLOPs, and VRAM memory aggregates for selected templates.
-* **One-Click Import**: Instant insertion onto the main editor canvas via project auto-creation and routing.
-
-### 4. Architecture Explainability Panel (Module 6.6)
-* **Right Sidebar Dock**: Placed at [ExplainabilityPanel.tsx](file:///d:/Coding/ArchNet_frontend/src/components/Panels/ExplainabilityPanel.tsx) to provide real-time complexity calculations.
-* **Sequence Scaling Controls**: Slider for token lengths $T \in [64, 2048]$ dynamically adjusting attention matrix size ($T^2$) and attention FLOP scales. Emits quadratic scaling warning badges for $T \ge 512$.
-* **Parameter Explosion Alerts**: Checks for Conv2D layers exceeding 5M parameters and Dense layers exceeding 10M parameters directly following Flatten nodes.
-
-### 5. Advanced Compiler Center (Module 6.7)
-* **Left 30% Analytics Sidebar**: Houses parameter counts, VRAM estimation, FLOPs, and a topological Model Summary table detailing individual output shapes, layer params, and layer FLOPs.
-* **Right 70% Code Viewport**: Renders PyTorch, TensorFlow, and JAX compiled scripts parallel to each other in three side-by-side columns by default.
-
----
-
 ## 🤝 Contribution Guidelines
 
 1. **Keep Canvas Modules Client-Side**: All Konva stage layers rely on window coordinates. Ensure they are loaded dynamically via `CanvasWrapper.tsx` and labeled `'use client'`.
 2. **Support Downstream recalculations**: When creating a new node type in `src/types/canvas.ts`, add its shape rules under `computeNodeOutputShape` inside `src/store/canvasStore.ts`.
-3. **Preserve Compiler Tracing**: Ensure compiler files under `src/lib/canvas/` correctly format target codeblocks under `class GeneratedModel` to compile cleanly in Next.js and PyTorch runtime environments.
+3. **Preserve Compiler Tracing**: Ensure compiler files under `src/lib/canvas/` correctly format target codeblocks under `class GeneratedModel` and include appropriate node comments to compile cleanly in Next.js and PyTorch runtime environments.

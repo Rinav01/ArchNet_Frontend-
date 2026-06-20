@@ -1,22 +1,65 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useCanvasStore } from '@/store/canvasStore';
 import { compileToPyTorch } from '@/lib/canvas/pytorchCompiler';
-// We could also import other compilers here if we want a dropdown, 
-// but for the Real-Time Preview, PyTorch is our primary demo standard.
-import { Copy, Check, Download, FileCode } from 'lucide-react';
+import { Copy, Check, Download } from 'lucide-react';
 
 export default function RealTimeCodePanel() {
   const nodes = useCanvasStore((state) => state.nodes);
   const edges = useCanvasStore((state) => state.edges);
   const validationErrors = useCanvasStore((state) => state.validationErrors || []);
+  const selectedNodeId = useCanvasStore((state) => state.selectedNodeId);
+  const hoveredNodeId = useCanvasStore((state) => state.hoveredNodeId);
+  const setSelectedNodeId = useCanvasStore((state) => state.setSelectedNodeId);
+  const setHoveredNodeId = useCanvasStore((state) => state.setHoveredNodeId);
+
   const [copied, setCopied] = useState(false);
 
   const code = compileToPyTorch(nodes, edges);
   
   const fatalErrors = validationErrors.filter(e => e.severity === 'fatal');
   const hasFatalErrors = fatalErrors.length > 0;
+
+  // Split code into lines and parse node mappings
+  const codeLines = code.split('\n');
+  const lineToNodeId: Record<number, string> = {};
+  const nodeIdToLines: Record<string, number[]> = {};
+  
+  let currentNodeId: string | null = null;
+  codeLines.forEach((line, index) => {
+    const lineNum = index + 1;
+    
+    // Reset mapping on major structure boundaries
+    if (line.startsWith("if __name__ == '__main__':") || line.startsWith("class ")) {
+      currentNodeId = null;
+    }
+    
+    const match = line.match(/^\s*#\s*node:\s*([a-zA-Z0-9_-]+)/);
+    if (match) {
+      currentNodeId = match[1];
+    }
+    
+    if (currentNodeId) {
+      lineToNodeId[lineNum] = currentNodeId;
+      if (!nodeIdToLines[currentNodeId]) {
+        nodeIdToLines[currentNodeId] = [];
+      }
+      nodeIdToLines[currentNodeId].push(lineNum);
+    }
+  });
+
+  // Scroll active line into view when node selection or hover changes
+  const activeNodeId = hoveredNodeId || selectedNodeId;
+  useEffect(() => {
+    if (activeNodeId && nodeIdToLines[activeNodeId]) {
+      const firstLineNum = nodeIdToLines[activeNodeId][0];
+      const el = document.getElementById(`code-line-${firstLineNum}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    }
+  }, [activeNodeId]);
 
   const handleCopy = async () => {
     try {
@@ -78,9 +121,39 @@ export default function RealTimeCodePanel() {
         </span>
       </div>
 
-      {/* Code View */}
+      {/* Code View with bidirectional highlighting */}
       <div className="flex-1 overflow-auto p-4 font-mono text-[10.5px] leading-relaxed text-[#c5cbd3] selection:bg-[#8ab4f8]/20 bg-[#07080b] custom-scrollbar">
-        <pre className="whitespace-pre">{code}</pre>
+        {codeLines.map((line, index) => {
+          const lineNum = index + 1;
+          const nodeId = lineToNodeId[lineNum];
+          
+          const isHovered = hoveredNodeId && nodeId === hoveredNodeId;
+          const isSelected = selectedNodeId && nodeId === selectedNodeId && !hoveredNodeId;
+          
+          return (
+            <div
+              key={lineNum}
+              id={`code-line-${lineNum}`}
+              className={`flex items-start transition-all duration-150 rounded px-1.5 py-[1px] ${
+                isHovered 
+                  ? 'bg-[#8ab4f8]/15 text-white shadow-sm ring-1 ring-[#8ab4f8]/30' 
+                  : isSelected 
+                    ? 'bg-[#8ab4f8]/10 text-white shadow-sm border-l-2 border-[#8ab4f8]' 
+                    : 'hover:bg-white/3'
+              } ${nodeId ? 'cursor-pointer' : ''}`}
+              onMouseEnter={() => nodeId && setHoveredNodeId(nodeId)}
+              onMouseLeave={() => nodeId && setHoveredNodeId(null)}
+              onClick={() => nodeId && setSelectedNodeId(nodeId)}
+            >
+              {/* Line Number gutter */}
+              <span className="w-8 select-none text-gray-600 text-right pr-3.5 font-bold font-mono">
+                {lineNum}
+              </span>
+              {/* Code Content */}
+              <span className="flex-1 whitespace-pre">{line || ' '}</span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

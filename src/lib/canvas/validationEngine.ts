@@ -195,13 +195,13 @@ export function validateGraph(nodes: CanvasNode[], edges: CanvasEdge[]): Validat
         });
       }
     } else if (node.type === 'Dense') {
-      if (node.inputShape.length > 0 && node.inputShape.length !== 1) {
+      if (node.inputShape.length > 0 && node.inputShape.length !== 1 && node.inputShape.length !== 2) {
         errors.push({
           nodeId: node.id,
           type: 'error',
           severity: 'error',
           category: 'rank',
-          message: `Layer '${node.name}' expects 1D flattened input [Features], got [${node.inputShape.join(', ')}].`
+          message: `Layer '${node.name}' expects 1D or 2D input, got [${node.inputShape.join(', ')}].`
         });
       }
     }

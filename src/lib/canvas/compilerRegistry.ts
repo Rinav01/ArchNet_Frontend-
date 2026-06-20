@@ -17,5 +17,7 @@ export const compilerRegistry: Record<string, boolean> = {
   BiLSTM: true,
   GRU: true,
   RNN: true,
+  Attention: true,
+  MultiHeadAttention: true,
 };
 

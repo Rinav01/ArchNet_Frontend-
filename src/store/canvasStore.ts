@@ -170,6 +170,8 @@ interface CanvasState {
   // Jump-to-node Visual Highlight State & Action
   highlightedNodeId: string | null;
   setHighlightedNodeId: (id: string | null) => void;
+  hoveredNodeId: string | null;
+  setHoveredNodeId: (id: string | null) => void;
   heatmapMode: 'none' | 'flops' | 'memory' | 'latency';
   setHeatmapMode: (mode: 'none' | 'flops' | 'memory' | 'latency') => void;
 }
@@ -395,6 +397,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
     clusterPriority: 'High',
     gpuThrottleLimit: 80,
     highlightedNodeId: null,
+    hoveredNodeId: null,
     heatmapMode: 'none',
     customBlocks: [],
 
@@ -1100,6 +1103,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
 
     setSelectedNodeId: (id) => set({ selectedNodeId: id }),
     setHighlightedNodeId: (id) => set({ highlightedNodeId: id }),
+    setHoveredNodeId: (id) => set({ hoveredNodeId: id }),
     setHeatmapMode: (mode) => set((state) => {
       state.addLog('info', `Changed execution heatmap mode to: ${mode.toUpperCase()}`);
       return { heatmapMode: mode };

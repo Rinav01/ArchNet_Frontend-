@@ -5,6 +5,7 @@ import {
   Dict, Comment, RawCode, CodeGenerator, getTopologicalOrder, cleanVarName 
 } from './astBuilder';
 import { validateGraph } from './validationEngine';
+import { generateVerificationHeader } from './metricsHelper';
 
 export function compileToPyTorch(nodes: CanvasNode[], edges: CanvasEdge[]): string {
   // Check for fatal validation errors first
@@ -64,6 +65,8 @@ raise NotImplementedError(${JSON.stringify(firstMessage)})
   const forwardBody: ASTNode[] = [];
 
   order.forEach((node) => {
+    const initLenBefore = initBody.length;
+    const forwardLenBefore = forwardBody.length;
     const varName = cleanVarName(node.id, node.type, node.name);
     const config = node.config;
     
@@ -328,6 +331,35 @@ raise NotImplementedError(${JSON.stringify(firstMessage)})
       forwardBody.push(new Assignment([new Identifier(varName)], new RawCode(`self.${varName}(${inp})`)));
     }
 
+    else if (node.type === 'Attention' || node.type === 'MultiHeadAttention') {
+      const embedDim = config.embed_dim || config.embedding_dim || (node.inputShape && node.inputShape.length > 1 ? node.inputShape[1] : 256);
+      const numHeads = node.type === 'Attention' ? 1 : (config.num_heads || 8);
+      initBody.push(new Assignment(
+        [new Identifier(`self.${varName}`)],
+        new Instantiation('nn.MultiheadAttention', [], {
+          embed_dim: new Literal(embedDim),
+          num_heads: new Literal(numHeads),
+          batch_first: new Literal(true)
+        })
+      ));
+      forwardBody.push(new Comment(`Multi-Head Attention`));
+      let q = 'x', k = 'x', v = 'x';
+      if (parentVars.length === 1) {
+        q = parentVars[0];
+        k = parentVars[0];
+        v = parentVars[0];
+      } else if (parentVars.length === 3) {
+        q = parentVars[0];
+        k = parentVars[1];
+        v = parentVars[2];
+      } else if (parentVars.length > 0) {
+        q = parentVars[0];
+        k = parentVars[0];
+        v = parentVars[0];
+      }
+      forwardBody.push(new Assignment([new Identifier(varName)], new RawCode(`self.${varName}(${q}, ${k}, ${v})[0]`)));
+    }
+
     else if (node.type === 'LayerNorm') {
       const normalizedShape = node.inputShape && node.inputShape.length > 0
         ? node.inputShape[node.inputShape.length - 1]
@@ -397,6 +429,13 @@ raise NotImplementedError(${JSON.stringify(firstMessage)})
       let inp = inputVar.type === 'Identifier' ? (inputVar as Identifier).name : 'x';
       if (parentVars.length > 1) inp = `torch.cat([${parentVars.join(', ')}], dim=1)`;
       forwardBody.push(new Assignment([new Identifier(varName)], new Identifier(inp)));
+    }
+    
+    if (initBody.length > initLenBefore) {
+      initBody.splice(initLenBefore, 0, new Comment(`node: ${node.id}`));
+    }
+    if (forwardBody.length > forwardLenBefore) {
+      forwardBody.splice(forwardLenBefore, 0, new Comment(`node: ${node.id}`));
     }
   });
 
@@ -501,5 +540,9 @@ class GraphSAGE(nn.Module):
   const program = new Program(programNodes);
 
   const generator = new CodeGenerator();
-  return generator.generate(program);
+  const code = generator.generate(program);
+  const errors = validateGraph(nodes, edges);
+  const hasErrors = errors.some(e => e.severity === 'error' || e.severity === 'fatal');
+  const header = generateVerificationHeader('PyTorch', nodes, edges, !hasErrors);
+  return header + '\n' + code;
 }
